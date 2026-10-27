@@ -91,7 +91,10 @@ trap 'rm -f "$tmp_file"' EXIT
 cat > "$tmp_file" <<EOF
 # session#$session_number - $slug
 
-- **Date:** $today
+## 0. Date
+
+$today
+
 - **Linear issue:** $linear_issue
 - **Status:** draft; update after validation and final commit
 - **Memory source:** Linear is the authoritative record for session progress, decisions, blockers, and handoffs. This file is a concise Git-linked snapshot.
