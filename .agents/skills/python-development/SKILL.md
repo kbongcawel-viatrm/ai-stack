@@ -22,3 +22,11 @@ Run the project's formatter, linter, type checker, and test suite where configur
 
 ## Security
 Avoid unsafe deserialization such as untrusted pickle, dynamic code execution, insecure temporary files, path traversal, and SSRF. Treat subprocess output, files, network responses, and model output as untrusted input.
+
+
+## Upstream sources
+- https://github.com/python/cpython
+- https://github.com/astral-sh/uv
+- https://github.com/pytest-dev/pytest
+- See the shared registry for worker-framework-specific sources; confirm which “Python worker” project is intended.
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
