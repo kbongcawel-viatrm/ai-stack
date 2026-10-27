@@ -14,6 +14,7 @@ INSTALL_CLINE="${INSTALL_CLINE:-1}"
 INSTALL_LINEAR_CLI="${INSTALL_LINEAR_CLI:-0}"
 NVM_VERSION="${NVM_VERSION:-v0.40.8}"
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+export NVM_DIR
 [[ "$INSTALL_CLINE" =~ ^[01]$ ]] || die 'INSTALL_CLINE must be 0 or 1'
 [[ "$INSTALL_LINEAR_CLI" =~ ^[01]$ ]] || die 'INSTALL_LINEAR_CLI must be 0 or 1'
 [[ "$NVM_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'NVM_VERSION must look like v0.40.8'
