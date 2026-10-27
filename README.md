@@ -228,3 +228,8 @@ git status --short
 
 ## Diagram
 [Architecture diagram](https://excalidraw.com/#json=FHASE2MuEnxo-PBys7TUO,pwDQ6odBoOZ_RUu4iaoA4A)
+
+
+## Skill discovery and upstream source repositories
+
+Agents must search `.agents/skills/` for skills that are close or similar to a task and read the relevant `SKILL.md` before implementation. Technology-specific tasks should consult the curated [upstream GitHub repository registry](.agents/sources/github-repositories.md), use official version-matched docs/source as evidence, and keep canonical skills under `.agents/skills/` synchronized with Cline copies under `.cline/skills/`. Upstream repositories are references by default; do not vendor or add submodules unless explicitly required and approved. The registry calls out the ambiguity of the name “Python worker” rather than silently assuming a framework.
