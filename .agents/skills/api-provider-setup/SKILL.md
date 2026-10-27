@@ -1,27 +1,21 @@
 ---
 name: api-provider-setup
-description: Configure, test, or change an AI model provider for this repository while keeping provider credentials out of source control.
+description: Configure or change an AI model provider while keeping provider credentials out of source control.
 ---
 
 # API provider setup
 
-## Purpose
-Configure an AI provider/model for Cline or an OpenAI-compatible client in a repeatable, secret-safe way.
+1. Identify whether configuring Cline CLI, Cline IDE, or an application calling Cline API.
+2. Verify provider, endpoint, model ID, auth method, region/profile, and account access against official docs.
+3. Create credentials in the provider console. Prefer a secret manager, environment variable, or interactive auth UI. Never put a real secret in Git, `.env.example`, Linear, screenshots, or logs.
+4. For Cline CLI, use `cline auth` or the installed version's documented key-based flags.
+5. For Cline API, create a key through Cline account settings and call `https://api.cline.bot/api/v1/chat/completions` using `Authorization: Bearer $CLINE_API_KEY`.
+6. Run a small, non-sensitive smoke test; verify success, model selection, latency, usage cost, and data handling.
+7. Document non-secret settings, source links, limitations, and verification date in `.agents/memory/`.
+8. Review `git status --short` and scan staged changes for secrets before committing.
 
-## Steps
-1. Confirm which client is being configured: Cline CLI, Cline IDE extension, or an application calling the Cline API.
-2. Confirm provider, endpoint/base URL, model ID, authentication scheme, and any region/profile requirement from official documentation.
-3. Create credentials in the provider's official console. Prefer an environment variable, local secret manager, or client auth UI; never put a real secret in Git, a committed `.env.example`, Linear, screenshots, or logs.
-4. For Cline CLI, use `cline auth` for interactive setup or `cline auth --provider <provider> --apikey "$KEY" --modelid <model>` for a supported key-based provider. Check `cline auth --help` for the installed version.
-5. For the Cline API, create a Cline API key under account settings and call `https://api.cline.bot/api/v1/chat/completions` with `Authorization: Bearer $CLINE_API_KEY`. The model ID must be available to the account/API.
-6. Run a small, non-sensitive smoke test. Confirm success, model selection, latency, and usage cost before using the provider for larger tasks.
-7. Document only non-secret configuration, source links, limitations, and verification date in `.agents/memory/`.
-8. Verify `git status --short` and scan staged changes for secrets before committing.
-
-## Provider switching checklist
-- [ ] Endpoint and model IDs verified from official docs
+- [ ] Endpoint/model IDs verified from official docs
 - [ ] Correct credential source and minimum permissions selected
-- [ ] Credentials are untracked and never printed
+- [ ] Credentials remain untracked and unprinted
 - [ ] Smoke test passes
-- [ ] Cost/region/data-handling requirements understood
-- [ ] Shared documentation updated without secrets
+- [ ] Cost/region/data handling understood
