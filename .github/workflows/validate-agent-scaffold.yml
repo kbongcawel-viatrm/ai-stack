@@ -54,6 +54,10 @@ jobs:
             .agents/providers/cline-cli.md \
             .agents/providers/linear.md \
             .agents/skills/api-provider-setup/SKILL.md \
+            .agents/skills/session-resume/SKILL.md \
+            .cline/skills/session-resume/SKILL.md \
+            scripts/resume-session.sh \
+            scripts/test-resume-session.sh \
             .agents/sessions/templates/HANDOFF.md \
             .cline/mcp.json \
             docs/mcp-setup.md \
