@@ -25,3 +25,11 @@ Check container state and exit code; inspect logs/events; verify image/command/e
 
 ## Validation
 Use `podman inspect`, `podman stats --no-stream`, `podman logs`, `podman events`, and `podman healthcheck run` where supported. Confirm expected behavior as the correct user. Redact secrets from outputs before sharing.
+
+
+## Upstream sources
+- https://github.com/containers/podman
+- https://github.com/containers/common
+- https://github.com/containers/storage
+- https://docs.podman.io/
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
