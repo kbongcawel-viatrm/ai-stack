@@ -30,3 +30,11 @@ Provide version-specific configuration, data-flow map, example event, validation
 ## References
 - https://openobserve.ai/docs/
 - https://opentelemetry.io/docs/collector/
+
+
+## Upstream sources
+- https://github.com/openobserve/openobserve
+- https://openobserve.ai/docs/
+- https://github.com/open-telemetry/opentelemetry-collector
+- https://opentelemetry.io/docs/collector/
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
