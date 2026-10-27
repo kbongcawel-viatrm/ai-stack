@@ -2,9 +2,12 @@ name: Validate AI Stack Bootstrapping
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - dev
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -54,7 +57,13 @@ jobs:
             exit 1
           fi
       - name: Validate MCP JSON
-        run: python -m json.tool .cline/mcp.json >/dev/null
+        run: |
+          if python -m json.tool .cline/mcp.json >/dev/null; then
+          echo "MCP validated"
+            else
+          echo "MCP validation failed" >&2
+            exit 1
+          fi
       - name: Validate canonical and Cline skill parity
         shell: bash
         run: |
