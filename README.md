@@ -162,13 +162,25 @@ Use this format in a Linear issue description or in `docs/sessions/session-NNN.m
 
 ## Structure
 ```text
-.agents/       portable rules, memory, provider docs, skills, session templates
+.agents/       portable rules, memory, provider docs, skills, agent definitions, session templates
 .clinerules/   Cline project rules
 .cline/        Cline-specific extension points and project MCP configuration
 docs/          architecture and workflow documentation
 scripts/       repeatable setup and static validation
 .github/       CI validation and pull-request template
 ```
+
+## GitHub agent and Git operations
+
+The repository includes a dedicated [GitHub agent](.agents/agents/github-agent.md) and a reusable [Git operations skill](.agents/skills/git-operations/SKILL.md), mirrored for Cline at `.cline/skills/git-operations/SKILL.md`. Follow the skill before repository synchronization, commits, pushes, pull requests, and editor swap-file cleanup.
+
+Important safeguards:
+- The required `git reset --hard HEAD` is destructive; inspect `git status` first and never discard unapproved user work.
+- Commit and push code changes before host-related changes or host-mutating tests, then record the actual commit SHA and validation evidence.
+- Configure the requested global Git identity on the workstation only; do not alter a remote runner's global configuration as a side effect.
+- Remove only reviewed `*.swp` and `*.swo` files. These patterns are already covered by `.gitignore`.
+
+The GitHub API changes made to this repository are committed remotely. Workstation-level Git config changes and local swap-file cleanup must be run and verified on the workstation itself.
 
 ## Workflow
 1. Read working agreement and relevant skill/memory.
