@@ -1,0 +1,37 @@
+name: Validate agent scaffold
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout
+      - name: Validate installer syntax
+        run: bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh
+      - name: Run scaffold checks
+        run: bash scripts/test-install-ai-tools.sh
+      - name: Check required files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in \
+            .agents/rules/working-agreement.md \
+            .agents/providers/cline-api.md \
+            .agents/providers/cline-cli.md \
+            .agents/providers/linear.md \
+            .agents/skills/api-provider-setup/SKILL.md \
+            .agents/sessions/templates/HANDOFF.md \
+            .clinerules/00-project.md \
+            .gitignore README.md; do
+            test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
+          done
