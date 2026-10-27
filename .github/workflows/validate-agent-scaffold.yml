@@ -18,10 +18,13 @@ jobs:
         name: Checkout
       - name: Validate installer syntax
         run: bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh
+      - name: Validate session scripts syntax
+        run: bash -n scripts/new-session-doc.sh scripts/test-new-session-doc.sh scripts/resume-session.sh scripts/test-resume-session.sh
       - name: Run scaffold checks
         run: |
           bash scripts/test-install-ai-tools.sh
           bash scripts/test-new-session-doc.sh
+          bash scripts/test-resume-session.sh
       - name: Validate MCP JSON
         run: python -m json.tool .cline/mcp.json >/dev/null
       - name: Validate canonical and Cline skill parity
