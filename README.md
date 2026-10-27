@@ -36,6 +36,16 @@ INSTALL_LINEAR_CLI=1 ./scripts/install-ai-tools.sh
 
 Review package provenance and workflow side effects before adoption.
 
+### Session documentation and memory
+
+Linear is the authoritative memory for session progress, decisions, blockers, and handoffs. Keep repository Markdown as a concise, portable snapshot linked to the Linear issue and Git commit rather than maintaining a second full narrative. Generate a session record interactively with:
+
+```bash
+./scripts/new-session-doc.sh 001 initialize
+```
+
+This creates `docs/sessions/session#001-initialize.md` with the numbered sections Date, Summary, Plan, Changes, Validation steps, Commands, and `session#001 | <git hash commit>`. Enter multiline sections one line at a time and finish each with a single `.`. Supply the real Linear issue ID/URL. Verify or update the commit hash after the final commit; the script defaults to the current `HEAD` SHA and accepts `GIT_COMMIT=<sha>` to override it. It refuses to overwrite an existing session file. Run its test with `bash scripts/test-new-session-doc.sh`.
+
 ### Plan and hand off
 Create/update a Linear issue with a goal and acceptance criteria. Use `.agents/sessions/templates/SESSION_PLAN.md` for planning and `HANDOFF.md` for cross-device handoff. Commit only durable, non-sensitive memory. See [repository layout](docs/repository-layout.md).
 
