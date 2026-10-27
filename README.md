@@ -39,11 +39,132 @@ Review package provenance and workflow side effects before adoption.
 ### Plan and hand off
 Create/update a Linear issue with a goal and acceptance criteria. Use `.agents/sessions/templates/SESSION_PLAN.md` for planning and `HANDOFF.md` for cross-device handoff. Commit only durable, non-sensitive memory. See [repository layout](docs/repository-layout.md).
 
+## Linear session workflow and documentation
+
+Use a numbered session ID to make work traceable across Linear, repository documentation, and Git commits. A session is a coherent unit of work, not a single chat transcript. Use the same ID in the Linear issue title, session document, commit message, and handoff.
+
+### Session naming convention
+
+- Linear issue title: `session#001 - Initialize scripts and folder structure`
+- Repository session note: `docs/sessions/session-001.md` (create one per completed session when a durable write-up is useful).
+- Branch: `session-001-initialize-scaffold` (or include the real Linear issue identifier, e.g. `ENG-123-session-001-initialize-scaffold`).
+- Commit subject: `session#001: initialize scripts and folder structure`
+- Commit reference in documentation: `session#001: <full-git-commit-sha>`
+
+Keep the sequential session number as the stable project identifier. Also include the actual Linear issue identifier/URL (for example, `ENG-123`) once Linear creates it; do not invent a Linear issue ID. The session number and Linear issue identifier are separate fields.
+
+### What each Linear session issue must contain
+
+1. **Summary** — a concise statement of the delivered outcome.
+2. **Goal and scope** — why the work is needed, what is included, and explicit exclusions.
+3. **Tasks and implementation** — checklist of scripts, folders, configuration, skills, MCP servers, and documentation changed.
+4. **Acceptance criteria** — observable conditions that must be met before marking the session complete.
+5. **Validation** — exact commands, test results, CI links, and any checks not run.
+6. **Decisions and risks** — relevant choices, trade-offs, blockers, and rollback notes.
+7. **Source control** — branch, commit SHA, changed paths, and pull request link if applicable.
+8. **Next session** — concrete follow-up work and any dependencies.
+9. **Security check** — confirm that no API keys, access tokens, private user data, or raw chat transcripts were copied into Linear or Git.
+
+### Step-by-step workflow
+
+1. **Find or create the Linear issue.** Search for the session number/title first to avoid duplicates. Create an issue in the appropriate team/project, use the next unused session number, and include the goal and acceptance criteria.
+2. **Prepare the plan.** Copy the structure from `.agents/sessions/templates/SESSION_PLAN.md`. Add the Linear issue identifier, branch, context, risks, plan, and validation steps. Put detailed durable documentation in `docs/` and link it from the issue.
+3. **Implement the work.** Make a focused change. Keep code, configuration, and skill files in their proper directories. Record meaningful milestones in Linear rather than pasting raw conversations.
+4. **Validate the result.** Run applicable tests and configuration checks. Record commands and outcomes honestly; distinguish passed, failed, skipped, and not-run checks.
+5. **Commit the change.** Use a descriptive commit message containing the session number. Capture the full commit SHA from Git after the commit succeeds. Do not write a guessed or shortened hash as if it were the full SHA.
+6. **Update Linear.** Add the summary, changed paths, validation results, commit SHA/link, blockers, and next actions. Move the issue to the team's completed state only when its acceptance criteria are satisfied.
+7. **Write the session record.** Update the session log below or add `docs/sessions/session-NNN.md` for a larger session. Link the real Linear issue and Git commit. A documentation commit's SHA cannot be embedded in itself without creating another commit; update the session log in a follow-up commit if it needs to reference the commit that finalized the session record.
+8. **Hand off.** Before switching machine, model, provider, or agent, complete `.agents/sessions/templates/HANDOFF.md` with current state, decisions, validation, and next actions.
+
+### Session record format
+
+Use this format in a Linear issue description or in `docs/sessions/session-NNN.md`:
+
+```markdown
+# session#NNN - <short outcome>
+
+- Linear issue: <real issue identifier and URL, or "not created yet">
+- Status: planned | in progress | blocked | complete
+- Branch: <branch name>
+- Commit: <full SHA and GitHub commit URL, or "pending">
+
+## Summary
+<What was delivered and why it matters.>
+
+## Tasks completed
+- [ ] <specific implementation or documentation task>
+
+## Acceptance criteria
+- [ ] <observable success condition>
+
+## Validation
+- Command: <exact command>
+- Result: <passed/failed/not run and evidence>
+
+## Decisions / risks
+- <decision, rationale, blocker, or none>
+
+## Next session
+- <next concrete step>
+```
+
+### Session log
+
+#### session#001 - Initialize scripts and folder structure
+
+**Status:** Baseline scaffold recorded; associate this session with its actual Linear issue when Linear is connected.
+
+**Summary:** Established the initial repository structure and the reusable agent workflow. The baseline includes the setup installer and its tests; shared `.agents/` rules, memory, provider notes, skills, and session templates; Cline-specific `.cline/` and `.clinerules/` entry points; Linear planning guidance; environment-variable examples; repository layout documentation; and GitHub Actions validation. Follow-up work expanded the skills collection and added Cline skill mirrors plus Linear/GitHub MCP setup documentation and configuration.
+
+**Tasks represented by this baseline**
+- Installer and safe installer tests for setting up Cline tooling.
+- Agent context directories for rules, memory, provider setup, skills, and session handoffs.
+- Linear session planning conventions and templates.
+- Cline-specific project structure and shared skill discovery.
+- MCP configuration template for Linear and GitHub, with credentials kept local.
+- Documentation and CI checks for scaffold integrity and skill parity.
+
+**Baseline commit reference:** `session#001: 4122988c723ef0fa9ce7108c5b9c0f1b2887d51a` ([commit](https://github.com/kbongcawel-viatrm/ai-stack/commit/4122988c723ef0fa9ce7108c5b9c0f1b2887d51a)).
+
+> The SHA above identifies the current scaffold/MCP/skill-validation baseline checkpoint, not a claim that every listed task was introduced by one atomic commit. The work was built across multiple commits. Link the actual Linear issue once created.
+
+#### session#002 - Set up Cline app, CLI, provider, and model
+
+**Status:** Planned — do not mark complete until provider authentication and model selection have been tested.
+
+**Summary:** Configure the Cline IDE application and Cline CLI to use a deliberate provider/model combination. Confirm the provider's supported API endpoint, model identifier, authentication method, and any required capabilities. Keep IDE and CLI configuration consistent where appropriate while respecting their separate configuration stores.
+
+**Planned tasks**
+- Install or update Cline CLI and verify its version.
+- Set up the Cline IDE extension/app and confirm the repository opens as a workspace.
+- Select the intended provider (Cline API or another supported provider) and verify the exact model ID against current provider documentation.
+- Configure API endpoint and credentials using the supported UI/CLI flow; do not put secrets in tracked files or Linear.
+- Verify model availability, authentication, basic completion, and tool-use behavior where applicable.
+- Document local prerequisites, configuration locations, test commands, and troubleshooting steps.
+- Update the Linear issue with validation evidence and commit the completed changes.
+
+**Acceptance criteria**
+- Cline CLI starts and reports the expected version.
+- Cline IDE app loads the project rules and project skills.
+- The chosen provider authenticates successfully and the selected model responds to a test prompt.
+- No secrets are committed or written to the session record.
+- Validation and any limitations are documented.
+
+**Commit reference:** `session#002: pending implementation` — replace with the full Git SHA after the implementation commit exists.
+
+### Commit and session traceability
+
+- Use one focused implementation commit per coherent session when practical; split unrelated work into separate commits.
+- A session may span several commits. If so, record the primary completion commit plus any related commit links in Linear.
+- Record a full commit SHA and clickable GitHub URL only after GitHub confirms the commit exists.
+- Never fabricate a Linear issue ID, commit SHA, test result, or completion status.
+- Keep Linear as the work planning/handoff record and GitHub as the source-control record. The session log in this README is a concise index, not a replacement for the detailed issue.
+
 ## Structure
 ```text
 .agents/       portable rules, memory, provider docs, skills, session templates
 .clinerules/   Cline project rules
-.cline/        Cline-specific extension points
+.cline/        Cline-specific extension points and project MCP configuration
 docs/          architecture and workflow documentation
 scripts/       repeatable setup and static validation
 .github/       CI validation and pull-request template
