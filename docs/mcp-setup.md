@@ -1,45 +1,45 @@
-# Linear and GitHub MCP setup for Cline
+# Read-only Linear and GitHub MCP setup for Cline
 
-This repository includes a project-level MCP configuration at `.cline/mcp.json`. It defines the official hosted Linear MCP server and GitHub's hosted MCP endpoint. MCP tools are powerful; keep write tools unapproved by default and review every write action.
+The project MCP configuration at `.cline/mcp.json` uses **read-only server endpoints** for both Linear and GitHub. This is a server-side tool restriction; `autoApprove: []` is an additional approval safeguard, not the mechanism that makes the connections read-only.
 
 ## Linear
 
-- Endpoint: `https://mcp.linear.app/mcp`
+- Endpoint: `https://mcp.linear.app/mcp/readonly`
 - Transport: Streamable HTTP
-- Authentication: complete the OAuth sign-in flow when Cline prompts.
-- The endpoint is the official hosted Linear MCP server; a separate custom Linear OAuth application is not required for the standard connection.
-- For read-only access, use `https://mcp.linear.app/mcp/readonly` instead.
+- Authentication: use OAuth if the client requests it, or a Linear API key with only the **Read** permission.
+- The `/readonly` endpoint only exposes read tools. Do not change it to `/mcp` unless write access is explicitly approved.
 
-After opening the repository in Cline, open **MCP Servers**, inspect the project server configuration, connect to Linear, and complete browser authorization. Test with a read-only request (for example, list teams or find an issue) before allowing write operations.
+Test with a read-only request, such as finding an issue or listing teams. Do not use create, update, comment, or state-transition operations.
 
 ## GitHub
 
-- Endpoint: `https://api.githubcopilot.com/mcp/`
+- Endpoint: `https://api.githubcopilot.com/mcp/readonly`
 - Transport: Streamable HTTP
-- Authentication: GitHub Personal Access Token (PAT).
+- Authentication: GitHub token supplied locally.
 
-The committed `.cline/mcp.json` contains a placeholder only. Do not commit a real PAT. Before connecting, replace `REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN` in your local working copy with a token created for your account. Prefer a fine-grained PAT restricted to the repositories and permissions required for your tasks. Start with read-only access; grant contents/issues/pull-request write permissions only if your workflow requires them.
+The `/readonly` endpoint disables write tools on the MCP server. The committed `.cline/mcp.json` contains a placeholder only. Replace `REPLACE_WITH_READ_ONLY_GITHUB_TOKEN` locally with a token that has only the minimum required **read** permissions and is restricted to the intended repositories. Do not use a classic PAT or fine-grained PAT with contents, issues, pull requests, actions, or other write permissions.
 
-Because a token is a secret, do not paste a real token into chat, issue comments, logs, or committed files. If the local config is accidentally committed with a real token, revoke the token immediately and remove it from history as appropriate.
+The endpoint restriction and the token permissions should both be read-only. The token permissions remain important because credentials can be used outside this MCP client too.
 
-## Load and verify
+## Verify after configuration
 
-1. Open the repository root in Cline.
-2. Open **MCP Servers** and review the project MCP configuration.
-3. Authenticate Linear through OAuth and set the local GitHub token placeholder.
-4. Restart/reload the MCP servers.
-5. Confirm both servers report connected and their tools are listed.
-6. Test read-only operations first. Keep `autoApprove` empty so Cline asks before using tools.
-7. Check the loaded configuration with `cline config mcp --json` if supported by your installed Cline CLI.
+1. Open the repository in Cline and reload the MCP servers.
+2. Confirm the displayed Linear and GitHub endpoints end in `/readonly`.
+3. Confirm the GitHub token has read-only repository permissions and the Linear credential has only read scope/permission.
+4. Verify that search/read tools are available.
+5. Verify that create/update/delete/merge tools are not exposed. If any write tool is available, disconnect the server and investigate before use.
+6. Keep `autoApprove` empty. This requires approval for tool calls where supported but is not a substitute for server-side read-only mode.
 
-Cline also supports user-level MCP configuration. If your installed version does not load project-level `.cline/mcp.json`, add the same server entries through **MCP Servers → Configure MCP Servers** in Cline's settings. Do not overwrite existing user-level server entries; merge them.
+## Important limitations
 
-## Security notes
+- A project config cannot force a user to choose read-only credentials when they authenticate. Check the actual token/scopes in the provider settings.
+- These settings apply to these MCP connections only; they do not make GitHub access through other credentials, the browser, CLI, or other MCP servers read-only.
+- Do not store credentials in this tracked file, `.env.example`, Linear issues, logs, or commits. If a real token is committed, revoke it immediately.
+- Do not switch either endpoint back to a read-write URL without explicit authorization.
 
-- The project config is a template. OAuth approval and the GitHub PAT are local user actions and cannot be completed by committing this file.
-- Never enable blanket auto-approval for issue creation, repository writes, PR merges, or destructive actions.
-- Review repository scope, permissions, and organization policy before authorizing GitHub.
-- Official docs:
-  - https://linear.app/docs/mcp
-  - https://github.com/github/github-mcp-server
-  - https://github.com/cline/cline/blob/main/docs/mcp/mcp-overview.mdx
+## Official documentation
+
+- Linear MCP: https://linear.app/docs/mcp
+- GitHub MCP server configuration: https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md
+- GitHub remote MCP server: https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
+- Cline MCP overview: https://github.com/cline/cline/blob/main/docs/mcp/mcp-overview.mdx
