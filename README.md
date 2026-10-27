@@ -4,7 +4,7 @@ AI models, an AI coding assistant, repo-based memory and skills, Linear for sess
 
 ## Diagram
 https://excalidraw.com/#json=FHASE2MuEnxo-PBys7TUO,pwDQ6odBoOZ_RUu4iaoA4A
-<img width="1020" height="660" alt="image" src="https://github.com/user-attachments/assets/4e3dc18e-2e82-4a4f-a270-572308a94fb7" />
+<img width="820" height="460" alt="image" src="https://github.com/user-attachments/assets/4e3dc18e-2e82-4a4f-a270-572308a94fb7" />
 
 
 
