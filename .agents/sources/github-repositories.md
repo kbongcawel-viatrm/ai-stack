@@ -36,6 +36,21 @@ Use this registry when researching technology-specific tasks. Prefer the officia
 | Container image storage and layers | [containers/storage](https://github.com/containers/storage) | [containers/storage](https://github.com/containers/storage) |
 | OCI image/runtime specifications | [opencontainers/image-spec](https://github.com/opencontainers/image-spec), [opencontainers/runtime-spec](https://github.com/opencontainers/runtime-spec) | [OpenContainers specifications](https://opencontainers.org/) |
 
+## Fedora Secureblue and immutable Fedora
+
+| Skill / area | Upstream repository | Official documentation |
+|---|---|---|
+| Secureblue image, hardening defaults, system commands, updates, and troubleshooting | [secureblue/secureblue](https://github.com/secureblue/secureblue) | [Secureblue documentation](https://secureblue.dev/), [FAQ](https://secureblue.dev/faq), [Features](https://secureblue.dev/features), [Post-install](https://secureblue.dev/post-install), [Kernel arguments](https://secureblue.dev/articles/kargs) |
+| Fedora Atomic / rpm-ostree behavior | [coreos/rpm-ostree](https://github.com/coreos/rpm-ostree) | [rpm-ostree documentation](https://coreos.github.io/rpm-ostree/) |
+
+## Host integrity and auditing
+
+| Skill / area | Upstream repository | Official documentation |
+|---|---|---|
+| Suricata IDS/IPS configuration, rules, EVE output, AF_PACKET, and diagnostics | [OISF/suricata](https://github.com/OISF/suricata) | [Suricata User Guide](https://docs.suricata.io/en/latest/), [Configuration](https://docs.suricata.io/en/latest/configuration/suricata-yaml.html), [Quickstart](https://docs.suricata.io/en/latest/quickstart.html) |
+| AIDE file-integrity baseline, configuration, checks, and database updates | [aide/aide](https://github.com/aide/aide) | [AIDE Manual](https://aide.github.io/doc/), [aide.conf manual](https://aide.github.io/doc/aide.conf.5.html) |
+| Linux Audit daemon, audit rules, event queries, and reports | [linux-audit/audit-userspace](https://github.com/linux-audit/audit-userspace) | [Upstream audit-userspace repository and docs](https://github.com/linux-audit/audit-userspace), [auditd(8)](https://man7.org/linux/man-pages/man8/auditd.8.html), [audit.rules(7)](https://man7.org/linux/man-pages/man7/audit.rules.7.html), [auditctl(8)](https://man7.org/linux/man-pages/man8/auditctl.8.html) |
+
 ## Security monitoring, forensics, and analysis
 
 | Skill / area | Upstream repository | Documentation |
