@@ -7,20 +7,20 @@
 - Status: planned / in progress / blocked / done
 
 ## Goal
-<Outcome, not a list of implementation steps.>
+<Outcome, not implementation steps.>
 
 ## Context
-<Relevant paths, architecture, constraints, prior decisions. Link durable facts in .agents/memory/.>
+<Relevant paths, architecture, constraints, decisions. Link `.agents/memory/`.>
 
 ## Acceptance criteria
 - [ ] <observable criterion>
 - [ ] <validation criterion>
 
 ## Plan
-1. <inspect>
-2. <implement>
-3. <validate>
-4. <document and hand off>
+1. Inspect
+2. Implement
+3. Validate
+4. Document and hand off
 
 ## Risks / dependencies
 - <risk or dependency>
