@@ -26,3 +26,9 @@ Never train on confidential or unlicensed data without authorization. Do not put
 ## References
 - https://docs.ollama.com/
 - https://github.com/ollama/ollama/blob/main/docs/modelfile.md
+
+
+## Upstream sources
+- https://github.com/ollama/ollama
+- https://docs.ollama.com/
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
