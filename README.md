@@ -36,6 +36,18 @@ INSTALL_LINEAR_CLI=1 ./scripts/install-ai-tools.sh
 
 Review package provenance and workflow side effects before adoption.
 
+### Resume an interrupted session
+
+Run the read-only session report from the repository root:
+
+```bash
+bash scripts/resume-session.sh
+# Optionally identify a known Linear issue explicitly:
+bash scripts/resume-session.sh --linear ENG-123
+```
+
+It reports the current branch and worktree status, the newest actual handoff and session record, Linear references found in those local files, and unchecked checklist actions. It does not modify Git state or call Linear directly. Use the configured read-only Linear MCP to fetch live issue details. See the [session-resume skill](.agents/skills/session-resume/SKILL.md).
+
 ### Session documentation and memory
 
 Linear is the authoritative memory for session progress, decisions, blockers, and handoffs. Keep repository Markdown as a concise, portable snapshot linked to the Linear issue and Git commit rather than maintaining a second full narrative. Generate a session record interactively with:
