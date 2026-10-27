@@ -1,0 +1,47 @@
+# Secrets and local provider credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.credentials/
+.cline/data/
+.cline/logs/
+.cline/sessions/
+.cline/cache/
+.cline/tmp/
+.cline/worktrees/
+.cline-local/
+.cline.local.*
+linear-token*
+*.sqlite
+*.sqlite3
+*.db
+
+# Local memory drafts and private handoffs
+.agents/memory/local/
+.agents/sessions/local/
+.agents/private/
+*.private.md
+*.local.md
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Runtime/build output
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.tmp/
+tmp/
