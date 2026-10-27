@@ -2,17 +2,17 @@
   "$schema": "https://raw.githubusercontent.com/cline/cline/main/schemas/mcp-settings.schema.json",
   "mcpServers": {
     "linear": {
-      "url": "https://mcp.linear.app/mcp",
+      "url": "https://mcp.linear.app/mcp/readonly",
       "type": "streamableHttp",
       "disabled": false,
       "autoApprove": []
     },
     "github": {
-      "url": "https://api.githubcopilot.com/mcp/",
+      "url": "https://api.githubcopilot.com/mcp/readonly",
       "type": "streamableHttp",
       "disabled": false,
       "headers": {
-        "Authorization": "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN"
+        "Authorization": "Bearer REPLACE_WITH_READ_ONLY_GITHUB_TOKEN"
       },
       "autoApprove": []
     }
