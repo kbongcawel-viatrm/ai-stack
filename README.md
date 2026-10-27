@@ -1,34 +1,75 @@
 # Modular AI stack
 
-AI models, an AI coding assistant, repo-based memory and skills, Linear for sessions and planning, and GitHub for source control.
+A provider/model-modular AI development workflow. GitHub stores code and curated shared agent context; Cline is the primary terminal/IDE coding agent; provider credentials stay local or in secret management; Linear tracks planning, decisions, and work handoffs.
 
-## Diagram
-https://excalidraw.com/#json=FHASE2MuEnxo-PBys7TUO,pwDQ6odBoOZ_RUu4iaoA4A
-<img width="820" height="460" alt="image" src="https://github.com/user-attachments/assets/4e3dc18e-2e82-4a4f-a270-572308a94fb7" />
+## Architecture
+1. **Provider/API:** Cline API, Anthropic, OpenAI, AWS Bedrock, OpenRouter, or local Ollama. Select based on capability, cost, privacy, and runtime requirements.
+2. **Agent runtime:** Cline CLI and/or IDE extension; configure authentication separately.
+3. **Shared context:** `.agents/` contains portable rules, curated memory, reusable skills, provider docs, and session templates. `.clinerules/` and `.cline/` provide Cline-specific project entry points.
+4. **Planning:** Linear issues capture goals, acceptance criteria, decisions, blockers, and handoffs. Linear MCP is the recommended agent integration.
+5. **Source control:** GitHub holds code and reviewed context and tracks changes via commits and pull requests.
 
+## Quick start
 
+### Install Cline CLI
+Prerequisite: supported Node.js LTS (20+; current guide recommends Node.js 22) and npm.
 
-Each part is described in more detail in [README.md](README.md).
+```bash
+./scripts/install-ai-tools.sh
+cline --version
+cline auth
+```
 
-1. **AI provider / model:** Anthropic API, AWS Bedrock, OpenAI API, or a local Ollama endpoint.
-2. **AI assistant tool:** Cline or Cursor, running on each workstation.
-3. **Memory + skills storage:** Rules and memory files committed in the repository.
-4. **Session, workflow, and planning:** Linear, which holds sessions, planning, and documentation.
-5. **Git repository for SCM:** GitHub, which holds the code and memory files and receives pull requests.
+The installer only installs tools; it does not authenticate or create credentials.
+
+### Configure a provider
+Read [Cline CLI setup](.agents/providers/cline-cli.md) and [Cline API setup](.agents/providers/cline-api.md). The Cline API is at `https://api.cline.bot/api/v1`; it is not a separate CLI package. Create API keys in the official account and keep them outside Git. Other providers require their own supported model IDs and auth.
+
+`.env.example` documents variable names only. A local `.env` is ignored; never commit credentials.
+
+### Linear
+Use Linear's official MCP endpoint `https://mcp.linear.app/mcp` with the compatible client's authenticated MCP setup. See [workflow](docs/linear-planning.md) and [provider notes](.agents/providers/linear.md). An optional third-party CLI is documented there; it is not required for Linear MCP:
+
+```bash
+INSTALL_LINEAR_CLI=1 ./scripts/install-ai-tools.sh
+```
+
+Review package provenance and workflow side effects before adoption.
+
+### Plan and hand off
+Create/update a Linear issue with a goal and acceptance criteria. Use `.agents/sessions/templates/SESSION_PLAN.md` for planning and `HANDOFF.md` for cross-device handoff. Commit only durable, non-sensitive memory. See [repository layout](docs/repository-layout.md).
+
+## Structure
+```text
+.agents/       portable rules, memory, provider docs, skills, session templates
+.clinerules/   Cline project rules
+.cline/        Cline-specific extension points
+docs/          architecture and workflow documentation
+scripts/       repeatable setup and static validation
+.github/       CI validation and pull-request template
+```
 
 ## Workflow
+1. Read working agreement and relevant skill/memory.
+2. Plan non-trivial work in Linear.
+3. Implement the smallest coherent change on a branch.
+4. Test and review; update handoff/memory when durable context changes.
+5. Open a PR with validation results and link the Linear issue.
+6. Merge after review/checks. Never store raw transcripts, credentials, or sensitive production data in repository memory.
 
-1. Choose a provider and model in the Cline or Cursor settings.
-2. Clone the GitHub repository. The rules and memory files load automatically.
-3. Create or pick a Linear issue for the work. Use its ID in the branch name, for example `KEV-123-add-vpn-check`.
-4. Work with the assistant. Update the memory files after significant milestones.
-5. Before switching workstations, write a handoff summary as a Linear comment or document on the issue.
-6. On the other workstation, pull the repository, read the Linear handoff, and continue.
-7. Open a pull request. Linear links it to the issue through the branch name or PR title and moves the issue as the PR progresses.
+## Validation
+```bash
+bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh
+bash scripts/test-install-ai-tools.sh
+git status --short
+```
 
-## Notes and things to verify
+## References
+- https://docs.cline.bot/getting-started/installing-cline
+- https://docs.cline.bot/cli/cli-reference
+- https://docs.cline.bot/api/overview
+- https://docs.cline.bot/api/authentication
+- https://linear.app/docs/mcp
 
-- Linear is a planning tool, not a chat-transcript store. Save handoff summaries and decisions, not raw conversations.
-- Cline's built-in task history is believed to be local to each machine. Confirm this for your version.
-- Cline global custom instructions do not sync between machines. Put anything that must follow you into `.clinerules/` in the repository.
-- Store provider API keys in a secrets manager or environment variables. Never commit them to the repository or post them in Linear.
+## Diagram
+[Architecture diagram](https://excalidraw.com/#json=FHASE2MuEnxo-PBys7TUO,pwDQ6odBoOZ_RUu4iaoA4A)
