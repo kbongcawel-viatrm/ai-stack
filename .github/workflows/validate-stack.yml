@@ -1,4 +1,4 @@
-name: Validate agent scaffold
+name: Test AI Stack Bootstrapping
 
 on:
   push:
