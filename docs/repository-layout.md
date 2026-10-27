@@ -15,7 +15,7 @@ ai-stack/
 │   └── skills/             # Cline-facing adapters
 ├── .clinerules/             # Cline project rules
 ├── docs/                    # setup and workflow documentation
-├── scripts/                 # installers and validation
+├── scripts/                 # installers, session doc generator, and validation
 ├── .env.example             # placeholders only
 └── .gitignore               # local state/secrets excluded
 ```
