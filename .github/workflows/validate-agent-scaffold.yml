@@ -20,6 +20,25 @@ jobs:
         run: bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh
       - name: Run scaffold checks
         run: bash scripts/test-install-ai-tools.sh
+      - name: Validate MCP JSON
+        run: python -m json.tool .cline/mcp.json >/dev/null
+      - name: Validate canonical and Cline skill parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r canonical; do
+            relative="${canonical#.agents/skills/}"
+            mirror=".cline/skills/$relative"
+            test -s "$mirror" || { echo "Missing Cline skill mirror: $mirror" >&2; exit 1; }
+            cmp -s "$canonical" "$mirror" || {
+              echo "Skill copy differs: $canonical vs $mirror" >&2
+              exit 1
+            }
+            count=$((count + 1))
+          done < <(find .agents/skills -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print | sort)
+          test "$count" -gt 0
+          echo "Validated $count canonical skills and matching Cline copies."
       - name: Check required files
         shell: bash
         run: |
@@ -31,6 +50,8 @@ jobs:
             .agents/providers/linear.md \
             .agents/skills/api-provider-setup/SKILL.md \
             .agents/sessions/templates/HANDOFF.md \
+            .cline/mcp.json \
+            docs/mcp-setup.md \
             .clinerules/00-project.md \
             .gitignore README.md; do
             test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
