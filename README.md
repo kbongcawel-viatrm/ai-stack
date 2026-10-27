@@ -12,7 +12,7 @@ A provider/model-modular AI development workflow. GitHub stores code and curated
 ## Quick start
 
 ### Install Cline CLI
-Prerequisite: supported Node.js LTS (20+; current guide recommends Node.js 22) and npm.
+Prerequisite: Bash, Git, and network access. The installer bootstraps nvm (pinned to v0.40.8 by default) and installs the latest Node.js LTS with `nvm install --lts`; npm comes bundled with Node.js.
 
 ```bash
 ./scripts/install-ai-tools.sh
@@ -20,7 +20,7 @@ cline --version
 cline auth
 ```
 
-The installer only installs tools; it does not authenticate or create credentials.
+The installer uses nvm to install and activate the latest Node.js LTS and sets the default alias to `lts/*`. It then installs the selected global npm tools under that nvm-managed Node.js version. It does not authenticate or create credentials. Re-run the installer to refresh the active LTS; global npm packages are version-specific under nvm.
 
 ### Configure a provider
 Read [Cline CLI setup](.agents/providers/cline-cli.md) and [Cline API setup](.agents/providers/cline-api.md). The Cline API is at `https://api.cline.bot/api/v1`; it is not a separate CLI package. Create API keys in the official account and keep them outside Git. Other providers require their own supported model IDs and auth.
