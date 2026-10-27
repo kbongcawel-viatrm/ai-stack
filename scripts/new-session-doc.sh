@@ -117,13 +117,13 @@ ${validation:-Not run or not recorded yet.}
 
 ## 5. Commands
 
-```text
+\`\`\`text
 ${commands:-Not recorded yet.}
-```
+\`\`\`
 
 ## 6. Session and commit
 
-- `session#$session_number | $commit_hash`
+- \`session#$session_number | $commit_hash\`
 
 > Verify the full commit hash after committing. If this document is included in the implementation commit, update the hash in a follow-up commit to avoid a self-referential commit record.
 EOF
