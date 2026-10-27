@@ -1,4 +1,4 @@
-name: Test AI Stack Bootstrapping
+name: Validate AI Stack Bootstrapping
 
 on:
   push:
@@ -26,12 +26,33 @@ jobs:
             exit 1
           fi
       - name: Validate session scripts syntax
-        run: bash -n scripts/new-session-doc.sh scripts/test-new-session-doc.sh scripts/resume-session.sh scripts/test-resume-session.sh
-      - name: Run scaffold checks
         run: |
-          bash scripts/test-install-ai-tools.sh
-          bash scripts/test-new-session-doc.sh
-          bash scripts/test-resume-session.sh
+          if bash -n scripts/new-session-doc.sh scripts/test-new-session-doc.sh scripts/resume-session.sh scripts/test-resume-session.sh; then
+            echo "Syntax validation successful."
+          else
+            echo "Syntax validation failed." >&2
+            exit 1
+          fi
+      - name: Run boostrap checks
+        run: |
+          if bash -n scripts/test-install-ai-tools.sh bash scripts/test-install-ai-tools.sh; then
+             echo "Passed"
+          else
+            echo "Failed" >&2
+            exit 1
+          fi
+          if bash -n scripts/test-new-session-doc.sh bash scripts/test-new-session-doc.sh; then
+             echo "Passed"
+          else
+            echo "Failed" >&2
+            exit 1
+          fi
+          if bash -n scripts/test-resume-session.sh bash scripts/test-resume-session.sh; then
+             echo "Passed"
+          else
+            echo "Failed" >&2
+            exit 1
+          fi
       - name: Validate MCP JSON
         run: python -m json.tool .cline/mcp.json >/dev/null
       - name: Validate canonical and Cline skill parity
