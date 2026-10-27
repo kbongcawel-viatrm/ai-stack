@@ -44,7 +44,7 @@ grep -q '=== Latest handoff ===' <<<"$output"
 grep -q '=== Latest session record ===' <<<"$output"
 grep -q 'Run validation' <<<"$output"
 grep -q 'Verify read-only behavior' <<<"$output"
-grep -q 'read-only guarantee' <<<"$output"
+grep -q 'Read-only guarantee' <<<"$output"
 
 # Without an explicit issue, references should be discovered from local Markdown.
 output="$(bash scripts/resume-session.sh)"
