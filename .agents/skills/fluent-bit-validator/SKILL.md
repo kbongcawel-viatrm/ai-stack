@@ -28,3 +28,9 @@ Obtain the exact config files, Fluent Bit version/build, launch command, contain
 
 ## Output format
 Summarize configuration identity/version, checks executed, results, evidence, failures, data-loss risks, and deployment recommendation. Distinguish static inspection from runtime-tested validation.
+
+
+## Upstream sources
+- https://github.com/fluent/fluent-bit
+- https://docs.fluentbit.io/manual/
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
