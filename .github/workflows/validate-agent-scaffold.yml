@@ -17,7 +17,14 @@ jobs:
       - uses: actions/checkout@v4
         name: Checkout
       - name: Validate installer syntax
-        run: bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh
+        shell: bash
+        run: |
+          if bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh; then
+            echo "Installed"
+          else
+            echo "Installer syntax validation failed" >&2
+            exit 1
+          fi
       - name: Validate session scripts syntax
         run: bash -n scripts/new-session-doc.sh scripts/test-new-session-doc.sh scripts/resume-session.sh scripts/test-resume-session.sh
       - name: Run scaffold checks
