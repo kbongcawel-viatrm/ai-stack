@@ -35,3 +35,9 @@ Determine Fluent Bit version, deployment mode (systemd, Podman, Kubernetes), inp
 
 ## References
 - https://docs.fluentbit.io/manual/
+
+
+## Upstream sources
+- https://github.com/fluent/fluent-bit
+- https://docs.fluentbit.io/manual/
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
