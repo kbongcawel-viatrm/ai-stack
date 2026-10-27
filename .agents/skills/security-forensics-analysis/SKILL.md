@@ -28,3 +28,13 @@ Confirm authorization, scope, incident owner, time zone, and permitted collectio
 
 ## Fedora / container context
 For systemd hosts, use read-only journal and audit inspection first. For Podman, distinguish rootless and rootful contexts and preserve container inspect data, image digests, logs, mounts, and events. Do not disable SELinux or security controls as a triage shortcut.
+
+
+## Upstream sources
+- https://github.com/wazuh/wazuh
+- https://github.com/OISF/suricata
+- https://github.com/zeek/zeek
+- https://github.com/volatilityfoundation/volatility3
+- https://github.com/VirusTotal/yara
+- See the shared registry for documentation links and additional sources.
+- Shared index: [GitHub repository sources](../../sources/github-repositories.md). Verify the upstream version against the target deployment before relying on examples.
