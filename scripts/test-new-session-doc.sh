@@ -25,7 +25,35 @@ printf '%s\n' \
 output='docs/sessions/session#001-initialize.md'
 test -s "$output"
 grep -q '^# session#001 - initialize$' "$output"
-grep -q '^## 1. Summary$' "$output"
+grep -q '^## 0. Date
+grep -q '^## 2. Plan$' "$output"
+grep -q '^## 3. Changes$' "$output"
+grep -q '^## 4. Validation steps$' "$output"
+grep -q '^## 5. Commands$' "$output"
+grep -q 'session#001 | 0123456789abcdef0123456789abcdef01234567' "$output"
+grep -q 'ENG-123' "$output"
+
+# Existing records must never be overwritten.
+if GIT_COMMIT=0123456789abcdef0123456789abcdef01234567 bash scripts/new-session-doc.sh 001 initialize >/dev/null 2>&1; then
+  echo 'Expected duplicate output file to be rejected' >&2
+  exit 1
+fi
+printf 'PASS: syntax, generated sections, Linear link, commit metadata, and no-overwrite guard\n'
+ "$output"\ngrep -q '^## 1. Summary
+grep -q '^## 2. Plan$' "$output"
+grep -q '^## 3. Changes$' "$output"
+grep -q '^## 4. Validation steps$' "$output"
+grep -q '^## 5. Commands$' "$output"
+grep -q 'session#001 | 0123456789abcdef0123456789abcdef01234567' "$output"
+grep -q 'ENG-123' "$output"
+
+# Existing records must never be overwritten.
+if GIT_COMMIT=0123456789abcdef0123456789abcdef01234567 bash scripts/new-session-doc.sh 001 initialize >/dev/null 2>&1; then
+  echo 'Expected duplicate output file to be rejected' >&2
+  exit 1
+fi
+printf 'PASS: syntax, generated sections, Linear link, commit metadata, and no-overwrite guard\n'
+ "$output"
 grep -q '^## 2. Plan$' "$output"
 grep -q '^## 3. Changes$' "$output"
 grep -q '^## 4. Validation steps$' "$output"
