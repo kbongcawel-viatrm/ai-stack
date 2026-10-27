@@ -19,6 +19,8 @@ The canonical cross-agent skill source is `.agents/skills/`; matching copies are
 - `python-development`
 - `security-forensics-analysis`
 
+- `git-operations` is the Git/GitHub workflow skill. Its canonical source is `.agents/skills/git-operations/SKILL.md`; keep both copies identical.
+
 ## Verification
 
 From the repository root, compare the canonical and Cline skill folder names and ensure each contains `SKILL.md`. Reload the Cline workspace after adding skills if they do not appear in skill discovery.
