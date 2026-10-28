@@ -1,0 +1,28 @@
+title = "AI Stack Gitleaks Configuration"
+
+[extend]
+# Use the default Gitleaks configuration
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for AI Stack repository"
+regexTarget = "line"
+
+# Allowlist specific files and paths
+paths = [
+  '''\.gitleaks\.toml$''',  # Ignore this config file
+  '''\.env\.example$''',     # Ignore example env files (no real secrets)
+  '''\.env$''',              # Ignore local .env files (should be in .gitignore)
+  '''(.*?)(jpg|gif|png|pdf|bin)$''',  # Ignore binary files
+  '''scripts/test-.*\.sh$''', # Ignore test scripts
+  '''\.git/''',              # Ignore git directory
+  '''node_modules/''',       # Ignore npm dependencies
+  '''vendor/''',             # Ignore vendor directories
+]
+
+# Allowlist specific patterns (false positives)
+regexes = [
+  '''REPLACE_WITH_''',       # Placeholder strings
+  '''YOUR_.*_HERE''',        # Generic placeholders
+  '''<.*>''',                # XML/HTML tags
+]

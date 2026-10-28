@@ -12,7 +12,7 @@
       "type": "streamableHttp",
       "disabled": false,
       "headers": {
-        "Authorization": "Bearer REPLACE_WITH_READ_ONLY_GITHUB_TOKEN"
+        "Authorization": "Bearer [GITHUB_READ_ONLY_TOKEN]"
       },
       "autoApprove": []
     }

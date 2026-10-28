@@ -160,3 +160,177 @@ def generate_findings(report: Dict[str, Any]) -> Dict[str, Any]:
     report["findings"] = findings
     report["recommendations"] = list(set(recommendations))
     return report
+
+
+def generate_markdown_report(report: Dict[str, Any]) -> str:
+    """Generate a markdown report from parsed session data"""
+    md = []
+    md.append(f"# Session Forensics Report")
+    md.append(f"\n**Host:** {report['metadata']['hostname']}")
+    md.append(f"**Analysis Timestamp:** {report['metadata']['analysis_timestamp']}")
+    md.append(f"**Generated:** {report['metadata']['generated_at']}")
+    md.append(f"\n> {report['metadata']['disclaimer']}")
+    md.append("\n---\n")
+
+    # Executive Summary
+    md.append("## Executive Summary")
+    md.append(f"\nTotal active sessions: {report['active_sessions']['total_count']}")
+    md.append(f"Total findings: {len(report['findings'])}")
+    md.append(f"Total recommendations: {len(report['recommendations'])}")
+    md.append("\n---\n")
+
+    # Active Sessions
+    md.append("## Active Sessions")
+    if report['active_sessions']['users']:
+        for user in report['active_sessions']['users']:
+            md.append(f"- **User:** {user.get('user', 'N/A')}")
+            md.append(f"  - Session ID: {user.get('session_id', 'N/A')}")
+            md.append(f"  - TTY: {user.get('tty', 'N/A')}")
+            md.append(f"  - From: {user.get('from', 'N/A')}")
+            md.append(f"  - Status: {user.get('status', 'N/A')}")
+            md.append("")
+    else:
+        md.append("No active sessions detected.")
+    md.append("\n---\n")
+
+    # Findings
+    md.append("## Findings")
+    if report['findings']:
+        for finding in report['findings']:
+            severity_emoji = {
+                'high': '🔴',
+                'medium': '🟡',
+                'low': '🟢'
+            }.get(finding['severity'], '⚪')
+            md.append(f"\n### {severity_emoji} {finding['title']}")
+            md.append(f"**Severity:** {finding['severity']}")
+            md.append(f"**Type:** {finding['type']}")
+            md.append(f"\n{finding['description']}")
+            md.append(f"\n**Evidence:** {finding['evidence']}")
+    else:
+        md.append("No security findings detected.")
+    md.append("\n---\n")
+
+    # Recommendations
+    md.append("## Recommendations")
+    if report['recommendations']:
+        for i, rec in enumerate(report['recommendations'], 1):
+            md.append(f"{i}. {rec}")
+    else:
+        md.append("No recommendations at this time.")
+    md.append("\n---\n")
+
+    # Authentication Events
+    md.append("## Authentication Events")
+    if report['authentication_events']:
+        for event in report['authentication_events'][:10]:  # Limit to last 10
+            md.append(f"- **{event['timestamp']}** [{event['priority']}] {event['message']}")
+    else:
+        md.append("No recent authentication events.")
+    md.append("\n---\n")
+
+    # Login History
+    md.append("## Recent Login History")
+    if report['login_history']:
+        for login in report['login_history'][:10]:  # Limit to last 10
+            md.append(f"- **{login['user']}** logged in at {login['login_time']} from {login['from']}")
+    else:
+        md.append("No login history available.")
+    md.append("\n---\n")
+
+    # Data Sources
+    md.append("## Data Sources")
+    md.append(f"Sources used: {', '.join(report['metadata']['data_sources'])}")
+    md.append("\n---\n")
+    md.append("*End of Report*")
+
+    return "\n".join(md)
+
+
+def generate_json_report(report: Dict[str, Any]) -> str:
+    """Generate a JSON report from parsed session data"""
+    return json.dumps(report, indent=2)
+
+
+def main():
+    """Main CLI entry point"""
+    parser = argparse.ArgumentParser(
+        description="Generate session forensics reports from collected data"
+    )
+    parser.add_argument(
+        "--input",
+        "-i",
+        default="/tmp/latest-session-forensics.json",
+        help="Path to session forensics JSON input file"
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        help="Output file path (default: stdout or auto-generated)"
+    )
+    parser.add_argument(
+        "--format",
+        "-f",
+        choices=["markdown", "json", "both"],
+        default="markdown",
+        help="Output format (default: markdown)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        "-d",
+        default="/tmp",
+        help="Output directory for reports (default: /tmp)"
+    )
+
+    args = parser.parse_args()
+
+    # Read input file
+    if not os.path.exists(args.input):
+        print(f"Error: Input file not found: {args.input}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(args.input, 'r') as f:
+        session_data = json.load(f)
+
+    # Parse and analyze data
+    report = parse_session_data(session_data)
+
+    # Generate output
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    hostname = report['metadata']['hostname']
+
+    if args.format == "markdown":
+        output = generate_markdown_report(report)
+        default_filename = f"session-forensics-{hostname}-{timestamp}.md"
+    elif args.format == "json":
+        output = generate_json_report(report)
+        default_filename = f"session-forensics-{hostname}-{timestamp}.json"
+    else:  # both
+        md_output = generate_markdown_report(report)
+        json_output = generate_json_report(report)
+        md_filename = f"session-forensics-{hostname}-{timestamp}.md"
+        json_filename = f"session-forensics-{hostname}-{timestamp}.json"
+        md_path = os.path.join(args.output_dir, md_filename)
+        json_path = os.path.join(args.output_dir, json_filename)
+        with open(md_path, 'w') as f:
+            f.write(md_output)
+        with open(json_path, 'w') as f:
+            f.write(json_output)
+        print(f"Markdown report: {md_path}")
+        print(f"JSON report: {json_path}")
+        sys.exit(0)
+
+    # Write output
+    if args.output:
+        output_path = args.output
+    else:
+        output_path = os.path.join(args.output_dir, default_filename)
+
+    with open(output_path, 'w') as f:
+        f.write(output)
+
+    print(f"Report generated: {output_path}")
+
+
+if __name__ == "__main__":
+    main()
