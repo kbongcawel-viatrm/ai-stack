@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   validate:
-    runs-on: [self-hosted, ai-workspace]
+    runs-on: [self-hosted, codespace]
     steps:
       - uses: actions/checkout@v4
         name: Checkout
