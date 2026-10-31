@@ -99,6 +99,10 @@ jobs:
             .cline/mcp.json \
             docs/mcp-setup.md \
             .clinerules/00-project.md \
-            .gitignore README.md; do
+            .gitignore README.md \
+            php-patch-automation/README.md \
+            php-patch-automation/pyproject.toml \
+            .agents/skills/php-patch-automation/SKILL.md \
+            .cline/skills/php-patch-automation/SKILL.md; do
             test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
           done

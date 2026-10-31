@@ -1,0 +1,70 @@
+name: PHP patch orchestration (guarded)
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        type: choice
+        options: [aws, azure]
+        required: true
+      bu:
+        type: string
+        required: true
+      environment:
+        type: choice
+        options: [development, test, uat, production]
+        required: true
+      patch_ring:
+        type: choice
+        options: [canary, wave-1, wave-2]
+        required: true
+      change_type:
+        type: choice
+        options: [minor-security, major-upgrade]
+        required: true
+      target_php:
+        type: string
+        required: true
+      change_reference:
+        type: string
+        required: true
+      dry_run:
+        type: boolean
+        required: true
+        default: true
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'production' && 'patch-production' || 'patch-nonprod' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e '.[dev]'
+        working-directory: php-patch-automation
+      - name: Validate request
+        working-directory: php-patch-automation
+        env:
+          TARGET_PHP: ${{ inputs.target_php }}
+          CHANGE_TYPE: ${{ inputs.change_type }}
+          BU: ${{ inputs.bu }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          php-patch validate-policy --policy config/php-policy.yml
+          python - <<'PY'
+          import os
+          from php_patch.models import classify
+          if not os.environ["BU"].strip() or not os.environ["CHANGE_REFERENCE"].strip():
+              raise SystemExit("BU and change reference are mandatory")
+          if os.environ["CHANGE_TYPE"] == "major-upgrade":
+              raise SystemExit("Major-upgrade executor not implemented; no changes made.")
+          print("Request classification only; no resources were modified.")
+          print("Target version:", os.environ["TARGET_PHP"])
+          PY
+      - name: Block unconfigured cloud mutation
+        run: |
+          echo "::error::Provider executor is not implemented. Configure and test IAM/RBAC scope, package source, health checks, and rollback before enabling."
+          exit 1
