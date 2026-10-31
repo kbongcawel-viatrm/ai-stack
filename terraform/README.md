@@ -100,6 +100,14 @@ Keep backend resource names and state keys non-secret. The backend infrastructur
 - Backend storage must be provisioned separately and protected from the workload being managed. Grant only the minimum state and lock permissions.
 - Never commit state files, plan files, `.terraform/`, real `.tfvars`, credentials, or secrets.
 
+## Workflow dependencies
+
+The GitHub-hosted Ubuntu runner installs `jq` explicitly in the BU-resolution job. The plan and apply jobs install the pinned Terraform CLI (`1.10.5`) with `hashicorp/setup-terraform` and verify the installation before use. Terraform `init` downloads the provider plugins declared by each root; the committed `.terraform.lock.hcl` pins their selections.
+
+The workflow also uses the Ubuntu runner's standard Bash, GNU find/coreutils, `tar`, and `gzip` utilities. AWS and Azure authentication is handled by their respective GitHub Actions using OIDC; static cloud credentials and separate cloud CLI installations are not required by this workflow.
+
+GitHub-hosted jobs use separate ephemeral runners, so each job installs or verifies its own tools rather than relying on files installed by another job.
+
 ## Workflow behavior and safety
 
 - The workflow is manually dispatched and accepts only a BU ID and an `apply` boolean.
