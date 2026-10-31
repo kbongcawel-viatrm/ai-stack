@@ -1,4 +1,4 @@
-name: Terraform Floci plan (BU-12345678901)
+name: Terraform Floci AWS CI (BU-12345678901)
 
 on:
   pull_request:
