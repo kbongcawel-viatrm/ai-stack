@@ -41,14 +41,14 @@ The Aurora engine version defaults to the regional RDS default when `aurora_engi
 
 ## Test the HTTP response from bastion-server
 
-After a real AWS deployment and after cloud-init has completed, obtain the app private IP and bastion instance ID:
+After deploying these modules from a separate real-AWS BU root (with its approved AWS provider identity and remote backend), and after cloud-init has completed, obtain the app private IP and bastion instance ID from that deployment root:
 
 ```bash
 terraform output -raw app_private_ip
 terraform output -raw bastion_instance_id
 ```
 
-Start a Session Manager shell from an operator workstation with AWS CLI and Session Manager plugin configured:
+This Floci-only root cannot provide real AWS instance outputs. Use the outputs from the real-AWS root that consumes these modules. Start a Session Manager shell from an operator workstation with AWS CLI and the Session Manager plugin configured:
 
 ```bash
 aws ssm start-session --target "$(terraform output -raw bastion_instance_id)" --region us-east-1
