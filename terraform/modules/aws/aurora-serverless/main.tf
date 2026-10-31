@@ -54,11 +54,11 @@ resource "aws_rds_cluster" "this" {
     max_capacity = var.max_capacity
   }
 
-  backup_retention_period      = 1
-  deletion_protection          = var.deletion_protection
-  skip_final_snapshot          = false
-  final_snapshot_identifier    = "${var.name}-final"
-  copy_tags_to_snapshot         = true
+  backup_retention_period   = 1
+  deletion_protection       = var.deletion_protection
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${var.name}-final"
+  copy_tags_to_snapshot     = true
 
   tags = merge(var.tags, {
     Name = var.name
@@ -66,16 +66,15 @@ resource "aws_rds_cluster" "this" {
 }
 
 resource "aws_rds_cluster_instance" "writer" {
-  identifier         = "${var.name}-writer"
-  cluster_identifier = aws_rds_cluster.this.id
-  instance_class     = "db.serverless"
-  engine             = aws_rds_cluster.this.engine
-  engine_version     = aws_rds_cluster.this.engine_version
-
-  db_subnet_group_name    = aws_db_subnet_group.this.name
-  publicly_accessible     = false
+  identifier                 = "${var.name}-writer"
+  cluster_identifier         = aws_rds_cluster.this.id
+  instance_class             = "db.serverless"
+  engine                     = aws_rds_cluster.this.engine
+  engine_version             = aws_rds_cluster.this.engine_version
+  db_subnet_group_name       = aws_db_subnet_group.this.name
+  publicly_accessible        = false
   auto_minor_version_upgrade = true
-  promotion_tier          = 0
+  promotion_tier             = 0
 
   tags = merge(var.tags, {
     Name = "${var.name}-writer"
