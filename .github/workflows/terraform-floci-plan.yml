@@ -127,15 +127,6 @@ jobs:
           terraform plan -input=false -no-color -lock-timeout=2m -out="$RUNNER_TEMP/bu-vpc.tfplan"
           terraform show -no-color "$RUNNER_TEMP/bu-vpc.tfplan"
 
-      - name: Upload generated provider lock file
-        uses: actions/upload-artifact@v4
-        with:
-          name: floci-terraform-lockfile
-          path: terraform/BU-12345678901/dev/us-east-1/vpc/.terraform.lock.hcl
-          if-no-files-found: error
-          retention-days: 1
-          include-hidden-files: true
-
       - name: Floci diagnostics
         if: always()
         run: |
