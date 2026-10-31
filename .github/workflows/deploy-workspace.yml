@@ -19,9 +19,6 @@ jobs:
     container:
       image: fedora:44
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Install Fedora tooling and capture versions
         shell: bash
         run: |
@@ -69,14 +66,14 @@ jobs:
           nvm_version="$(nvm --version)"
           node_version="$(node --version)"
           npm_version="$(npm --version)"
-          cline_version="$(cline --version 2>&1 | head -n 1)"
-          terraform_version="$(terraform --version | head -n 1)"
-          gh_version="$(gh --version | head -n 1)"
+          cline_version="$(cline --version 2>&1 | sed -n '1p')"
+          terraform_version="$(terraform --version | sed -n '1p')"
+          gh_version="$(gh --version | sed -n '1p')"
           git_version="$(git --version)"
           awscli_version="$(aws --version 2>&1)"
           floci_version="$(floci --version 2>&1 || echo 'Floci version unavailable')"
           python_version="$(python3 --version)"
-          ansible_version="$(/opt/ansible-venv/bin/ansible --version | head -n 1)"
+          ansible_version="$(/opt/ansible-venv/bin/ansible --version | sed -n '1p')"
 
           jq -n \
             --arg nvm "$nvm_version" \
