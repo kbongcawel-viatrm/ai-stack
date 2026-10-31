@@ -102,7 +102,7 @@ jobs:
             .gitignore README.md \
             reusable-workflows/php-patch-automation/README.md \
             reusable-workflows/php-patch-automation/pyproject.toml \
-             .agents/skills/php-patch-automation/SKILL.md \
-             .cline/skills/php-patch-automation/SKILL.md; do
+            .agents/skills/php-patch-automation/SKILL.md \
+            .cline/skills/php-patch-automation/SKILL.md; do
             test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
           done
