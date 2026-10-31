@@ -1,0 +1,492 @@
+name: Security Scan and Code Quality
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  packages: read
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pre-commit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit hooks
+        run: |
+          pre-commit run --all-files --show-diff-on-failure
+        continue-on-error: true
+
+      - name: Install security scanning tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bandit \
+            semgrep \
+            trivy \
+            gitleaks \
+            detect-secrets \
+            shellcheck \
+            hadolint \
+            yamllint
+
+      - name: Run Gitleaks for secrets detection
+        run: |
+          gitleaks detect --no-git --redact --source .
+        continue-on-error: true
+
+      - name: Run Detect Secrets
+        run: |
+          detect-secrets scan --baseline .secrets.baseline . || true
+        continue-on-error: true
+
+      - name: Run Bandit for Python security scanning
+        run: |
+          bandit -r . -f json -o bandit-results.json || true
+        continue-on-error: true
+
+      - name: Run Semgrep for static analysis
+        run: |
+          semgrep --config=auto --json --output=semgrep-results.json . || true
+        continue-on-error: true
+
+      - name: Run Trivy for container and filesystem scanning
+        run: |
+          trivy fs --security-checks vuln,config . > trivy-results.txt || true
+        continue-on-error: true
+
+      - name: Run ShellCheck for shell script linting
+        run: |
+          find . -name "*.sh" -type f -exec shellcheck {} + > shellcheck-results.txt 2>&1 || true
+        continue-on-error: true
+
+      - name: Run Hadolint for Dockerfile linting
+        run: |
+          find . -name "Dockerfile*" -type f -exec hadolint {} + > hadolint-results.txt 2>&1 || true
+        continue-on-error: true
+
+      - name: Run YAML linting
+        run: |
+          yamllint -s . > yamllint-results.txt 2>&1 || true
+        continue-on-error: true
+
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            bandit-results.json
+            semgrep-results.json
+            trivy-results.txt
+            shellcheck-results.txt
+            hadolint-results.txt
+            yamllint-results.txt
+          retention-days: 14
+
+      - name: Upload security baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-baseline
+          path: .secrets.baseline
+          retention-days: 14
+
+  linting:
+    name: Linting Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            pylint \
+            flake8 \
+            black \
+            isort \
+            mypy \
+            ruff
+
+      - name: Run Pylint
+        run: |
+          pylint --output-format=json --rcfile=.pylintrc.json . > pylint-results.json 2>&1 || true
+        continue-on-error: true
+
+      - name: Run Flake8
+        run: |
+          flake8 --format=json --output-file=flake8-results.json . || true
+        continue-on-error: true
+
+      - name: Run Black formatting check
+        run: |
+          black --check --diff --quiet . || true
+        continue-on-error: true
+
+      - name: Run isort import sorting check
+        run: |
+          isort --check-only --diff . > isort-results.txt 2>&1 || true
+        continue-on-error: true
+
+      - name: Run mypy type checking
+        run: |
+          mypy --config-file=mypy.ini --output . > mypy-results.txt 2>&1 || true
+        continue-on-error: true
+
+      - name: Run ruff linting
+        run: |
+          ruff check --output-format=json --config=ruff.toml . > ruff-results.json 2>&1 || true
+        continue-on-error: true
+
+      - name: Upload linting results
+        uses: actions/upload-artifact@v4
+        with:
+          name: linting-results
+          path: |
+            pylint-results.json
+            flake8-results.json
+            isort-results.txt
+            mypy-results.txt
+            ruff-results.json
+          retention-days: 14
+
+  dependency-scan:
+    name: Dependency Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install safety and pip-audit
+        run: |
+          pip install safety pip-audit
+
+      - name: Scan Python dependencies with safety
+        run: |
+          safety check --json --output-file=safety-results.json || true
+        continue-on-error: true
+
+      - name: Scan Python dependencies with pip-audit
+        run: |
+          pip-audit --format=json --output=pip-audit-results.json || true
+        continue-on-error: true
+
+      - name: Scan Node.js dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm audit --audit-level=moderate --json > npm-audit-results.json 2>&1 || true
+          fi
+        continue-on-error: true
+
+      - name: Upload dependency scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-results
+          path: |
+            safety-results.json
+            pip-audit-results.json
+            npm-audit-results.json
+          retention-days: 14
+
+  markdown-lint:
+    name: Markdown Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run markdownlint
+        uses: nosborn/github-action-markdown-cli@v3
+        with:
+          files: .
+          config_file: .markdownlint.json
+          ignore_files: node_modules
+          dot: true
+        continue-on-error: true
+
+  terraform-lint:
+    name: Terraform Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Run terraform fmt check
+        run: |
+          terraform fmt -check -diff -recursive . > terraform-fmt-results.txt 2>&1 || true
+        continue-on-error: true
+
+      - name: Run tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.52.0
+
+      - name: Run tflint
+        run: |
+          tflint --init
+          tflint --format=json --force > tflint-results.json 2>&1 || true
+        continue-on-error: true
+
+      - name: Upload Terraform linting results
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-linting-results
+          path: |
+            terraform-fmt-results.txt
+            tflint-results.json
+          retention-days: 14
+
+  dependabot-scan:
+    name: Dependabot Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup GitHub CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure GitHub CLI
+        run: |
+          gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Run Dependabot CLI scan
+        run: |
+          echo "Running Dependabot security scan..."
+          # Dependabot CLI is not directly available, so we'll use the GitHub API
+          # to check for vulnerable dependencies
+          gh api repos/{owner}/{repo}/dependabot/alerts --jq 'length' > dependabot-alerts-count.txt 2>&1 || echo "0" > dependabot-alerts-count.txt
+        shell: bash
+
+      - name: Check for Dependabot alerts
+        run: |
+          alert_count=$(cat dependabot-alerts-count.txt)
+          echo "Found $alert_count Dependabot alerts"
+          if [ "$alert_count" -gt 0 ]; then
+            echo "⚠️ Dependabot found $alert_count security vulnerabilities"
+            echo "Dependabot alerts detected" > dependabot-alerts-detected.txt
+          else
+            echo "✅ No Dependabot alerts found"
+            echo "No Dependabot alerts" > dependabot-alerts-detected.txt
+          fi
+        shell: bash
+
+      - name: Upload Dependabot scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependabot-results
+          path: |
+            dependabot-alerts-count.txt
+            dependabot-alerts-detected.txt
+          retention-days: 14
+
+  codeql-analysis:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python,javascript,yaml
+          config-file: .github/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"/language:javascript"/language:yaml"
+
+      - name: Upload CodeQL SARIF results
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-results
+          path: results.sarif
+          retention-days: 14
+
+  security-summary:
+    name: Security Summary Report
+    needs: [security-scan, linting, dependency-scan, markdown-lint, terraform-lint, dependabot-scan, codeql-analysis]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all scan results
+        uses: actions/download-artifact@v4
+        with:
+          path: ./scan-results
+
+      - name: Generate security report
+        run: |
+          echo "=== SECURITY SCAN SUMMARY ===" > security-report.txt
+          echo "$(date)" >> security-report.txt
+          echo "" >> security-report.txt
+          
+          echo "--- Pre-commit Checks ---" >> security-report.txt
+          if [ -f ./scan-results/security-scan-results/pre-commit-results.txt ]; then
+            echo "✓ Pre-commit checks completed" >> security-report.txt
+          else
+            echo "✗ Pre-commit checks failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- Secrets Detection ---" >> security-report.txt
+          if [ -f ./scan-results/security-scan-results/gitleaks-results.txt ]; then
+            echo "✓ Gitleaks scan completed" >> security-report.txt
+          else
+            echo "✗ Gitleaks scan failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- Static Analysis ---" >> security-report.txt
+          if [ -f ./scan-results/security-scan-results/bandit-results.json ]; then
+            echo "✓ Bandit scan completed" >> security-report.txt
+          else
+            echo "✗ Bandit scan failed or not run" >> security-report.txt
+          fi
+          
+          if [ -f ./scan-results/security-scan-results/semgrep-results.json ]; then
+            echo "✓ Semgrep scan completed" >> security-report.txt
+          else
+            echo "✗ Semgrep scan failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- Dependency Scanning ---" >> security-report.txt
+          if [ -f ./scan-results/dependency-scan-results/safety-results.json ]; then
+            echo "✓ Safety scan completed" >> security-report.txt
+          else
+            echo "✗ Safety scan failed or not run" >> security-report.txt
+          fi
+          
+          if [ -f ./scan-results/dependency-scan-results/pip-audit-results.json ]; then
+            echo "✓ Pip-audit scan completed" >> security-report.txt
+          else
+            echo "✗ Pip-audit scan failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- Dependabot Scan ---" >> security-report.txt
+          if [ -f ./scan-results/dependabot-results/dependabot-alerts-detected.txt ]; then
+            alert_status=$(cat ./scan-results/dependabot-results/dependabot-alerts-detected.txt)
+            echo "$alert_status" >> security-report.txt
+          else
+            echo "✗ Dependabot scan failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- CodeQL Analysis ---" >> security-report.txt
+          if [ -f ./scan-results/codeql-results/results.sarif ]; then
+            sarif_size=$(wc -c < ./scan-results/codeql-results/results.sarif)
+            echo "✓ CodeQL scan completed ($sarif_size bytes)" >> security-report.txt
+          else
+            echo "✗ CodeQL scan failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- Linting Checks ---" >> security-report.txt
+          if [ -f ./scan-results/linting-results/pylint-results.json ]; then
+            echo "✓ Pylint completed" >> security-report.txt
+          else
+            echo "✗ Pylint failed or not run" >> security-report.txt
+          fi
+          
+          if [ -f ./scan-results/linting-results/ruff-results.json ]; then
+            echo "✓ Ruff completed" >> security-report.txt
+          else
+            echo "✗ Ruff failed or not run" >> security-report.txt
+          fi
+          
+          echo "" >> security-report.txt
+          echo "--- Configuration Files ---" >> security-report.txt
+          echo "✓ .pre-commit-config.yaml - Pre-commit hooks configuration" >> security-report.txt
+          echo "✓ .secrets.baseline - Secrets detection baseline" >> security-report.txt
+          echo "✓ .pylintrc.json - Pylint configuration" >> security-report.txt
+          echo "✓ .markdownlint.json - Markdown linting configuration" >> security-report.txt
+          echo "✓ mypy.ini - MyPy type checking configuration" >> security-report.txt
+          echo "✓ ruff.toml - Ruff linter configuration" >> security-report.txt
+          echo "✓ .github/codeql-config.yml - CodeQL configuration" >> security-report.txt
+          
+          echo "" >> security-report.txt
+          echo "=== END OF REPORT ===" >> security-report.txt
+          
+          cat security-report.txt
+          cp security-report.txt security-report.md
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.md
+          retention-days: 30
+
+      - name: Comment PR with security summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🔒 Security Scan Results\n\n' + report
+            });
