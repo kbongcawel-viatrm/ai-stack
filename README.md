@@ -247,6 +247,6 @@ make validate
 make discover-fixtures
 ```
 
-Cline CLI remains installed separately through `./scripts/install-ai-tools.sh`; authenticate with `cline auth`. The shared agent instructions are in [the PHP patch automation skill](.agents/skills/reusable-workflows/php-patch-automation/SKILL.md), mirrored for Cline under `.cline/skills/`.
+Cline CLI remains installed separately through `./scripts/install-ai-tools.sh`; authenticate with `cline auth`. The shared agent instructions are in [the PHP patch automation skill]( .agents/skills/php-patch-automation/SKILL.md), mirrored for Cline under `.cline/skills/`.
 
 **Safety boundary:** the starter supports fixture discovery and read-only cloud metadata discovery only. It does not discover guest PHP packages or execute cloud patch operations. The guarded workflows intentionally block those paths until identity, guest inventory, provider execution, approvals, health checks, and rollback are implemented and reviewed. See [module documentation](reusable-workflows/php-patch-automation/README.md).
