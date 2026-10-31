@@ -34,11 +34,11 @@ jobs:
         run: |
           set -euo pipefail
           tcat() {
-          if [[ ! -w /dev/tty ]]; then
-              printf 'Error: No writable terminal available.\n' >&2
-              return 1
-          fi
-          command cat -- "$@" > /dev/tty
+             if [[ ! -w /dev/tty ]]; then
+                 printf 'Error: No writable terminal available.\n' >&2
+                 return 1
+             fi
+             command cat -- "$@" > /dev/tty
           }
           
           _terminal_msg() {
