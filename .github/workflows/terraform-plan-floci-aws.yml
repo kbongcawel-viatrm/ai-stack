@@ -1,9 +1,9 @@
-name: Terraform Floci AWS CI (BU-12345678901)
+name: Terraform Floci AWS CI Plan
 
 on:
   pull_request:
     paths:
-      - ".github/workflows/terraform-floci-plan.yml"
+      - ".github/workflows/terraform-floci-plan-aws.yml"
       - "terraform/modules/aws/vpc/**"
       - "terraform/modules/aws/ec2/**"
       - "terraform/modules/aws/aurora-serverless/**"

@@ -27,7 +27,7 @@ export TF_VAR_sql_admin_password
 printf '\n'
 ~~~
 
-## Floci-AZ plan
+## Floci-AZ
 
 The root intentionally has no remote backend. CI uses ephemeral local state against Floci-AZ; no Azure subscription is contacted.
 

@@ -1,9 +1,9 @@
-name: Terraform Floci-AZ plan (BU-12345678902)
+name: Terraform Floci-AZ Plan
 
 on:
   pull_request:
     paths:
-      - ".github/workflows/terraform-floci-az-plan.yml"
+      - ".github/workflows/terraform-plan-floci-az.yml"
       - "terraform/modules/azure/**"
       - "terraform/BU-12345678902/**"
   workflow_dispatch:

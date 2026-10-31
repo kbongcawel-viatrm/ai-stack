@@ -1,6 +1,6 @@
 # BU-12345678901 dev application stack (Floci plan root)
 
-This root composes the reusable VPC, EC2, and Aurora PostgreSQL Serverless v2 modules. It is currently configured only for the Floci CI plan workflow. It is not a real-AWS provisioning root.
+This root composes the reusable VPC, EC2, and Aurora PostgreSQL Serverless v2 modules. It is currently configured only for the Floci AWS CI Plan workflow. It is not a real-AWS provisioning root.
 
 ## Network
 
@@ -77,7 +77,7 @@ The private app SG explicitly permits HTTP from the bastion SG. No public route 
 
 ## Floci-only safety boundary
 
-Both the AWS provider service endpoints and S3 backend point to `http://localhost:4566` with dummy credentials. Do not use this root for real AWS provisioning. The Floci workflow creates its own ephemeral backend bucket and DynamoDB lock table and runs formatting, init, validate, and plan only.
+Both the AWS provider service endpoints and S3 backend point to `http://localhost:4566` with dummy credentials. Do not use this root for real AWS provisioning. The Floci AWS CI Plan workflow creates its own ephemeral backend bucket and DynamoDB lock table and runs formatting, init, validate, and plan only.
 
 Floci can validate Terraform resource/API planning, but it does not boot EC2 guest operating systems, execute cloud-init/user data, install Nginx, create a real managed Aurora database, or provide VPC packet routing. Therefore the HTTP 200 check must be performed after a real AWS apply. No apply is included in the Floci workflow.
 

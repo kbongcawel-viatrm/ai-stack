@@ -28,7 +28,7 @@ terraform/
 3. Add the Terraform configuration and a remote backend. Do not use local state.
 4. Commit each root's `.terraform.lock.hcl`; generate it with the same Terraform version used by CI (`1.10.5`).
 5. Add the BU to `bu-targets.json` only after its cloud identity and trust policy are provisioned.
-6. Run **Actions → Terraform BU deployment**, enter the BU ID, and leave `apply` unchecked for a plan-only run.
+6. Run **Actions → Terraform BU deployment workflow**, enter the BU ID, and leave `apply` unchecked for a plan-only run.
 
 ## BU target registry
 

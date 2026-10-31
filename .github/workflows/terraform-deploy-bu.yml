@@ -1,4 +1,4 @@
-name: Terraform BU deployment
+name: Terraform BU deployment workflow
 
 on:
   workflow_dispatch:
