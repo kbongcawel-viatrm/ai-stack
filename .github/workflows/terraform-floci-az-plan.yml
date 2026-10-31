@@ -89,11 +89,7 @@ jobs:
 
       - name: Terraform initialization
         working-directory: terraform/BU-12345678902/dev/eastus/app
-        run: terraform init -backend=false -input=false
-
-      - name: Print generated provider lock file
-        working-directory: terraform/BU-12345678902/dev/eastus/app
-        run: cat .terraform.lock.hcl
+        run: terraform init -backend=false -input=false -lockfile=readonly
 
       - name: Terraform validation
         working-directory: terraform/BU-12345678902/dev/eastus/app
