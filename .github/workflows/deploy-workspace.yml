@@ -2,9 +2,11 @@ name: Deploy AI Workspace Bootstrapping
 
 on:
   workflow_run:
-    workflows: ["Validate AI Stack Bootstrapping"]
+    workflows:
+      - "Validate AI Stack Bootstrapping"
     types:
       - completed
+
   workflow_dispatch:
 
 permissions:
@@ -14,40 +16,151 @@ permissions:
 jobs:
   deploy:
     runs-on: [self-hosted, toolbox]
+
     defaults:
       run:
-        shell: bash -ieo pipefail {0}
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        shell: bash
+
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    env:
+      REPOSITORY: ${{ github.server_url }}/${{ github.repository }}.git
+      COMMIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
     steps:
-      - name: Source bashrc
+
+      # --------------------------------------------------
+      # 1. Verify Secureblue host
+      # --------------------------------------------------
+      - name: Verify Host and Toolbox
         run: |
-          if [[ $- == *i* ]]; then
-             source "$HOME/.bashrc"
+          set -euo pipefail
+
+          cat /etc/os-release | grep -E '^(NAME|VERSION)='
+
+          command -v toolbox
+          toolbox --version
+
+          toolbox list
+
+      # --------------------------------------------------
+      # 2. Create or reuse Toolbox
+      # --------------------------------------------------
+      - name: Initialize Toolbox floci
+        run: |
+          set -euo pipefail
+
+          if ! toolbox run --container floci -- true >/dev/null 2>&1; then
+              toolbox create \
+                  --container floci \
+                  --image registry.fedoraproject.org/fedora-toolbox:latest
           fi
-          tbver=$(toolbox -v)
-          if [ $tbver /dev/null ]; then
-             echo "Toolbox is running $tbver"
-          
-      - name: Enter Toolbox floci
+
+          echo "Toolbox floci is ready."
+
+      # --------------------------------------------------
+      # 3. Install dependencies
+      # --------------------------------------------------
+      - name: Install Toolbox Dependencies
         run: |
-          toolbox create \
-              --container floci \
-              --image registry.fedoraproject.org/fedora-toolbox:latest
-          toolbox enter floci
-          sudo dnf clean all \
-          && sudo dnf makecache \
-          && sudo dnf upgrade -y --skip-unavailable \
-          && sudo dnf install podman-compose -y
-          
-      - name: Setup Floci
+          set -euo pipefail
+
+          toolbox run --container floci -- bash -c '
+              set -euo pipefail
+
+              sudo dnf install -y \
+                  git \
+                  curl \
+                  podman-compose
+              
+              git --version
+              podman-compose --version
+          '
+
+      # --------------------------------------------------
+      # 4. Clone repository inside Toolbox
+      # --------------------------------------------------
+      - name: Checkout Repository Inside Toolbox
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ ! -d ~/workspace/floci ]; then
-             mkdir -p ~/workspace/floci
-          fi
-          
-          cd ~/workspace/floci
-          podman-compose -f compose.yaml up -d
-          podman ps --filter name=floci
-          podman logs -f floci
-          [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4566)" -eq 200 ] \
-          && echo "OK"
+          set -euo pipefail
+
+          toolbox run --container floci -- bash -c '
+              set -euo pipefail
+
+              REPO_DIR="$HOME/workspace/floci"
+
+              mkdir -p "$HOME/workspace"
+
+              if [[ -d "$REPO_DIR/.git" ]]; then
+                  cd "$REPO_DIR"
+                  git remote set-url origin "'"$REPOSITORY"'"
+                  git fetch origin "'"$COMMIT_SHA"'"
+              else
+                  git clone "'"$REPOSITORY"'" "$REPO_DIR"
+                  cd "$REPO_DIR"
+              fi
+
+              git checkout --detach "'"$COMMIT_SHA"'"
+
+              echo "=== Repository Information ==="
+              git remote -v
+              git log -1 --oneline
+          '
+
+      # --------------------------------------------------
+      # 5. Deploy Floci
+      # --------------------------------------------------
+      - name: Deploy Floci
+        run: |
+          set -euo pipefail
+
+          toolbox run --container floci -- bash -c '
+              set -euo pipefail
+
+              cd "$HOME/workspace/floci"
+
+              test -f compose.yaml
+
+              podman-compose -f compose.yaml pull
+              podman-compose -f compose.yaml up -d
+
+              podman ps --filter name=floci
+              podman logs --tail 100 floci
+          '
+
+      # --------------------------------------------------
+      # 6. Health check
+      # --------------------------------------------------
+      - name: Verify Floci Health
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 30); do
+
+              HTTP_CODE=$(
+                  curl -sS \
+                      -o /dev/null \
+                      -w '%{http_code}' \
+                      --max-time 5 \
+                      http://localhost:4566 || true
+              )
+
+              if [[ "$HTTP_CODE" == "200" ]]; then
+                  echo "Floci is healthy."
+                  exit 0
+              fi
+
+              echo "Attempt $attempt/30 - HTTP $HTTP_CODE"
+              sleep 2
+          done
+
+          echo "::error::Floci health check failed"
+
+          toolbox run --container floci -- \
+              podman logs --tail 100 floci
+
+          exit 1
