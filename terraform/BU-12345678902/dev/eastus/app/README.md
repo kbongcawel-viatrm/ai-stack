@@ -32,7 +32,7 @@ printf '\n'
 The root intentionally has no remote backend. CI uses ephemeral local state against Floci-AZ; no Azure subscription is contacted.
 
 ~~~bash
-terraform init -backend=false
+terraform init -backend=false -lockfile=readonly
 terraform fmt -check -diff -recursive .
 terraform validate
 terraform plan
