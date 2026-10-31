@@ -5,6 +5,8 @@ on:
     paths:
       - ".github/workflows/terraform-floci-plan.yml"
       - "terraform/modules/aws/vpc/**"
+      - "terraform/modules/aws/ec2/**"
+      - "terraform/modules/aws/aurora-serverless/**"
       - "terraform/BU-12345678901/dev/us-east-1/vpc/**"
   workflow_dispatch:
 
@@ -110,11 +112,11 @@ jobs:
             --endpoint-url "$AWS_ENDPOINT_URL"
 
       - name: Terraform stage — formatting
-        run: terraform fmt -check -recursive terraform
+        run: terraform fmt -check -diff -recursive terraform
 
       - name: Terraform stage — initialize Floci S3 backend
         working-directory: terraform/BU-12345678901/dev/us-east-1/vpc
-        run: terraform init -input=false -no-color -reconfigure
+        run: terraform init -input=false -lockfile=readonly -no-color -reconfigure
 
       - name: Terraform stage — validate
         working-directory: terraform/BU-12345678901/dev/us-east-1/vpc

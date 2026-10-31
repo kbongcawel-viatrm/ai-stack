@@ -9,7 +9,7 @@ variable "vpc_cidr" {
 }
 
 variable "subnets" {
-  description = "Exactly three named subnets: app, db, and public."
+  description = "Exactly four named subnets: app, db, db_secondary, and public."
   type = map(object({
     cidr_block        = string
     availability_zone = string
@@ -18,22 +18,16 @@ variable "subnets" {
 
   validation {
     condition = (
-      length(var.subnets) == 3 &&
-      alltrue([for name in ["app", "db", "public"] : contains(keys(var.subnets), name)])
+      length(var.subnets) == 4 &&
+      alltrue([for name in ["app", "db", "db_secondary", "public"] : contains(keys(var.subnets), name)])
     )
-    error_message = "subnets must contain exactly app, db, and public."
+    error_message = "subnets must contain exactly app, db, db_secondary, and public."
   }
 
   validation {
-    condition     = length(distinct([for subnet in values(var.subnets) : subnet.availability_zone])) == 3
-    error_message = "app, db, and public subnets must use three distinct Availability Zones."
+    condition     = length(distinct([for subnet in values(var.subnets) : subnet.availability_zone])) == 4
+    error_message = "All four subnets must use distinct Availability Zones."
   }
-}
-
-variable "web_ingress_cidrs" {
-  description = "IPv4 CIDR ranges allowed to reach app workloads on TCP 80 and 443."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
 }
 
 variable "tags" {
