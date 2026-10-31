@@ -1,0 +1,286 @@
+name: Terraform BU deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      bu_id:
+        description: Business Unit ID (must exist in terraform/bu-targets.json)
+        required: true
+        type: string
+      apply:
+        description: Apply the exact plan after approval in the terraform-apply environment
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ inputs.bu_id || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve BU target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      cloud: ${{ steps.target.outputs.cloud }}
+      aws_role_to_assume: ${{ steps.target.outputs.aws_role_to_assume }}
+      aws_region: ${{ steps.target.outputs.aws_region }}
+      azure_client_id: ${{ steps.target.outputs.azure_client_id }}
+      azure_tenant_id: ${{ steps.target.outputs.azure_tenant_id }}
+      azure_subscription_id: ${{ steps.target.outputs.azure_subscription_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install supporting dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y jq
+          jq --version
+          bash --version | head -n 1
+
+      - name: Validate BU ID and resolve allowlisted target
+        id: target
+        shell: bash
+        env:
+          BU_ID: ${{ inputs.bu_id }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$BU_ID" =~ ^BU-[A-Z0-9][A-Z0-9-]{2,31}$ ]] || [[ "$BU_ID" == "BU-TEMPLATE" ]]; then
+            echo "Invalid or reserved BU ID: $BU_ID" >&2
+            exit 1
+          fi
+
+          bu_dir="terraform/$BU_ID"
+          if [[ ! -d "$bu_dir" ]]; then
+            echo "No Terraform configuration directory exists at $bu_dir." >&2
+            exit 1
+          fi
+
+          target="$(jq -ce --arg id "$BU_ID" '.targets[$id] // empty' terraform/bu-targets.json)" || {
+            echo "BU $BU_ID is not mapped in terraform/bu-targets.json; refusing to authenticate." >&2
+            exit 1
+          }
+
+          cloud="$(jq -r '.cloud // empty' <<< "$target")"
+          case "$cloud" in
+            aws)
+              role="$(jq -r '.aws.role_to_assume // empty' <<< "$target")"
+              region="$(jq -r '.aws.region // empty' <<< "$target")"
+              [[ "$role" =~ ^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$ ]] || {
+                echo "Invalid or missing AWS role_to_assume for $BU_ID." >&2; exit 1;
+              }
+              [[ "$region" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]] || {
+                echo "Invalid or missing AWS region for $BU_ID." >&2; exit 1;
+              }
+              printf 'cloud=%s\naws_role_to_assume=%s\naws_region=%s\n' "$cloud" "$role" "$region" >> "$GITHUB_OUTPUT"
+              ;;
+            azure)
+              client="$(jq -r '.azure.client_id // empty' <<< "$target")"
+              tenant="$(jq -r '.azure.tenant_id // empty' <<< "$target")"
+              subscription="$(jq -r '.azure.subscription_id // empty' <<< "$target")"
+              for value in "$client" "$tenant" "$subscription"; do
+                [[ "$value" =~ ^[0-9a-fA-F-]{36}$ ]] || {
+                  echo "Invalid or missing Azure client_id, tenant_id, or subscription_id for $BU_ID." >&2; exit 1;
+                }
+              done
+              printf 'cloud=%s\nazure_client_id=%s\nazure_tenant_id=%s\nazure_subscription_id=%s\n' \
+                "$cloud" "$client" "$tenant" "$subscription" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported or missing cloud '$cloud' for $BU_ID (supported: aws, azure)." >&2
+              exit 1
+              ;;
+          esac
+
+          mapfile -d '' roots < <(find "$bu_dir" -mindepth 4 -type f -name main.tf -printf '%h\0' | sort -zu)
+          if (( ${#roots[@]} == 0 )); then
+            echo "No Terraform roots found under $bu_dir/<environment>/<region>/<module>/main.tf." >&2
+            exit 1
+          fi
+
+          for root in "${roots[@]}"; do
+            [[ -s "$root/backend.tf" ]] || { echo "Missing backend.tf in $root" >&2; exit 1; }
+            [[ -s "$root/versions.tf" ]] || { echo "Missing versions.tf in $root" >&2; exit 1; }
+            [[ -s "$root/.terraform.lock.hcl" ]] || { echo "Missing committed provider lock file in $root; run terraform init and commit .terraform.lock.hcl." >&2; exit 1; }
+            case "$cloud" in
+              aws) grep -Eq 'backend[[:space:]]+"s3"' "$root/backend.tf" || { echo "AWS BU roots must use an S3 backend: $root/backend.tf" >&2; exit 1; } ;;
+              azure) grep -Eq 'backend[[:space:]]+"azurerm"' "$root/backend.tf" || { echo "Azure BU roots must use an azurerm backend: $root/backend.tf" >&2; exit 1; } ;;
+            esac
+          done
+
+          echo "Resolved $BU_ID ($cloud) with ${#roots[@]} Terraform root(s)."
+
+  plan:
+    name: Format, validate, and plan
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Verify Terraform installation
+        run: terraform version
+
+      - name: Configure AWS credentials (OIDC)
+        if: needs.resolve.outputs.cloud == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.resolve.outputs.aws_role_to_assume }}
+          role-session-name: gha-terraform-${{ github.run_id }}
+          aws-region: ${{ needs.resolve.outputs.aws_region }}
+
+      - name: Sign in to Azure (OIDC)
+        if: needs.resolve.outputs.cloud == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ needs.resolve.outputs.azure_client_id }}
+          tenant-id: ${{ needs.resolve.outputs.azure_tenant_id }}
+          subscription-id: ${{ needs.resolve.outputs.azure_subscription_id }}
+
+      - name: Format, initialize, validate, and create plans
+        shell: bash
+        env:
+          BU_ID: ${{ inputs.bu_id }}
+          CLOUD: ${{ needs.resolve.outputs.cloud }}
+          AZURE_CLIENT_ID: ${{ needs.resolve.outputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ needs.resolve.outputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ needs.resolve.outputs.azure_subscription_id }}
+        run: |
+          set -euo pipefail
+          bu_dir="terraform/$BU_ID"
+
+          if [[ "$CLOUD" == "azure" ]]; then
+            export ARM_USE_OIDC=true
+            export ARM_CLIENT_ID="$AZURE_CLIENT_ID"
+            export ARM_TENANT_ID="$AZURE_TENANT_ID"
+            export ARM_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
+          fi
+
+          terraform fmt -check -recursive terraform
+
+          mapfile -d '' roots < <(find "$bu_dir" -mindepth 4 -type f -name main.tf -printf '%h\0' | sort -zu)
+          for root in "${roots[@]}"; do
+            echo "Validating and planning $root"
+            terraform -chdir="$root" init -input=false -no-color -lockfile=readonly
+            terraform -chdir="$root" validate -no-color
+            terraform -chdir="$root" plan -input=false -no-color -lock-timeout=5m \
+              -out="$GITHUB_WORKSPACE/$root/.tfplan"
+          done
+
+          find "$bu_dir" -type f -name .tfplan -print0 > "$RUNNER_TEMP/plan-files.txt"
+          test -s "$RUNNER_TEMP/plan-files.txt"
+          tar --null -czf "$RUNNER_TEMP/terraform-plans.tar.gz" -T "$RUNNER_TEMP/plan-files.txt"
+
+      - name: Upload exact Terraform plans
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plans-${{ inputs.bu_id }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/terraform-plans.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  apply:
+    name: Apply reviewed plans
+    needs:
+      - resolve
+      - plan
+    if: ${{ inputs.apply == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: terraform-apply
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout the exact planned commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download exact Terraform plans
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plans-${{ inputs.bu_id }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/terraform-plan-artifact
+
+      - name: Restore plans
+        shell: bash
+        run: tar -xzf "$RUNNER_TEMP/terraform-plan-artifact/terraform-plans.tar.gz" -C "$GITHUB_WORKSPACE"
+
+      - name: Install Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Verify Terraform installation
+        run: terraform version
+
+      - name: Configure AWS credentials (OIDC)
+        if: needs.resolve.outputs.cloud == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.resolve.outputs.aws_role_to_assume }}
+          role-session-name: gha-terraform-apply-${{ github.run_id }}
+          aws-region: ${{ needs.resolve.outputs.aws_region }}
+
+      - name: Sign in to Azure (OIDC)
+        if: needs.resolve.outputs.cloud == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ needs.resolve.outputs.azure_client_id }}
+          tenant-id: ${{ needs.resolve.outputs.azure_tenant_id }}
+          subscription-id: ${{ needs.resolve.outputs.azure_subscription_id }}
+
+      - name: Apply the exact saved plans
+        shell: bash
+        env:
+          BU_ID: ${{ inputs.bu_id }}
+          CLOUD: ${{ needs.resolve.outputs.cloud }}
+          AZURE_CLIENT_ID: ${{ needs.resolve.outputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ needs.resolve.outputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ needs.resolve.outputs.azure_subscription_id }}
+        run: |
+          set -euo pipefail
+          bu_dir="terraform/$BU_ID"
+
+          if [[ "$CLOUD" == "azure" ]]; then
+            export ARM_USE_OIDC=true
+            export ARM_CLIENT_ID="$AZURE_CLIENT_ID"
+            export ARM_TENANT_ID="$AZURE_TENANT_ID"
+            export ARM_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
+          fi
+
+          mapfile -d '' roots < <(find "$bu_dir" -mindepth 4 -type f -name main.tf -printf '%h\0' | sort -zu)
+          for root in "${roots[@]}"; do
+            plan="$GITHUB_WORKSPACE/$root/.tfplan"
+            [[ -s "$plan" ]] || { echo "Missing saved plan for $root" >&2; exit 1; }
+            echo "Applying saved plan for $root"
+            terraform -chdir="$root" init -input=false -no-color -lockfile=readonly
+            terraform -chdir="$root" apply -input=false -no-color -lock-timeout=5m "$plan"
+          done

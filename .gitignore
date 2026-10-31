@@ -21,6 +21,23 @@ linear-token*
 *.sqlite3
 *.db
 
+# Terraform local state, plans, caches, and overrides
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+*.tfvars.json
+!*.tfvars.example.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # Local memory drafts and private handoffs
 .agents/memory/local/
 .agents/sessions/local/
