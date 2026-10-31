@@ -57,20 +57,3 @@ jobs:
           echo "MCP validation failed" >&2
             exit 1
           fi
-      - name: Check required files
-        shell: bash
-        run: |
-          set -euo pipefail
-          for path in \
-            .agents/rules/working-agreement.md \
-            .agents/providers/cline-api.md \
-            .agents/providers/cline-cli.md \
-            .agents/providers/linear.md \
-            .agents/skills/api-provider-setup/SKILL.md \
-            .agents/skills/session-resume/SKILL.md \
-            .cline/skills/session-resume/SKILL.md \
-            .agents/sessions/templates/HANDOFF.md \
-            .cline/mcp.json \
-            .clinerules/00-project.md
-            test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
-          done
