@@ -36,6 +36,10 @@ jobs:
           
       - name: Setup Floci
         run: |
+          if [ ! -d ~/workspace/floci ]; then
+             mkdir -p ~/workspace/floci
+          fi
+          
           cd ~/workspace/floci
           podman-compose -f compose.yaml up -d
           podman ps --filter name=floci
