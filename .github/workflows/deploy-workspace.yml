@@ -30,7 +30,7 @@ jobs:
 
       - name: Install Cline CLI
         run: |
-          npm install -g @clinehq/cli
+          npm i -g cline
         shell: bash
 
       - name: Install Terraform
