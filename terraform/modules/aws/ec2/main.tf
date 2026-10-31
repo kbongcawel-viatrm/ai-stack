@@ -20,7 +20,7 @@ locals {
     HTML
 
     systemctl enable --now nginx
-    curl --fail --silent --show-error http://127.0.0.1/ >/dev/null
+    systemctl is-active --quiet nginx
   USERDATA
 }
 
@@ -144,7 +144,6 @@ resource "aws_instance" "bastion" {
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.ssm.name
   vpc_security_group_ids      = [aws_security_group.bastion.id]
-  user_data_replace_on_change = true
 
   metadata_options {
     http_endpoint               = "enabled"
