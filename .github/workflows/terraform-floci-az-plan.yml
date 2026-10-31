@@ -81,7 +81,7 @@ jobs:
       - name: Create ephemeral test SSH key
         run: |
           set -euo pipefail
-          ssh-keygen -q -t ed25519 -N "" -f "$RUNNER_TEMP/ci_vm_key"
+          ssh-keygen -q -t rsa -b 4096 -N "" -f "$RUNNER_TEMP/ci_vm_key"
           echo "TF_VAR_vm_admin_ssh_public_key=$(cat "$RUNNER_TEMP/ci_vm_key.pub")" >> "$GITHUB_ENV"
 
       - name: Terraform formatting
