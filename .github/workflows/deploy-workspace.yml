@@ -1,103 +1,22 @@
 name: Deploy AI Workspace Bootstrapping
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Validate AI Stack Bootstrapping"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  validate:
+  deploy:
     runs-on: [self-hosted, codespace]
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
         name: Checkout
-      - name: Validate installer syntax
-        shell: bash
-        run: |
-          if bash -n scripts/install-ai-tools.sh scripts/test-install-ai-tools.sh; then
-            echo "Installed"
-          else
-            echo "Installer syntax validation failed" >&2
-            exit 1
-          fi
-      - name: Validate session scripts syntax
-        run: |
-          if bash -n scripts/new-session-doc.sh scripts/test-new-session-doc.sh scripts/resume-session.sh scripts/test-resume-session.sh; then
-            echo "Syntax validation successful."
-          else
-            echo "Syntax validation failed." >&2
-            exit 1
-          fi
-      - name: Run boostrap checks
-        run: |
-          if bash -n scripts/test-install-ai-tools.sh bash scripts/test-install-ai-tools.sh; then
-             echo "Passed"
-          else
-            echo "Failed" >&2
-            exit 1
-          fi
-          if bash -n scripts/test-new-session-doc.sh bash scripts/test-new-session-doc.sh; then
-             echo "Passed"
-          else
-            echo "Failed" >&2
-            exit 1
-          fi
-          if bash -n scripts/test-resume-session.sh bash scripts/test-resume-session.sh; then
-             echo "Passed"
-          else
-            echo "Failed" >&2
-            exit 1
-          fi
-      - name: Validate MCP JSON
-        run: |
-          if python -m json.tool .cline/mcp.json >/dev/null; then
-          echo "MCP validated"
-            else
-          echo "MCP validation failed" >&2
-            exit 1
-          fi
-      - name: Validate canonical and Cline skill parity
-        shell: bash
-        run: |
-          set -euo pipefail
-          count=0
-          while IFS= read -r canonical; do
-            relative="${canonical#.agents/skills/}"
-            mirror=".cline/skills/$relative"
-            test -s "$mirror" || { echo "Missing Cline skill mirror: $mirror" >&2; exit 1; }
-            cmp -s "$canonical" "$mirror" || {
-              echo "Skill copy differs: $canonical vs $mirror" >&2
-              exit 1
-            }
-            count=$((count + 1))
-          done < <(find .agents/skills -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print | sort)
-          test "$count" -gt 0
-          echo "Validated $count canonical skills and matching Cline copies."
-      - name: Check required files
-        shell: bash
-        run: |
-          set -euo pipefail
-          for path in \
-            .agents/rules/working-agreement.md \
-            .agents/providers/cline-api.md \
-            .agents/providers/cline-cli.md \
-            .agents/providers/linear.md \
-            .agents/skills/api-provider-setup/SKILL.md \
-            .agents/skills/session-resume/SKILL.md \
-            .cline/skills/session-resume/SKILL.md \
-            scripts/resume-session.sh \
-            scripts/test-resume-session.sh \
-            .agents/sessions/templates/HANDOFF.md \
-            .cline/mcp.json \
-            docs/mcp-setup.md \
-            .clinerules/00-project.md \
-            .gitignore README.md; do
-            test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
-          done
+      - name: Display deployment information
+        run: echo "Deploying AI workspace after successful validation"
