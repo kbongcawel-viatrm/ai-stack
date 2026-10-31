@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "git-expert": {
+      "source": "rightnow-ai/openfang",
+      "sourceType": "github",
+      "skillPath": "crates/openfang-skills/bundled/git-expert/SKILL.md",
+      "computedHash": "099dbe0e40b09b1d802757f045ed4cf63bd63b0e96ae435fb7827e39824ddfba"
+    },
     "github-actions": {
       "source": "callstackincubator/agent-skills",
       "sourceType": "github",
