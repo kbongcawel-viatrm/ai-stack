@@ -15,6 +15,7 @@ ai-stack/
 │   └── skills/             # Cline-facing adapters
 ├── .clinerules/             # Cline project rules
 ├── docs/                    # setup and workflow documentation
+├── php-patch-automation/    # isolated Python workspace for multi-cloud PHP inventory and guarded patch orchestration
 ├── scripts/                 # installers, session doc generator, and validation
 ├── .env.example             # placeholders only
 └── .gitignore               # local state/secrets excluded

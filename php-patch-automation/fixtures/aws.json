@@ -1,0 +1,14 @@
+[
+  {
+    "resource_id": "i-0123456789abcdef0",
+    "cloud": "aws",
+    "resource_type": "ec2",
+    "bu": "BU-DEMO",
+    "application": "php-demo",
+    "environment": "development",
+    "operating_system": "Ubuntu 22.04",
+    "php_version": "8.3.12",
+    "patch_ring": "canary",
+    "region": "ap-southeast-1"
+  }
+]

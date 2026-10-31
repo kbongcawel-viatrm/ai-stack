@@ -1,0 +1,24 @@
+# Example policy. Adjust through review; do not treat this as an authoritative PHP lifecycle feed.
+supported_branches:
+  - "8.2"
+  - "8.3"
+  - "8.4"
+allowed_environments:
+  - development
+  - test
+  - uat
+  - production
+required_tags:
+  - BU
+  - Application
+  - Environment
+  - PatchRing
+patch_rings:
+  - canary
+  - wave-1
+  - wave-2
+major_upgrade_requires:
+  - bu_owner_approval
+  - application_compatibility_evidence
+  - rollback_plan
+  - protected_environment_approval

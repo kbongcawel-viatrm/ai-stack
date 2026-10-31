@@ -233,3 +233,20 @@ git status --short
 ## Skill discovery and upstream source repositories
 
 Agents must search `.agents/skills/` for skills that are close or similar to a task and read the relevant `SKILL.md` before implementation. Technology-specific tasks should consult the curated [upstream GitHub repository registry](.agents/sources/github-repositories.md), use official version-matched docs/source as evidence, and keep canonical skills under `.agents/skills/` synchronized with Cline copies under `.cline/skills/`. Upstream repositories are references by default; do not vendor or add submodules unless explicitly required and approved. The registry calls out the ambiguity of the name “Python worker” rather than silently assuming a framework.
+
+
+## PHP patch automation workspace
+
+The `php-patch-automation/` module provides an Ansible-free Python workspace for multi-cloud PHP inventory, policy validation, and guarded patch orchestration. It includes a Codespaces-ready development environment, fixture data, AWS Systems Manager and Azure Resource Graph read-only adapters, and module-scoped GitHub Actions workflows.
+
+Open the repository in Codespaces to use the root devcontainer. The post-create step bootstraps the module's Python environment. Then run:
+
+```bash
+cd php-patch-automation
+make validate
+make discover-fixtures
+```
+
+Cline CLI remains installed separately through `./scripts/install-ai-tools.sh`; authenticate with `cline auth`. The shared agent instructions are in [the PHP patch automation skill](.agents/skills/php-patch-automation/SKILL.md), mirrored for Cline under `.cline/skills/`.
+
+**Safety boundary:** the starter supports fixture discovery and read-only cloud metadata discovery only. It does not discover guest PHP packages or execute cloud patch operations. The guarded workflows intentionally block those paths until identity, guest inventory, provider execution, approvals, health checks, and rollback are implemented and reviewed. See [module documentation](php-patch-automation/README.md).

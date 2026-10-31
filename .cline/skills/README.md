@@ -17,6 +17,7 @@ The canonical cross-agent skill source is `.agents/skills/`; matching copies are
 - `openobserve-operations`
 - `podman-container-management`
 - `python-development`
+- `php-patch-automation`
 - `security-forensics-analysis`
 
 - `git-operations` is the Git/GitHub workflow skill. Its canonical source is `.agents/skills/git-operations/SKILL.md`; keep both copies identical.

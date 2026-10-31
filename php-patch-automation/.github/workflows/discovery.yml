@@ -1,0 +1,49 @@
+name: PHP inventory discovery
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        type: choice
+        options: [fixtures, aws, azure]
+        required: true
+        default: fixtures
+      bu:
+        description: Optional BU filter
+        required: false
+        type: string
+  schedule:
+    - cron: "23 2 * * 1"
+permissions:
+  contents: read
+jobs:
+  discovery:
+    runs-on: ubuntu-latest
+    environment: inventory-readonly
+    defaults:
+      run:
+        working-directory: php-patch-automation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fixture discovery
+        if: inputs.cloud == 'fixtures' || github.event_name == 'schedule'
+        run: php-patch inventory --source fixtures --format json > inventory.json
+      - name: AWS adapter prerequisite
+        if: inputs.cloud == 'aws'
+        run: |
+          echo "::error::Configure a read-only AWS OIDC role and finish BU-tag plus guest-runtime inventory integration before enabling cloud discovery."
+          exit 2
+      - name: Azure adapter prerequisite
+        if: inputs.cloud == 'azure'
+        run: |
+          echo "::error::Configure a read-only Azure federated identity and complete guest-runtime inventory integration before enabling cloud discovery."
+          exit 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: php-inventory-${{ github.run_id }}
+          path: php-patch-automation/inventory.json
+          if-no-files-found: ignore
