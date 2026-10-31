@@ -13,10 +13,11 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, codespace]
+    runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
         name: Checkout
       - name: Display deployment information
         run: echo "Deploying AI workspace after successful validation"
+
