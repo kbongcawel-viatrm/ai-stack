@@ -30,135 +30,46 @@ jobs:
       COMMIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
     steps:
-
-      # --------------------------------------------------
-      # 1. Verify Secureblue host
-      # --------------------------------------------------
-      - name: Verify Host and Toolbox
+      - name: Launch floci
         run: |
           set -euo pipefail
-
-          cat /etc/os-release | grep -E '^(NAME|VERSION)='
-
-          command -v toolbox
-          toolbox --version
-
-          toolbox list
-
-      # --------------------------------------------------
-      # 2. Create or reuse Toolbox
-      # --------------------------------------------------
-      - name: Initialize Toolbox floci
-        run: |
-          set -euo pipefail
-          if podman container exists floci; then
-             echo " Container floci exists 🚀 Yuhow! "
-          else
-             echo " Container floci does not exist yet. Create it first 💢 "
-             toolbox create floci
+          tcat() {
+          if [[ ! -w /dev/tty ]]; then
+              printf 'Error: No writable terminal available.\n' >&2
+              return 1
           fi
+          command cat -- "$@" > /dev/tty
+          }
+          
+          _terminal_msg() {
+              local status="$1"
+              shift
 
-      # --------------------------------------------------
-      # 3. Install dependencies
-      # --------------------------------------------------
-      - name: Install Toolbox Dependencies
+              local color
+              case "$status" in
+                  success) color='1;32' ;;  # Bold, default Green
+                  error)   color='1;31' ;;  # Bold, default Red
+                  warning) color='1;33' ;;  # Bold, default Yellow
+                  normal)  color='1'  ;;  # Bold, default foreground color
+                  *)       color='0'  ;;  # Default/reset
+              esac
+              printf '\033[%sm%s\033[0m\n' "$color" "$*" | tcat
+          }
+
+          if podman container exists floci; then
+             _terminal_msg success " Container floci exists 🚀 Yuhow! "
+          else
+             _terminal_msg error " Container floci does not exist yet. Create it first 💢 "
+             podman-compose -f compose.yaml up -d
+             sleep 2
+             curl -s -o /dev/null -w "%{http_code}" http://localhost:4566 | grep -q "200" && \
+             _terminal_msg success normal "Healthy 🚀" || echo "Unhealthy 💢"
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+    
+      - name: Move Scripts to Home Directory
         run: |
-          set -euo pipefail
-
-          toolbox run --container floci -- bash -c '
-              set -euo pipefail
-
-              sudo dnf install -y \
-                  git \
-                  curl \
-                  podman-compose
-              
-              git --version
-              podman-compose --version
-          '
-       # --------------------------------------------------
-      # 5. Deploy Floci
-      # --------------------------------------------------
-      - name: Deploy Floci
-        run: |
-          set -euo pipefail
-
-          toolbox run --container floci -- bash -c '
-              set -euo pipefail
-
-              cd "$HOME/workspace/floci"
-
-              test -f compose.yaml
-
-              podman-compose -f compose.yaml pull
-              podman-compose -f compose.yaml up -d
-
-              podman ps --filter name=floci
-              podman logs --tail 100 floci
-          '
-
-      # --------------------------------------------------
-      # 6. Health check
-      # --------------------------------------------------
-      - name: Verify Floci Health
-        run: |
-          set -euo pipefail
-
-          for attempt in $(seq 1 30); do
-
-              HTTP_CODE=$(
-                  curl -sS \
-                      -o /dev/null \
-                      -w '%{http_code}' \
-                      --max-time 5 \
-                      http://localhost:4566 || true
-              )
-
-              if [[ "$HTTP_CODE" == "200" ]]; then
-                  echo "Floci is healthy."
-                  exit 0
-              fi
-
-              echo "Attempt $attempt/30 - HTTP $HTTP_CODE"
-              sleep 2
-          done
-
-          echo "::error::Floci health check failed"
-
-          toolbox run --container floci -- \
-              podman logs --tail 100 floci
-
-          exit 1
-      # --------------------------------------------------
-      # 4. Clone repository inside Toolbox
-      # --------------------------------------------------
-      - name: Checkout Repository Inside Toolbox
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          toolbox run --container floci -- bash -c '
-              set -euo pipefail
-
-              REPO_DIR="$HOME/workspace/floci"
-
-              mkdir -p "$HOME/workspace"
-
-              if [[ -d "$REPO_DIR/.git" ]]; then
-                  cd "$REPO_DIR"
-                  git remote set-url origin "'"$REPOSITORY"'"
-                  git fetch origin "'"$COMMIT_SHA"'"
-              else
-                  git clone "'"$REPOSITORY"'" "$REPO_DIR"
-                  cd "$REPO_DIR"
-              fi
-
-              git checkout --detach "'"$COMMIT_SHA"'"
-
-              echo "=== Repository Information ==="
-              git remote -v
-              git log -1 --oneline
-          '
-
-      
+          mkdir -p "$HOME/workspace/ai-stack"
+          cp -r ./* "$HOME/workspace/ai-stack"
+          
