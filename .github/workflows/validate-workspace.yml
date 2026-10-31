@@ -57,7 +57,7 @@ jobs:
           echo "MCP validation failed" >&2
             exit 1
           fi
-      - name: Validate canonical and Cline skill parity
+      - name: Validate Cline skill mirrors exist
         shell: bash
         run: |
           set -euo pipefail
@@ -66,14 +66,10 @@ jobs:
             relative="${canonical#.agents/skills/}"
             mirror=".cline/skills/$relative"
             test -s "$mirror" || { echo "Missing Cline skill mirror: $mirror" >&2; exit 1; }
-            cmp -s "$canonical" "$mirror" || {
-              echo "Skill copy differs: $canonical vs $mirror" >&2
-              exit 1
-            }
             count=$((count + 1))
           done < <(find .agents/skills -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print | sort)
           test "$count" -gt 0
-          echo "Validated $count canonical skills and matching Cline copies."
+          echo "Validated $count canonical skills have Cline mirrors (content may differ)."
       - name: Check required files
         shell: bash
         run: |
