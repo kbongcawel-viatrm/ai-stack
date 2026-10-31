@@ -1,0 +1,13 @@
+provider "azurerm" {
+  features {}
+
+  environment                = "stack"
+  metadata_host              = "localhost:4577"
+  skip_provider_registration = true
+  use_cli                    = false
+
+  subscription_id = "00000000-0000-0000-0000-000000000001"
+  tenant_id       = "00000000-0000-0000-0000-000000000002"
+  client_id       = "00000000-0000-0000-0000-000000000003"
+  client_secret   = "floci-test-only-secret"
+}

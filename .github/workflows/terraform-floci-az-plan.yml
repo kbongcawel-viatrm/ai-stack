@@ -1,0 +1,109 @@
+name: Terraform Floci-AZ plan (BU-12345678902)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/terraform-floci-az-plan.yml"
+      - "terraform/modules/azure/**"
+      - "terraform/BU-12345678902/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-floci-az-bu-12345678902
+  cancel-in-progress: true
+
+jobs:
+  floci-az-terraform-plan:
+    name: Floci-AZ → Terraform plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_sql_admin_password: "Floci-Only-Test-Password-123!"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Verify tools
+        run: |
+          set -euo pipefail
+          terraform version
+          docker version
+          curl --version
+
+      - name: Start Floci-AZ with TLS
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/floci-az-data"
+          docker run --detach \
+            --name floci-az \
+            --publish 127.0.0.1:4577:4577 \
+            --volume "$RUNNER_TEMP/floci-az-data:/app/data" \
+            --env FLOCI_AZ_TLS_ENABLED=true \
+            --env FLOCI_AZ_HOSTNAME=localhost \
+            --env FLOCI_AZ_SERVICES_VM_MOCKED=true \
+            floci/floci-az:0.14.0
+
+      - name: Wait for readiness and trust emulator TLS certificate
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:4577/ready; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != true ]]; then
+            docker logs floci-az
+            echo "Floci-AZ did not become ready on port 4577." >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            http://127.0.0.1:4577/_floci/tls-cert \
+            --output "$RUNNER_TEMP/floci-az-ca.pem"
+          echo "SSL_CERT_FILE=$RUNNER_TEMP/floci-az-ca.pem" >> "$GITHUB_ENV"
+
+      - name: Create ephemeral test SSH key
+        run: |
+          set -euo pipefail
+          ssh-keygen -q -t rsa -b 4096 -N "" -f "$RUNNER_TEMP/ci_vm_key"
+          echo "TF_VAR_vm_admin_ssh_public_key=$(cat "$RUNNER_TEMP/ci_vm_key.pub")" >> "$GITHUB_ENV"
+
+      - name: Terraform formatting
+        run: terraform fmt -check -diff -recursive terraform
+
+      - name: Terraform initialization
+        working-directory: terraform/BU-12345678902/dev/eastus/app
+        run: terraform init -backend=false -input=false -lockfile=readonly
+
+      - name: Terraform validation
+        working-directory: terraform/BU-12345678902/dev/eastus/app
+        run: terraform validate -no-color
+
+      - name: Terraform plan only
+        working-directory: terraform/BU-12345678902/dev/eastus/app
+        run: |
+          set -euo pipefail
+          terraform plan -input=false -no-color -out="$RUNNER_TEMP/bu-12345678902-azure.tfplan"
+          terraform show -no-color "$RUNNER_TEMP/bu-12345678902-azure.tfplan"
+
+      - name: Floci-AZ diagnostics
+        if: always()
+        run: |
+          docker logs floci-az 2>&1 | tail -n 200 || true
+          docker rm --force floci-az || true
