@@ -71,6 +71,6 @@ jobs:
             .cline/skills/session-resume/SKILL.md \
             .agents/sessions/templates/HANDOFF.md \
             .cline/mcp.json \
-            .clinerules/00-project.md \
+            .clinerules/00-project.md
             test -s "$path" || { echo "Missing required file: $path" >&2; exit 1; }
           done
