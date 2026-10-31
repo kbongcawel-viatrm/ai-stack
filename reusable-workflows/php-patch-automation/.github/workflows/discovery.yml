@@ -21,7 +21,7 @@ jobs:
     environment: inventory-readonly
     defaults:
       run:
-        working-directory: php-patch-automation
+        working-directory: reusable-workflows/php-patch-automation
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,5 +45,5 @@ jobs:
         if: always()
         with:
           name: php-inventory-${{ github.run_id }}
-          path: php-patch-automation/inventory.json
+          path: reusable-workflows/php-patch-automation/inventory.json
           if-no-files-found: ignore

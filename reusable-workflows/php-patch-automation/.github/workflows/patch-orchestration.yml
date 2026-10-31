@@ -43,9 +43,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e '.[dev]'
-        working-directory: php-patch-automation
+        working-directory: reusable-workflows/php-patch-automation
       - name: Validate request
-        working-directory: php-patch-automation
+        working-directory: reusable-workflows/php-patch-automation
         env:
           TARGET_PHP: ${{ inputs.target_php }}
           CHANGE_TYPE: ${{ inputs.change_type }}

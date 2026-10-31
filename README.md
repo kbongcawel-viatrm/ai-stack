@@ -237,16 +237,16 @@ Agents must search `.agents/skills/` for skills that are close or similar to a t
 
 ## PHP patch automation workspace
 
-The `php-patch-automation/` module provides an Ansible-free Python workspace for multi-cloud PHP inventory, policy validation, and guarded patch orchestration. It includes a Codespaces-ready development environment, fixture data, AWS Systems Manager and Azure Resource Graph read-only adapters, and module-scoped GitHub Actions workflows.
+The `reusable-workflows/php-patch-automation/` module provides an Ansible-free Python workspace for multi-cloud PHP inventory, policy validation, and guarded patch orchestration. It includes a Codespaces-ready development environment, fixture data, AWS Systems Manager and Azure Resource Graph read-only adapters, and module-scoped GitHub Actions workflows.
 
 Open the repository in Codespaces to use the root devcontainer. The post-create step bootstraps the module's Python environment. Then run:
 
 ```bash
-cd php-patch-automation
+cd reusable-workflows/php-patch-automation
 make validate
 make discover-fixtures
 ```
 
-Cline CLI remains installed separately through `./scripts/install-ai-tools.sh`; authenticate with `cline auth`. The shared agent instructions are in [the PHP patch automation skill](.agents/skills/php-patch-automation/SKILL.md), mirrored for Cline under `.cline/skills/`.
+Cline CLI remains installed separately through `./scripts/install-ai-tools.sh`; authenticate with `cline auth`. The shared agent instructions are in [the PHP patch automation skill](.agents/skills/reusable-workflows/php-patch-automation/SKILL.md), mirrored for Cline under `.cline/skills/`.
 
-**Safety boundary:** the starter supports fixture discovery and read-only cloud metadata discovery only. It does not discover guest PHP packages or execute cloud patch operations. The guarded workflows intentionally block those paths until identity, guest inventory, provider execution, approvals, health checks, and rollback are implemented and reviewed. See [module documentation](php-patch-automation/README.md).
+**Safety boundary:** the starter supports fixture discovery and read-only cloud metadata discovery only. It does not discover guest PHP packages or execute cloud patch operations. The guarded workflows intentionally block those paths until identity, guest inventory, provider execution, approvals, health checks, and rollback are implemented and reviewed. See [module documentation](reusable-workflows/php-patch-automation/README.md).

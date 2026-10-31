@@ -7,7 +7,7 @@ Ansible-free, multi-cloud PHP patch inventory and orchestration starter.
 Open this repository, select **Code → Codespaces → Create codespace on main**, then run:
 
 ```bash
-cd php-patch-automation
+cd reusable-workflows/php-patch-automation
 make install
 make validate
 make discover-fixtures
