@@ -21,7 +21,7 @@ The app subnet permits SSH and HTTP only from the bastion subnet. The SQL logica
 Supply a real OpenSSH public key and a strong SQL administrator password through a protected variable file or environment variables. Do not commit either value.
 
 ~~~bash
-export TF_VAR_vm_admin_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+export TF_VAR_vm_admin_ssh_public_key="$(cat ~/.ssh/id_rsa.pub)"
 read -rsp 'SQL admin password: ' TF_VAR_sql_admin_password
 export TF_VAR_sql_admin_password
 printf '\n'
