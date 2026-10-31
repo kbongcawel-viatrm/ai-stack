@@ -4,4 +4,4 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl unzip jq \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspaces/php-patch-automation
+WORKDIR /workspaces/reusable-workflows/php-patch-automation

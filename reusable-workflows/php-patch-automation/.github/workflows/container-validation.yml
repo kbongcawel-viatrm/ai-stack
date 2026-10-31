@@ -1,0 +1,21 @@
+name: Container runtime validation
+
+on:
+  pull_request:
+    paths:
+      - "reusable-workflows/php-patch-automation/container/**"
+      - "reusable-workflows/php-patch-automation/docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate example image policy
+        run: |
+          test -s reusable-workflows/php-patch-automation/container/README.md
+          grep -q "rebuild" reusable-workflows/php-patch-automation/container/README.md

@@ -1,10 +1,10 @@
 name: CI
 on:
   pull_request:
-    paths: ["php-patch-automation/**"]
+    paths: ["reusable-workflows/php-patch-automation/**"]
   push:
     branches: [main]
-    paths: ["php-patch-automation/**"]
+    paths: ["reusable-workflows/php-patch-automation/**"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,14 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: php-patch-automation
+        working-directory: reusable-workflows/php-patch-automation
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: php-patch-automation/pyproject.toml
+          cache-dependency-path: reusable-workflows/php-patch-automation/pyproject.toml
       - run: python -m pip install -e '.[dev,all-clouds]'
       - run: ruff check .
       - run: ruff format --check .

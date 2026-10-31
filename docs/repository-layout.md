@@ -16,7 +16,8 @@ ai-stack/
 ├── .clinerules/             # Cline project rules
 ├── .github/workflows/       # CI and manually dispatched automation
 ├── docs/                    # setup and workflow documentation
-├── php-patch-automation/    # isolated Python workspace for multi-cloud PHP inventory and guarded patch orchestration
+├── reusable-workflows/     # reusable automation packages and workflow components
+│   └── php-patch-automation/ # isolated Python workspace for multi-cloud PHP inventory and guarded patch orchestration
 ├── terraform/               # reusable cloud modules and BU/environment/region roots
 ├── scripts/                 # installers, session doc generator, and validation
 ├── .env.example             # placeholders only

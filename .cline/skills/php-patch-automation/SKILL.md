@@ -1,6 +1,6 @@
 ---
 name: php-patch-automation
-description: Build, validate, and safely operate the Ansible-free multi-cloud PHP inventory and patch-orchestration starter in php-patch-automation/.
+description: Build, validate, and safely operate the Ansible-free multi-cloud PHP inventory and patch-orchestration starter in reusable-workflows/php-patch-automation/.
 ---
 
 # PHP Patch Automation
@@ -9,11 +9,11 @@ Use this skill for changes to the PHP patch inventory, policy, AWS/Azure adapter
 
 ## Read first
 
-- `php-patch-automation/README.md`
-- `php-patch-automation/docs/architecture.md`
-- `php-patch-automation/docs/cloud-setup.md`
-- `php-patch-automation/docs/operations.md`
-- `php-patch-automation/config/php-policy.yml`
+- `reusable-workflows/php-patch-automation/README.md`
+- `reusable-workflows/php-patch-automation/docs/architecture.md`
+- `reusable-workflows/php-patch-automation/docs/cloud-setup.md`
+- `reusable-workflows/php-patch-automation/docs/operations.md`
+- `reusable-workflows/php-patch-automation/config/php-policy.yml`
 
 ## Current implementation boundaries
 
@@ -33,7 +33,7 @@ Do not weaken these guards or claim production readiness. Implement provider-spe
 From the repository root:
 
 ```bash
-cd php-patch-automation
+cd reusable-workflows/php-patch-automation
 make install
 make validate
 make discover-fixtures
@@ -65,7 +65,7 @@ php-patch validate-policy --policy config/php-policy.yml
 php-patch inventory --source fixtures --format json
 ```
 
-For workflow or devcontainer changes, inspect the affected YAML/JSON and confirm the workflow remains scoped to `php-patch-automation/**`. Do not apply Terraform, modify cloud resources, or enable patch execution as part of validation.
+For workflow or devcontainer changes, inspect the affected YAML/JSON and confirm the workflow remains scoped to `reusable-workflows/php-patch-automation/**`. Do not apply Terraform, modify cloud resources, or enable patch execution as part of validation.
 
 ## References
 
