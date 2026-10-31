@@ -47,8 +47,8 @@ module "ec2" {
 module "aurora" {
   source = "../../../../modules/aws/aurora-serverless"
 
-  name               = "bu-12345678901-dev-aurora"
-  vpc_id             = module.vpc.vpc_id
+  name   = "bu-12345678901-dev-aurora"
+  vpc_id = module.vpc.vpc_id
   private_subnet_ids = [
     module.vpc.subnet_ids["db"],
     module.vpc.subnet_ids["db_secondary"]
