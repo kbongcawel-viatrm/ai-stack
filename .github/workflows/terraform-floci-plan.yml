@@ -65,7 +65,7 @@ jobs:
             --env FLOCI_RUN_AS_ROOT=true \
             --env FLOCI_DEFAULT_REGION=us-east-1 \
             --env FLOCI_STORAGE_MODE=memory \
-            floci/floci:latest
+            floci/floci:2.4.0
 
       - name: Floci stage — wait for readiness
         shell: bash
@@ -134,6 +134,7 @@ jobs:
           path: terraform/BU-12345678901/dev/us-east-1/vpc/.terraform.lock.hcl
           if-no-files-found: error
           retention-days: 1
+          include-hidden-files: true
 
       - name: Floci diagnostics
         if: always()
