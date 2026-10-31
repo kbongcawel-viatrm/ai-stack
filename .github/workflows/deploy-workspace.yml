@@ -21,7 +21,12 @@ jobs:
     steps:
       - name: Source bashrc
         run: |
-          source ~/.bashrc
+          if [[ $- == *i* ]]; then
+             source "$HOME/.bashrc"
+          fi
+          tbver=$(toolbox -v)
+          if [ $tbver /dev/null ]; then
+             echo "Toolbox is running $tbver"
           
       - name: Enter Toolbox floci
         run: |
