@@ -14,168 +14,31 @@ permissions:
 jobs:
   deploy:
     runs-on: [self-hosted, toolbox]
+    defaults:
+      run:
+        shell: bash -ieo pipefail {0}
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v4
-        name: Checkout
-
-      - name: Install NVM, Node.js, and NPM
+      - name: Source bashrc
         run: |
-          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-          nvm install --lts
-          nvm use --lts
-        shell: bash
-
-      - name: Install Cline CLI
+          source ~/.bashrc
+          
+      - name: Enter Toolbox floci
         run: |
-          npm i -g cline
-        shell: bash
-
-      - name: Install Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.10.5
-          terraform_wrapper: false
-
-      - name: Install GitHub CLI
-        uses: actions/checkout@v4
-        with:
-          repository: cli/cli
-          path: gh-cli
-      - name: Build and install GH CLI
+          toolbox create \
+              --container floci \
+              --image registry.fedoraproject.org/fedora-toolbox:latest
+          toolbox enter floci
+          sudo dnf clean all \
+          && sudo dnf makecache \
+          && sudo dnf upgrade -y --skip-unavailable \
+          && sudo dnf install podman-compose -y
+          
+      - name: Setup Floci
         run: |
-          cd gh-cli
-          make
-          sudo make install
-        shell: bash
-
-      - name: Install Git
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git
-        shell: bash
-
-      - name: Install AWS CLI v2
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
-          rm -rf awscliv2.zip aws
-        shell: bash
-
-      - name: Install Azure CLI
-        run: |
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-        shell: bash
-
-      - name: Install Floci
-        run: |
-          curl -fsSL https://get.floci.io | sh
-        shell: bash
-
-      - name: Install Docker
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-          sudo systemctl enable --now docker
-          sudo usermod -aG docker $USER
-        shell: bash
-
-      - name: Install Podman and Podman Compose
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman podman-compose
-        shell: bash
-
-      - name: Install Python and pip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-venv
-        shell: bash
-
-      - name: Install Ansible Core
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install ansible-core
-        shell: bash
-
-      - name: Capture installed versions
-        run: |
-          # Capture NVM version
-          nvm --version > nvm_version.txt 2>&1 || echo "NVM not found" > nvm_version.txt
-          
-          # Capture Node.js version
-          node --version > node_version.txt 2>&1 || echo "Node.js not found" > node_version.txt
-          
-          # Capture NPM version
-          npm --version > npm_version.txt 2>&1 || echo "NPM not found" > npm_version.txt
-          
-          # Capture Cline version
-          cline --version > cline_version.txt 2>&1 || echo "Cline not found" > cline_version.txt
-          
-          # Capture Terraform version
-          terraform --version > terraform_version.txt 2>&1 || echo "Terraform not found" > terraform_version.txt
-          
-          # Capture GitHub CLI version
-          gh --version > gh_version.txt 2>&1 || echo "GitHub CLI not found" > gh_version.txt
-          
-          # Capture Git version
-          git --version > git_version.txt 2>&1 || echo "Git not found" > git_version.txt
-          
-          # Capture AWS CLI version
-          aws --version > awscli_version.txt 2>&1 || echo "AWS CLI not found" > awscli_version.txt
-          
-          # Capture Azure CLI version
-          az --version > azcli_version.txt 2>&1 || echo "Azure CLI not found" > azcli_version.txt
-          
-          # Capture Floci version
-          floci --version > floci_version.txt 2>&1 || echo "Floci not found" > floci_version.txt
-          
-          # Capture Docker version
-          docker --version > docker_version.txt 2>&1 || echo "Docker not found" > docker_version.txt
-          
-          # Capture Podman version
-          podman --version > podman_version.txt 2>&1 || echo "Podman not found" > podman_version.txt
-          
-          # Capture Podman Compose version
-          podman-compose --version > podman_compose_version.txt 2>&1 || echo "Podman Compose not found" > podman_compose_version.txt
-          
-          # Capture Python version
-          python3 --version > python_version.txt 2>&1 || echo "Python not found" > python_version.txt
-          
-          # Capture Ansible version
-          ansible --version > ansible_version.txt 2>&1 || echo "Ansible not found" > ansible_version.txt
-        shell: bash
-
-      - name: Generate packages.json with versions
-        run: |
-          cat > packages.json << 'INNER_EOF'
-          {
-            "nvm": "$(cat nvm_version.txt)",
-            "node": "$(cat node_version.txt)",
-            "npm": "$(cat npm_version.txt)",
-            "cline": "$(cat cline_version.txt)",
-            "terraform": "$(cat terraform_version.txt)",
-            "gh": "$(cat gh_version.txt)",
-            "git": "$(cat git_version.txt)",
-            "awscli": "$(cat awscli_version.txt)",
-            "azcli": "$(cat azcli_version.txt)",
-            "floci": "$(cat floci_version.txt)",
-            "docker": "$(cat docker_version.txt)",
-            "podman": "$(cat podman_version.txt)",
-            "podman_compose": "$(cat podman_compose_version.txt)",
-            "python": "$(cat python_version.txt)",
-            "ansible": "$(cat ansible_version.txt)"
-          }
-          INNER_EOF
-          cat packages.json
-        shell: bash
-
-      - name: Upload packages.json as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: workspace-packages-versions
-          path: packages.json
-          retention-days: 7
+          cd ~/workspace/floci
+          podman-compose -f compose.yaml up -d
+          podman ps --filter name=floci
+          podman logs -f floci
+          [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4566)" -eq 200 ] \
+          && echo "OK"
