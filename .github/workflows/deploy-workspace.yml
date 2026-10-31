@@ -55,7 +55,7 @@ jobs:
           if ! toolbox run --container floci -- true >/dev/null 2>&1; then
               toolbox create \
                   --container floci \
-                  --image registry.fedoraproject.org/fedora-toolbox:latest
+                  --image docker.io/floci/floci:latest
           fi
 
           echo "Toolbox floci is ready."
@@ -78,40 +78,7 @@ jobs:
               git --version
               podman-compose --version
           '
-
-      # --------------------------------------------------
-      # 4. Clone repository inside Toolbox
-      # --------------------------------------------------
-      - name: Checkout Repository Inside Toolbox
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          toolbox run --container floci -- bash -c '
-              set -euo pipefail
-
-              REPO_DIR="$HOME/workspace/floci"
-
-              mkdir -p "$HOME/workspace"
-
-              if [[ -d "$REPO_DIR/.git" ]]; then
-                  cd "$REPO_DIR"
-                  git remote set-url origin "'"$REPOSITORY"'"
-                  git fetch origin "'"$COMMIT_SHA"'"
-              else
-                  git clone "'"$REPOSITORY"'" "$REPO_DIR"
-                  cd "$REPO_DIR"
-              fi
-
-              git checkout --detach "'"$COMMIT_SHA"'"
-
-              echo "=== Repository Information ==="
-              git remote -v
-              git log -1 --oneline
-          '
-
-      # --------------------------------------------------
+       # --------------------------------------------------
       # 5. Deploy Floci
       # --------------------------------------------------
       - name: Deploy Floci
@@ -164,3 +131,36 @@ jobs:
               podman logs --tail 100 floci
 
           exit 1
+      # --------------------------------------------------
+      # 4. Clone repository inside Toolbox
+      # --------------------------------------------------
+      - name: Checkout Repository Inside Toolbox
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          toolbox run --container floci -- bash -c '
+              set -euo pipefail
+
+              REPO_DIR="$HOME/workspace/floci"
+
+              mkdir -p "$HOME/workspace"
+
+              if [[ -d "$REPO_DIR/.git" ]]; then
+                  cd "$REPO_DIR"
+                  git remote set-url origin "'"$REPOSITORY"'"
+                  git fetch origin "'"$COMMIT_SHA"'"
+              else
+                  git clone "'"$REPOSITORY"'" "$REPO_DIR"
+                  cd "$REPO_DIR"
+              fi
+
+              git checkout --detach "'"$COMMIT_SHA"'"
+
+              echo "=== Repository Information ==="
+              git remote -v
+              git log -1 --oneline
+          '
+
+      
