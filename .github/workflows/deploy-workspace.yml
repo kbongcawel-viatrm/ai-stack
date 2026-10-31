@@ -69,8 +69,7 @@ jobs:
 
               echo "::notice::Container floci does not exist. Creating it."
 
-              podman-compose \
-                  -f "$GITHUB_WORKSPACE/compose.yaml" up -d
+              podman-compose -f ~/workspace/floci/compose.yaml up -d
 
           fi
 
