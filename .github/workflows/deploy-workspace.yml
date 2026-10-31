@@ -1,3 +1,4 @@
+
 name: Deploy AI Workspace Bootstrapping
 
 on:
@@ -11,7 +12,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   deploy:
@@ -30,46 +30,100 @@ jobs:
       COMMIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
     steps:
-      - name: Launch floci
-        run: |
-          set -euo pipefail
-          tcat() {
-             if [[ ! -w /dev/tty ]]; then
-                 printf 'Error: No writable terminal available.\n' >&2
-                 return 1
-             fi
-             command cat -- "$@" > /dev/tty
-          }
-          
-          _terminal_msg() {
-              local status="$1"
-              shift
 
-              local color
-              case "$status" in
-                  success) color='1;32' ;;  # Bold, default Green
-                  error)   color='1;31' ;;  # Bold, default Red
-                  warning) color='1;33' ;;  # Bold, default Yellow
-                  normal)  color='1'  ;;  # Bold, default foreground color
-                  *)       color='0'  ;;  # Default/reset
-              esac
-              printf '\033[%sm%s\033[0m\n' "$color" "$*" | tcat
-          }
-
-          if podman container exists floci; then
-             _terminal_msg success " Container floci exists 🚀 Yuhow! "
-          else
-             _terminal_msg error " Container floci does not exist yet. Create it first 💢 "
-             podman-compose -f compose.yaml up -d
-             sleep 2
-             curl -s -o /dev/null -w "%{http_code}" http://localhost:4566 | grep -q "200" && \
-             _terminal_msg success normal "Healthy 🚀" || echo "Unhealthy 💢"
-
+      # --------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------
       - name: Checkout Code
         uses: actions/checkout@v4
-    
+        with:
+          ref: ${{ env.COMMIT_SHA }}
+          persist-credentials: false
+
+      # --------------------------------------------------
+      # 2. Launch Floci
+      # --------------------------------------------------
+      - name: Launch Floci
+        run: |
+          set -euo pipefail
+
+          if ! command -v podman-compose >/dev/null 2>&1; then
+              echo "::error::podman-compose is not installed"
+              exit 1
+          fi
+
+          if podman container exists floci; then
+
+              STATUS=$(podman inspect \
+                  --format '{{.State.Status}}' floci)
+
+              if [[ "$STATUS" == "running" ]]; then
+                  echo "::notice::Container floci already exists and is running."
+
+              else
+                  echo "::warning::Container floci exists but is not running."
+                  podman start floci
+              fi
+
+          else
+
+              echo "::notice::Container floci does not exist. Creating it."
+
+              podman-compose \
+                  -f "$GITHUB_WORKSPACE/compose.yaml" up -d
+
+          fi
+
+      # --------------------------------------------------
+      # 3. Verify Floci Health
+      # --------------------------------------------------
+      - name: Verify Floci Health
+        run: |
+          set -euo pipefail
+
+          echo "Checking Floci availability..."
+
+          for attempt in $(seq 1 30); do
+
+              HTTP_CODE=$(
+                  curl -sS \
+                      -o /dev/null \
+                      -w '%{http_code}' \
+                      --max-time 5 \
+                      http://localhost:4566 || true
+              )
+
+              if [[ "$HTTP_CODE" == "200" ]]; then
+                  echo "::notice::Floci is healthy. HTTP $HTTP_CODE"
+                  exit 0
+              fi
+
+              echo "Attempt $attempt/30 - HTTP $HTTP_CODE"
+              sleep 2
+
+          done
+
+          echo "::error::Floci health check failed."
+
+          podman logs --tail 100 floci || true
+
+          exit 1
+
+      # --------------------------------------------------
+      # 4. Move Repository to Home Directory
+      # --------------------------------------------------
       - name: Move Scripts to Home Directory
         run: |
-          mkdir -p "$HOME/workspace/ai-stack"
-          cp -r ./* "$HOME/workspace/ai-stack"
-          
+          set -euo pipefail
+
+          DEST="$HOME/workspace/ai-stack"
+
+          mkdir -p "$DEST"
+
+          tar --exclude=.git \
+              -C "$GITHUB_WORKSPACE" \
+              -cf - . | tar -C "$DEST" -xf -
+
+          echo "=== Deployment Workspace ==="
+          ls -lah "$DEST"
+
