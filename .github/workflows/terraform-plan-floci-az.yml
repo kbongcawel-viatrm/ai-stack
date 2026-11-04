@@ -1,4 +1,4 @@
-name: Terraform Floci-AZ Plan
+name: Terraform Floci AZ Plan
 
 on:
   pull_request:
