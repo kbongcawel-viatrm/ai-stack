@@ -1,0 +1,158 @@
+name: Clone Workspace Repositories
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily at 03:15 UTC. Adjust or remove if only manual execution is needed.
+    - cron: "15 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clone-workspace-repositories
+  cancel-in-progress: false
+
+jobs:
+  clone:
+    name: Clone repositories on Fedora Secureblue
+    runs-on: [self-hosted, fedora-secureblue]
+    timeout-minutes: 30
+
+    env:
+      WORKSPACE_DIR: ${{ github.workspace }}/../workspace
+
+    steps:
+      - name: Verify host environment and prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          echo "Runner: $(hostname)"
+          echo "OS:"
+          cat /etc/os-release
+
+          if ! grep -qiE 'fedora|secureblue' /etc/os-release; then
+            echo "::error::This workflow is intended for a Fedora Secureblue runner."
+            exit 1
+          fi
+
+          command -v git >/dev/null || {
+            echo "::error::git is required on the runner."
+            exit 1
+          }
+
+          mkdir -p "$WORKSPACE_DIR"
+          test -w "$WORKSPACE_DIR" || {
+            echo "::error::Workspace is not writable: $WORKSPACE_DIR"
+            exit 1
+          }
+
+      - name: Configure GitHub authentication
+        shell: bash
+        env:
+          WORKSPACE_REPO_TOKEN: ${{ secrets.WORKSPACE_REPO_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "${WORKSPACE_REPO_TOKEN:-}" ]]; then
+            echo "::error::Set the WORKSPACE_REPO_TOKEN Actions secret."
+            exit 1
+          fi
+
+          # Use a temporary Git credential store so the token is not embedded
+          # in clone URLs, command arguments, or repository configuration.
+          CREDENTIALS_FILE="$(mktemp)"
+          chmod 600 "$CREDENTIALS_FILE"
+          trap 'rm -f "$CREDENTIALS_FILE"' EXIT
+
+          printf 'https://x-access-token:%s@github.com\n' "$WORKSPACE_REPO_TOKEN" > "$CREDENTIALS_FILE"
+
+          git config --global credential.helper "store --file=$CREDENTIALS_FILE"
+          git config --global credential.useHttpPath true
+
+          echo "GitHub credential helper configured for this job."
+
+      - name: Clone or update repositories
+        shell: bash
+        env:
+          WORKSPACE_REPO_TOKEN: ${{ secrets.WORKSPACE_REPO_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          repositories=(
+            "ai-stack"
+            "dotfiles-backup"
+            "v2.home-security.uk"
+            "suricata-configuration"
+            "firewalld-config"
+            "clamscan"
+          )
+
+          cleanup() {
+            git config --global --unset credential.helper 2>/dev/null || true
+            git config --global --unset credential.useHttpPath 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for repository in "${repositories[@]}"; do
+            url="https://github.com/${GITHUB_REPOSITORY_OWNER}/${repository}.git"
+            destination="${WORKSPACE_DIR}/${repository}"
+
+            echo "::group::${repository}"
+
+            if [[ -d "${destination}/.git" ]]; then
+              echo "Updating existing clone: ${destination}"
+              git -C "$destination" remote set-url origin "$url"
+              git -C "$destination" fetch --prune origin
+              branch="$(git -C "$destination" remote show origin | sed -n '/HEAD branch/s/.*: //p')"
+
+              if [[ -z "$branch" ]]; then
+                echo "::error::Could not determine default branch for ${repository}."
+                exit 1
+              fi
+
+              git -C "$destination" checkout "$branch"
+              git -C "$destination" reset --hard "origin/${branch}"
+              git -C "$destination" clean -ffd
+            elif [[ -e "$destination" ]]; then
+              echo "::error::Destination exists but is not a Git repository: ${destination}"
+              exit 1
+            else
+              echo "Cloning: ${url}"
+              git clone --origin origin "$url" "$destination"
+            fi
+
+            git -C "$destination" status --short --branch
+            echo "HEAD: $(git -C "$destination" rev-parse HEAD)"
+
+            echo "::endgroup::"
+          done
+
+      - name: Verify workspace contents
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          repositories=(
+            "ai-stack"
+            "dotfiles-backup"
+            "v2.home-security.uk"
+            "suricata-configuration"
+            "firewalld-config"
+            "clamscan"
+          )
+
+          for repository in "${repositories[@]}"; do
+            path="${WORKSPACE_DIR}/${repository}"
+
+            if [[ ! -d "${path}/.git" ]]; then
+              echo "::error::Missing repository clone: ${path}"
+              exit 1
+            fi
+
+            git -C "$path" rev-parse --is-inside-work-tree >/dev/null
+            printf 'OK  %-28s %s\n' "$repository" "$(git -C "$path" rev-parse --short HEAD)"
+          done
+
+          echo "All repositories are available in ${WORKSPACE_DIR}."
