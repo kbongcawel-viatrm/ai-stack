@@ -1,162 +1,128 @@
+
 name: Deploy AI Workspace Bootstrapping
 
 on:
   workflow_run:
-    workflows: ["Validate AI Stack Bootstrapping"]
+    workflows:
+      - "Validate AI Stack Bootstrapping"
     types:
       - completed
+
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  fedora-tools:
-    name: Install tools in Fedora 44
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-    container:
-      image: fedora:44
+  deploy:
+    runs-on: [self-hosted, toolbox]
+
+    defaults:
+      run:
+        shell: bash
+
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    env:
+      REPOSITORY: ${{ github.server_url }}/${{ github.repository }}.git
+      COMMIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
     steps:
-      - name: Install Fedora tooling and capture versions
-        shell: bash
+
+      # --------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT_SHA }}
+          persist-credentials: false
+
+      # --------------------------------------------------
+      # 2. Launch Floci
+      # --------------------------------------------------
+      - name: Launch Floci
         run: |
           set -euo pipefail
 
-          dnf install -y curl unzip git gh jq make gcc gcc-c++ python3 python3-pip python3-devel tar gzip
+          if ! command -v podman-compose >/dev/null 2>&1; then
+              echo "::error::podman-compose is not installed"
+              exit 1
+          fi
 
-          # Install NVM, Node.js, NPM, and Cline.
-          export NVM_DIR="$HOME/.nvm"
-          curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-          source "$NVM_DIR/nvm.sh"
-          nvm install --lts
-          nvm use --lts
-          npm install --global cline
+          if podman container exists floci; then
 
-          # Install the pinned Terraform release.
-          case "$(uname -m)" in
-            x86_64) terraform_arch=amd64 ;;
-            aarch64) terraform_arch=arm64 ;;
-            *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
-          esac
-          curl -fsSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/1.10.5/terraform_1.10.5_linux_${terraform_arch}.zip"
-          unzip -o /tmp/terraform.zip -d /usr/local/bin
-          rm -f /tmp/terraform.zip
+              STATUS=$(podman inspect \
+                  --format '{{.State.Status}}' floci)
 
-          # Install AWS CLI v2.
-          case "$(uname -m)" in
-            x86_64) aws_arch=x86_64 ;;
-            aarch64) aws_arch=aarch64 ;;
-          esac
-          curl -fsSLo /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip"
-          unzip -q /tmp/awscliv2.zip -d /tmp
-          /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
-          rm -rf /tmp/awscliv2.zip /tmp/aws
+              if [[ "$STATUS" == "running" ]]; then
+                  echo "::notice::Container floci already exists and is running."
 
-          # Install Floci.
-          curl -fsSL https://get.floci.io | sh
+              else
+                  echo "::warning::Container floci exists but is not running."
+                  podman start floci
+              fi
 
-          # Keep Ansible isolated from Fedora's externally-managed Python.
-          python3 -m venv /opt/ansible-venv
-          /opt/ansible-venv/bin/python -m pip install --upgrade pip
-          /opt/ansible-venv/bin/python -m pip install ansible-core
+          else
 
-          # Record Fedora-container tools. Host-only tools are added by the next job.
-          nvm_version="$(nvm --version)"
-          node_version="$(node --version)"
-          npm_version="$(npm --version)"
-          cline_version="$(cline --version 2>&1 | sed -n '1p')"
-          terraform_version="$(terraform --version | sed -n '1p')"
-          gh_version="$(gh --version | sed -n '1p')"
-          git_version="$(git --version)"
-          awscli_version="$(aws --version 2>&1)"
-          floci_version="$(floci --version 2>&1 || echo 'Floci version unavailable')"
-          python_version="$(python3 --version)"
-          ansible_version="$(/opt/ansible-venv/bin/ansible --version | sed -n '1p')"
+              echo "::notice::Container floci does not exist. Creating it."
 
-          jq -n \
-            --arg nvm "$nvm_version" \
-            --arg node "$node_version" \
-            --arg npm "$npm_version" \
-            --arg cline "$cline_version" \
-            --arg terraform "$terraform_version" \
-            --arg gh "$gh_version" \
-            --arg git "$git_version" \
-            --arg awscli "$awscli_version" \
-            --arg floci "$floci_version" \
-            --arg python "$python_version" \
-            --arg ansible "$ansible_version" \
-            '{
-              nvm: $nvm,
-              node: $node,
-              npm: $npm,
-              cline: $cline,
-              terraform: $terraform,
-              gh: $gh,
-              git: $git,
-              awscli: $awscli,
-              floci: $floci,
-              python: $python,
-              ansible: $ansible
-            }' > fedora-tool-versions.json
+              podman-compose -f $HOME/workspace/floci/compose.yaml up -d
 
-      - name: Upload Fedora tool versions
-        uses: actions/upload-artifact@v4
-        with:
-          name: fedora-tool-versions
-          path: fedora-tool-versions.json
-          retention-days: 1
+          fi
 
-  host-runtimes:
-    name: Install host container runtimes and Azure CLI
-    runs-on: ubuntu-latest
-    needs: fedora-tools
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-    steps:
-      - name: Download Fedora tool versions
-        uses: actions/download-artifact@v4
-        with:
-          name: fedora-tool-versions
-
-      - name: Install Docker, Podman, Podman Compose, and Azure CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y docker.io podman podman-compose jq
-          sudo systemctl enable --now docker
-
-          # Azure CLI's documented Debian installer runs on the Ubuntu host.
-          curl -fsSL https://aka.ms/InstallAzureCLIDeb | sudo bash
-
-      - name: Generate combined packages.json
-        shell: bash
+      # --------------------------------------------------
+      # 3. Verify Floci Health
+      # --------------------------------------------------
+      - name: Verify Floci Health
         run: |
           set -euo pipefail
 
-          docker_version="$(docker --version)"
-          podman_version="$(podman --version)"
-          podman_compose_version="$(podman-compose --version)"
-          azcli_version="$(az version --output json | jq -r '."azure-cli"')"
+          echo "Checking Floci availability..."
 
-          jq \
-            --arg docker "$docker_version" \
-            --arg podman "$podman_version" \
-            --arg podman_compose "$podman_compose_version" \
-            --arg azcli "$azcli_version" \
-            '. + {
-              docker: $docker,
-              podman: $podman,
-              podman_compose: $podman_compose,
-              azcli: $azcli
-            }' fedora-tool-versions.json > packages.json
+          for attempt in $(seq 1 30); do
 
-          jq . packages.json
+              HTTP_CODE=$(
+                  curl -sS \
+                      -o /dev/null \
+                      -w '%{http_code}' \
+                      --max-time 5 \
+                      http://localhost:4566 || true
+              )
 
-      - name: Upload packages.json as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: workspace-packages-versions
-          path: packages.json
-          retention-days: 7
+              if [[ "$HTTP_CODE" == "200" ]]; then
+                  echo "::notice::Floci is healthy. HTTP $HTTP_CODE"
+                  exit 0
+              fi
+
+              echo "Attempt $attempt/30 - HTTP $HTTP_CODE"
+              sleep 2
+
+          done
+
+          echo "::error::Floci health check failed."
+
+          podman logs --tail 100 floci || true
+
+          exit 1
+
+      # --------------------------------------------------
+      # 4. Move Repository to Home Directory
+      # --------------------------------------------------
+      - name: Move Scripts to Home Directory
+        run: |
+          set -euo pipefail
+
+          DEST="$HOME/workspace/ai-stack"
+
+          mkdir -p "$DEST"
+
+          tar --exclude=.git \
+              -C "$GITHUB_WORKSPACE" \
+              -cf - . | tar -C "$DEST" -xf -
+
+          echo "=== Deployment Workspace ==="
+          ls -lah "$DEST"
+
