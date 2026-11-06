@@ -2,9 +2,6 @@ name: Clone Workspace Repositories
 
 on:
   workflow_dispatch:
-  schedule:
-    # Daily at 03:15 UTC. Adjust or remove if only manual execution is needed.
-    - cron: "15 3 * * *"
 
 permissions:
   contents: read
