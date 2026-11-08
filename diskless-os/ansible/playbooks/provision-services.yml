@@ -20,6 +20,8 @@
       - podman-compose
     aide_enable_daily_timer: false
     suricata_enable_update_timer: true
+    layer_packages: true
+    container_smoke_image: docker.io/library/alpine:3.24.4
 
   tasks:
     - name: Validate the FCOS host and network contract
@@ -41,6 +43,7 @@
       loop: "{{ fcos_layered_packages }}"
       register: fcos_package_checks
       changed_when: false
+      when: layer_packages | bool
       failed_when: false
 
     - name: Calculate missing packages
@@ -56,7 +59,7 @@
     - name: Layer required RPMs
       ansible.builtin.command:
         argv: "{{ ['rpm-ostree', 'install'] + fcos_missing_packages }}"
-      when: fcos_missing_packages | length > 0
+      when: layer_packages | bool and fcos_missing_packages | length > 0
       register: fcos_layer_result
       changed_when: true
 
@@ -65,7 +68,7 @@
         reboot_timeout: 1200
         connect_timeout: 10
         post_reboot_delay: 20
-      when: fcos_missing_packages | length > 0
+      when: layer_packages | bool and fcos_missing_packages | length > 0
 
     - name: Reload systemd unit definitions
       ansible.builtin.systemd:
@@ -210,7 +213,7 @@
           - "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
           - image
           - exists
-          - docker.io/library/alpine:3.24.4
+          - "{{ container_smoke_image }}"
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
@@ -223,7 +226,7 @@
         that:
           - fcos_smoke_image.rc == 0
         fail_msg: >-
-          docker.io/library/alpine:3.24.4 is not in the FCOS rootless image store.
+          {{ container_smoke_image }} is not in the FCOS rootless image store.
           Use the existing podwhitelist helper from the FCOS core user's shell
           to approve and pull this image, then rerun provisioning.
 
@@ -240,6 +243,7 @@
               - -d
           environment:
             XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+            CONTAINER_SMOKE_IMAGE: "{{ container_smoke_image }}"
             CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
             DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
           changed_when: true
