@@ -181,7 +181,7 @@ jobs:
           image_dir = os.path.normpath(os.environ.get("FCOS_IMAGE_DIR") or (default_alpine_dir if host_os == "alpine" else "/var/lib/libvirt/images"))
           if not os.path.isabs(image_dir):
               raise SystemExit("FCOS_IMAGE_DIR must be an absolute path")
-          if host_os == "alpine" and os.path.commonpath([storage_mountpoint, image_dir]) != storage_mountpoint:
+          if host_os == "alpine" and (image_dir == storage_mountpoint or os.path.commonpath([storage_mountpoint, image_dir]) != storage_mountpoint):
               raise SystemExit("For Alpine diskless, vm_storage_path must be beneath storage_mountpoint and match the Host OS workflow apkovl configuration.")
           vars_data = {
               "host_os": host_os,
