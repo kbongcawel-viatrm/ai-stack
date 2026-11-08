@@ -148,6 +148,11 @@ jobs:
           if [[ -z "$PXE_HTTP_BASE_URL" ]]; then PXE_HTTP_BASE_URL="http://192.168.1.2"; fi
           curl -fsS "$PXE_HTTP_BASE_URL/boot/alpine/current/manifest.sha256" -o "$RUNNER_TEMP/remote-manifest"
           diff -u release/manifest.sha256 "$RUNNER_TEMP/remote-manifest"
+          curl -fsS "$PXE_HTTP_BASE_URL/boot/menu.ipxe" -o "$RUNNER_TEMP/published-menu.ipxe"
+          cmp release/menu.ipxe "$RUNNER_TEMP/published-menu.ipxe"
+          for asset in vmlinuz-lts initramfs-lts modloop-lts host.apkovl.tar.gz; do
+            curl -fsSI "$PXE_HTTP_BASE_URL/boot/alpine/current/$asset" >/dev/null
+          done
           echo "Published Alpine $ALPINE_VERSION release $release_name."
 
       - name: Report PXE boundary
