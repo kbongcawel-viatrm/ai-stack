@@ -523,11 +523,100 @@ storage:
           Unit=aide-check.service
           [Install]
           WantedBy=timers.target
+    - path: /usr/local/libexec/fcos/podman-rootless-init.sh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          user=core
+          uid="$(id -u "$user")"
+          home="$(getent passwd "$user" | cut -d: -f6)"
+          test -n "$home"
+          install -d -o "$user" -g "$user" "$home/.config/systemd/user/sockets.target.wants"
+          ln -sfn /usr/lib/systemd/user/podman.socket "$home/.config/systemd/user/sockets.target.wants/podman.socket"
+          loginctl enable-linger "$user"
+          systemctl start "user@$uid.service"
+          for attempt in {1..20}; do
+            [[ -S "/run/user/$uid/bus" ]] && break
+            sleep 1
+          done
+          [[ -S "/run/user/$uid/bus" ]]
+          runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user daemon-reload
+          runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user enable --now podman.socket
+          test -S "/run/user/$uid/podman/podman.sock"
+    - path: /etc/systemd/system/fcos-podman-rootless-init.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Initialize rootless Podman socket for FCOS core user
+          After=local-fs.target
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/fcos/podman-rootless-init.sh
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+    - path: /etc/systemd/system/fcos-firewalld-default-zone.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Set the FCOS public interface zone as the default
+          Requires=firewalld.service
+          After=firewalld.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/firewall-cmd --set-default-zone=public
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+    - path: /etc/systemd/system/clamav-update.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Update ClamAV signatures
+          Wants=network-online.target
+          After=network-online.target
+          ConditionPathIsExecutable=/usr/bin/freshclam
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/freshclam --quiet
+          Nice=10
+          IOSchedulingClass=best-effort
+          IOSchedulingPriority=7
+    - path: /etc/systemd/system/clamav-update.timer
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Daily ClamAV signature update
+          [Timer]
+          OnCalendar=*-*-* 01:40:00
+          RandomizedDelaySec=10m
+          Persistent=true
+          Unit=clamav-update.service
+          [Install]
+          WantedBy=timers.target
+
 systemd:
   units:
     - name: sshd.service
       enabled: true
     - name: firewalld.service
+      enabled: true
+    - name: fcos-firewalld-default-zone.service
+      enabled: true
+    - name: fcos-podman-rootless-init.service
+      enabled: false
+    - name: clamav-update.timer
       enabled: true
     - name: fcos-nfq-rules.service
       enabled: true
