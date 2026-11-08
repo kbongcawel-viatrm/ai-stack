@@ -1,0 +1,53 @@
+name: Validate Diskless Infrastructure
+
+on:
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - "diskless-os/**"
+      - ".github/workflows/validate-diskless.yml"
+  pull_request:
+    paths:
+      - "diskless-os/**"
+      - ".github/workflows/validate-diskless.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate FCOS Butane and Ignition
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -i quay.io/coreos/butane:release --strict --pretty \
+            < diskless-os/butane/fcos.bu > /tmp/fcos.ign
+          jq -e '.ignition.version and (.systemd.units | type == "array")' /tmp/fcos.ign >/dev/null
+
+      - name: Install Ansible validators
+        run: |
+          python3 -m pip install --user ansible-core ansible-lint yamllint
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate Ansible YAML and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          yamllint -s diskless-os/ansible
+          while IFS= read -r playbook; do
+            ansible-playbook --syntax-check -i localhost, "$playbook"
+          done < <(find diskless-os/ansible/playbooks -maxdepth 1 -type f -name '*.yml' -print 2>/dev/null | sort)
+
+      - name: Validate shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          find diskless-os -type f -name '*.sh' -print0 | xargs -0 -r shellcheck
