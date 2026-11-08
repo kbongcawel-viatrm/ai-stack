@@ -23,6 +23,8 @@ storage:
       mode: 0750
     - path: /etc/nftables
       mode: 0750
+    - path: /etc/systemd/system/firewalld.service.d
+      mode: 0755
     - path: /etc/systemd/user/sockets.target.wants
       mode: 0755
     - path: /etc/suricata
@@ -178,6 +180,41 @@ storage:
               <accept/>
             </rule>
           </policy>
+
+    # Temporary bootstrap firewall: FCOS does not ship firewalld in its base
+    # image. This nftables policy protects first boot and remains active until
+    # Ansible verifies the layered Firewalld policy.
+    - path: /etc/nftables/fcos-bootstrap.nft
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          table inet fcos_bootstrap {
+            chain input {
+              type filter hook input priority -160; policy drop;
+              iifname "lo" accept
+              ct state established,related accept
+              iifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_CIDR} tcp dport 22 ct state new accept
+            }
+
+            chain output {
+              type filter hook output priority -160; policy drop;
+              oifname "lo" accept
+              ct state established,related accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} ip daddr ${FCOS_GATEWAY} udp dport 53 accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} ip daddr ${FCOS_GATEWAY} tcp dport 53 accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} udp dport 123 accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} tcp dport { 80, 443 } accept
+            }
+          }
+
+    - path: /etc/systemd/system/firewalld.service.d/10-fcos-bootstrap.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          After=fcos-bootstrap-firewall.service
 
     # Suricata 8 override is passed with --include so package defaults remain
     # intact. Ansible validates this file against the installed Suricata build.
@@ -464,6 +501,32 @@ systemd:
   units:
     - name: NetworkManager.service
       enabled: true
+
+    - name: fcos-bootstrap-firewall.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Temporary FCOS bootstrap nftables firewall
+        DefaultDependencies=no
+        After=local-fs.target
+        Before=NetworkManager.service
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=-/usr/sbin/nft delete table inet fcos_bootstrap
+        ExecStart=/usr/sbin/nft -f /etc/nftables/fcos-bootstrap.nft
+        ExecStop=-/usr/sbin/nft delete table inet fcos_bootstrap
+        RemainAfterExit=yes
+        NoNewPrivileges=true
+        CapabilityBoundingSet=CAP_NET_ADMIN
+        AmbientCapabilities=CAP_NET_ADMIN
+        RestrictAddressFamilies=AF_NETLINK AF_INET AF_INET6
+        ProtectSystem=full
+        ProtectHome=true
+        PrivateTmp=true
+
+        [Install]
+        WantedBy=multi-user.target
 
     - name: sshd.service
       enabled: true
