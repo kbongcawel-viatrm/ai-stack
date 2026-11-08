@@ -373,6 +373,85 @@ workspacesync() {
 
 }
 
+# install AI assistants
+workspaceai() {
+    # Animated loader.
+    load_progress() {
+        local width i
+
+        width=$(tput cols 2>/dev/null) || width=40
+        (( width > 4 )) || width=40
+
+        printf '\033[?25l' >/dev/tty 2>/dev/null || :
+
+        while :; do
+            for ((i=0; i<width-3; i++)); do
+                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
+                sleep 0.05
+            done
+
+            for ((i=width-3; i>=0; i--)); do
+                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
+                sleep 0.05
+            done
+        done
+    }
+
+    # Stop loader and restore cursor.
+    stop_loader() {
+        if [[ -n "$LOADER_PID" ]]; then
+            kill "$LOADER_PID" 2>/dev/null || :
+            wait "$LOADER_PID" 2>/dev/null || :
+            LOADER_PID=""
+        fi
+
+        printf '\r\033[K\033[?25h' >/dev/tty 2>/dev/null || :
+    }
+
+    _terminal_msg normal "Checking source directory 📂"
+    _terminal_msg normal "Source: $SOURCE_DIR"
+    _terminal_msg normal "Destination: $DESTINATION"
+    _terminal_msg normal "Project: $PROJECT_ID"
+
+    # Suppress background-job notifications while loader runs.
+    case "$-" in
+        *m*) had_job_control=1; set +m ;;
+    esac
+
+    # Start animated loader.
+    load_progress >/dev/null 2>&1 &
+    LOADER_PID=$!
+
+     _terminal_msg normal "Installing nvm, node, npm"
+    workspacenode || return 1
+
+    _terminal_msg normal "Exporting deps"
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+    # Ensure ~/.local/bin is in PATH for the Devin CLI
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) export PATH="$HOME/.local/bin:$PATH" ;;
+    esac
+
+    _terminal_msg normal "Installing cline cli"
+    npm i -g cline || return 1
+
+    _terminal_msg normal "Installing devin cli"
+    curl -fsSL https://cli.devin.ai/install.sh | bash || return 1
+
+    # Always stop loader after GCloud returns.
+    stop_loader
+
+    # Restore original job-control setting.
+    if (( had_job_control )); then
+        set -m
+    fi
+
+}
+
 # Dedicated SSH agent for the home-security key
 workspaceagent() {
     local key="$HOME/.ssh/home-security"
@@ -1062,6 +1141,7 @@ podrecoverrootless() {
     echo
     echo "Rootless Podman reset completed successfully."
 }
+
 ##############################################################
 # End of functions  Pt2                                     ## 
 ##############################################################
