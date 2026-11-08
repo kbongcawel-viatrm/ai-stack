@@ -51,7 +51,7 @@ Update Butane and inventory together if the FCOS IP, NIC or LAN changes. Kasm HT
 
 For Alpine diskless, the Host OS workflow can configure an existing ext4 partition by UUID, mounted at /mnt/nvme by default. FCOS base/overlay QCOW2, Ignition and persistent libvirt XML are stored under /mnt/nvme/libvirt/images. An OpenRC service restores the domain definition and starts FCOS after the storage mount and libvirtd are ready.
 
-If no storage UUID is supplied, Alpine still boots, but Deploy Host VM rejects the diskless root filesystem as VM storage. The workflow never partitions or formats the NVMe. Runtime LBU backup/persistence for arbitrary Alpine configuration changes remains a separate operation.
+If no storage UUID is supplied, Alpine still boots, but Deploy Host VM rejects the diskless root filesystem as VM storage. If you customize the VM storage directory, use the same value in both Host OS and Host VM workflows so the OpenRC restore service finds the domain XML. The workflow never partitions or formats the NVMe. Runtime LBU backup/persistence for arbitrary Alpine configuration changes remains a separate operation.
 
 ## Resource constraint
 
