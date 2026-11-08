@@ -5,17 +5,17 @@
   gather_facts: false
   vars:
     suricata_test_port: 80
-    suricata_test_target: ""
+    suricata_test_target_ip: ""
     suricata_local_rules: /var/lib/suricata/rules/local.rules
     suricata_eve_log: /var/log/suricata/eve.json
   tasks:
     - name: Require a separate LAN HTTP test endpoint
       ansible.builtin.assert:
         that:
-          - suricata_test_target | length > 0
-          - suricata_test_target != ansible_host
+          - suricata_test_target_ip | length > 0
+          - suricata_test_target_ip != ansible_host
         fail_msg: >-
-          Set suricata_test_target to a reachable second LAN host serving HTTP.
+          Set suricata_test_target_ip to a reachable second LAN host serving HTTP.
           IDS/IPS cannot be proven by checking the Suricata process alone.
 
     - name: Validate the test target is an IPv4 address
@@ -24,7 +24,7 @@
           - python3
           - -c
           - "import ipaddress,sys; ip=ipaddress.IPv4Address(sys.argv[1]); net=ipaddress.IPv4Network(sys.argv[2]); assert ip in net"
-          - "{{ suricata_test_target }}"
+          - "{{ suricata_test_target_ip }}"
           - "{{ fcos_lan_cidr }}"
       changed_when: false
 
@@ -67,7 +67,7 @@
               - "3"
               - --max-time
               - "8"
-              - "http://{{ suricata_test_target }}:{{ suricata_test_port }}/suricata-ids-test"
+              - "http://{{ suricata_test_target_ip }}:{{ suricata_test_port }}/suricata-ids-test"
           changed_when: false
 
         - name: Wait for IDS event in EVE
@@ -91,7 +91,7 @@
               - "3"
               - --max-time
               - "5"
-              - "http://{{ suricata_test_target }}:{{ suricata_test_port }}/suricata-ips-drop-test"
+              - "http://{{ suricata_test_target_ip }}:{{ suricata_test_port }}/suricata-ips-drop-test"
           register: suricata_ips_request
           changed_when: false
           failed_when: suricata_ips_request.rc != 28
@@ -120,7 +120,7 @@
 
         - name: Validate restored production rules
           ansible.builtin.command:
-            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml]
+            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml, --include, /etc/suricata/fcos-overrides.yaml]
           changed_when: false
 
         - name: Restart Suricata with restored production rules
