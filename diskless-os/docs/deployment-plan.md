@@ -22,7 +22,7 @@
 ## Phase 2 — Host VM (does not depend on Phase 1)
 - [ ] Set the hypervisor target and host_os (alpine, secureblue, arch or ubuntu).
 - [ ] Confirm virsh, qemu-img, KVM and the selected bridge already exist.
-- [ ] Set vm_storage_path to a local persistent filesystem; the playbook accepts ext4, XFS, Btrfs or F2FS and rejects tmpfs/overlay/network filesystems.
+- [ ] Set vm_storage_path to a local persistent filesystem; the playbook accepts ext4, XFS, Btrfs or F2FS and rejects tmpfs/overlay/network filesystems. For Alpine diskless, keep this path identical to the Host OS apkovl workflow value.
 - [ ] Supply a pinned, uncompressed FCOS QCOW2 URL and SHA-256 plus the FCOS SSH public key.
 - [ ] Render/validate Butane, generate Ignition and provision the FCOS VM.
 - [ ] Verify FCOS static IP, SSH and guest network reachability.
