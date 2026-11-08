@@ -116,6 +116,7 @@ jobs:
           ansible-lint --profile basic playbooks/
 
       - name: Validate GitHub Actions workflow semantics
+        # Runner labels are defined in .github/actionlint.yaml.
         run: |
           set -Eeuo pipefail
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o "$RUNNER_TEMP/download-actionlint"
