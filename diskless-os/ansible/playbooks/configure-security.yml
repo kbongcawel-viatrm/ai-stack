@@ -99,23 +99,28 @@
       ansible.builtin.assert:
         that:
           - "'target: DROP' in public_zone.stdout or 'target: DROP' in egress_policy.stdout"
-          - "'192.168.1.0/24' in public_zone.stdout"
+          - "fcos_lan_cidr in public_zone.stdout"
+          - "fcos_lan_ip in egress_policy.stdout"
           - "'HOST' in egress_policy.stdout"
           - "'ANY' in egress_policy.stdout"
         fail_msg: "Firewalld policy does not match the expected inbound/egress restrictions."
 
-    - name: Update Suricata source metadata
-      ansible.builtin.command: suricata-update update-sources
-      changed_when: true
+    - name: Run Butane-managed package preflight
+      ansible.builtin.systemd_service:
+        name: fcos-services-preflight.service
+        enabled: true
+        state: restarted
 
-    - name: Enable the free Emerging Threats Open source
-      ansible.builtin.command: suricata-update enable-source et/open
-      register: et_open
-      changed_when: "'enabled' in (et_open.stdout | lower) or et_open.rc == 0"
+    - name: Enable and install NFQUEUE nftables rules
+      ansible.builtin.systemd_service:
+        name: suricata-nfq-rules.service
+        enabled: true
+        state: restarted
 
-    - name: Build current Suricata rules
-      ansible.builtin.command: suricata-update
-      changed_when: true
+    - name: Run transactional Suricata source update and ET Open configuration
+      ansible.builtin.systemd_service:
+        name: suricata-prepare.service
+        state: restarted
 
     - name: Validate Suricata configuration before service start
       ansible.builtin.command: >-
@@ -123,12 +128,6 @@
         --include /etc/suricata/fcos-overrides.yaml
       register: suricata_test
       changed_when: false
-
-    - name: Enable and install NFQUEUE nftables rules
-      ansible.builtin.systemd_service:
-        name: suricata-nfq-rules.service
-        enabled: true
-        state: restarted
 
     - name: Enable and start Suricata NFQUEUE service
       ansible.builtin.systemd_service:
@@ -155,7 +154,6 @@
         enabled: true
         state: started
       loop:
-        - clamav-freshclam-daily.timer
         - clamav-scan.timer
         - lynis-audit.timer
         - suricata-rule-refresh.timer
@@ -178,6 +176,12 @@
         name: aide-check.timer
         enabled: "{{ aide_enable_daily_timer | bool }}"
         state: "{{ 'started' if aide_enable_daily_timer | bool else 'stopped' }}"
+
+    - name: Ensure rootless Podman linger service is enabled
+      ansible.builtin.systemd_service:
+        name: podman-user-socket-linger.service
+        enabled: true
+        state: restarted
 
     - name: Verify rootless Podman linger is enabled
       ansible.builtin.command: loginctl show-user core -p Linger
