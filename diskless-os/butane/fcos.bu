@@ -70,6 +70,9 @@ storage:
           X11Forwarding no
           AllowAgentForwarding no
           PermitUserEnvironment no
+          AllowTcpForwarding no
+          GatewayPorts no
+          PermitTunnel no
 
     # Static guest address must match the egress policy and DHCP reservation.
     # Change this keyfile if the router gateway, subnet or FCOS address differs.
@@ -79,7 +82,7 @@ storage:
       contents:
         inline: |
           [connection]
-          id=enp1s0
+          id=${FCOS_INTERFACE}
           type=ethernet
           interface-name=${FCOS_INTERFACE}
           autoconnect=true
@@ -156,27 +159,27 @@ storage:
               <accept/>
             </rule>
             <rule family="ipv4">
-              <source address="192.168.1.20"/>
+              <source address="${FCOS_LAN_IP}"/>
               <service name="https"/>
               <accept/>
             </rule>
             <rule family="ipv4">
-              <source address="192.168.1.20"/>
+              <source address="${FCOS_LAN_IP}"/>
               <service name="dns"/>
               <accept/>
             </rule>
             <rule family="ipv4">
-              <source address="192.168.1.20"/>
+              <source address="${FCOS_LAN_IP}"/>
               <service name="ntp"/>
               <accept/>
             </rule>
             <rule family="ipv4">
-              <source address="192.168.1.20"/>
+              <source address="${FCOS_LAN_IP}"/>
               <port port="80" protocol="tcp"/>
               <accept/>
             </rule>
             <rule family="ipv4">
-              <source address="192.168.1.20"/>
+              <source address="${FCOS_LAN_IP}"/>
               <port port="443" protocol="tcp"/>
               <accept/>
             </rule>
@@ -193,6 +196,9 @@ storage:
             address-groups:
               HOME_NET: "[${FCOS_LAN_CIDR}]"
               EXTERNAL_NET: "!$HOME_NET"
+          rule-files:
+            - suricata.rules
+            - local.rules
           nfq:
             mode: accept
 
@@ -212,11 +218,11 @@ storage:
         inline: |
           table inet suricata_nfq {
             chain input {
-              type filter hook input priority 10; policy accept;
+              type filter hook input priority -150; policy accept;
               iifname "${FCOS_INTERFACE}" queue num 0 bypass
             }
             chain output {
-              type filter hook output priority 10; policy accept;
+              type filter hook output priority -150; policy accept;
               oifname "${FCOS_INTERFACE}" queue num 0 bypass
             }
           }
