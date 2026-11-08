@@ -100,24 +100,32 @@ jobs:
               json.dump(variables, f, indent=2)
           PY
 
-      - name: Provision FCOS services, rootless Podman and Compose smoke test
+      - name: Layer FCOS security packages
+        if: ${{ inputs.layer_packages }}
+        run: |
+          set -Eeuo pipefail
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/layer-fcos-packages.yml \
+            --private-key "$HOME/.ssh/fcos" --diff
+
+      - name: Configure Firewalld, Suricata, scan timers and rootless Podman
         env:
           ANSIBLE_HOST_KEY_CHECKING: "True"
         run: |
           set -Eeuo pipefail
-          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/provision-services.yml \
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/configure-security.yml \
             --private-key "$HOME/.ssh/fcos" \
             --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
 
-      - name: Prove Suricata IDS alerting and IPS drop
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "True"
-          SURICATA_TEST_TARGET_IP: ${{ inputs.suricata_test_target_ip }}
+      - name: Validate rootless Podman Compose HTTP lifecycle
         run: |
           set -Eeuo pipefail
-          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/validate-suricata.yml \
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/podman-compose-poc.yml \
             --private-key "$HOME/.ssh/fcos" \
-            --extra-vars "suricata_test_target_ip=$SURICATA_TEST_TARGET_IP" --diff
+            --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
+
+      - name: Prove Suricata IDS alerting and IPS packet drop
+        run: |
+          set -Eeuo pipefail
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/suricata-ips-validation.yml \
+            --private-key "$HOME/.ssh/fcos" --diff
 
