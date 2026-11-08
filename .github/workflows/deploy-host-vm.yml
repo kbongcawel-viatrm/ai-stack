@@ -22,6 +22,21 @@ on:
         required: true
         default: "192.168.1.20"
         type: string
+      fcos_lan_cidr:
+        description: Trusted LAN CIDR used by SSH and Suricata HOME_NET
+        required: true
+        default: "192.168.1.0/24"
+        type: string
+      fcos_gateway:
+        description: LAN default gateway and DNS server
+        required: true
+        default: "192.168.1.1"
+        type: string
+      fcos_interface:
+        description: FCOS guest NIC name
+        required: true
+        default: "enp1s0"
+        type: string
       network_bridge:
         description: Existing libvirt bridge on the hypervisor
         required: true
@@ -77,6 +92,8 @@ jobs:
       - name: Install Ansible and Butane
         run: |
           set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
@@ -88,9 +105,13 @@ jobs:
       - name: Render and validate FCOS Ignition
         env:
           FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+          FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
+          FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
+          FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
+          FCOS_INTERFACE: ${{ inputs.fcos_interface }}
         run: |
           set -Eeuo pipefail
-          envsubst '${FCOS_SSH_PUBLIC_KEY}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
+          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
           "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
           python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
 
@@ -114,6 +135,9 @@ jobs:
           FCOS_QCOW2_URL: ${{ inputs.fcos_qcow2_url }}
           FCOS_QCOW2_SHA256: ${{ inputs.fcos_qcow2_sha256 }}
           FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
+          FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
+          FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
+          FCOS_INTERFACE: ${{ inputs.fcos_interface }}
           FCOS_NETWORK_BRIDGE: ${{ inputs.network_bridge }}
           FCOS_VM_MEMORY_MB: ${{ inputs.vm_memory_mb }}
           FCOS_VM_VCPUS: ${{ inputs.vm_vcpus }}
@@ -133,6 +157,9 @@ jobs:
               "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
               "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"],
               "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
+              "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
+              "fcos_gateway": os.environ["FCOS_GATEWAY"],
+              "fcos_interface": os.environ["FCOS_INTERFACE"],
               "fcos_network_bridge": os.environ["FCOS_NETWORK_BRIDGE"],
               "fcos_vm_memory_mb": int(os.environ["FCOS_VM_MEMORY_MB"]),
               "fcos_vm_vcpus": int(os.environ["FCOS_VM_VCPUS"]),
