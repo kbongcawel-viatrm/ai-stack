@@ -145,6 +145,13 @@ jobs:
           print(f"Parsed {len(files)} YAML files with duplicate-key detection")
           PY
 
+      - name: Resolve Alpine diskless host package set
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            -v "$PWD/diskless-os/alpine/apkovl/etc/apk/world:/tmp/world:ro" \
+            alpine:3.24.4 sh -ec 'apk update && apk add --simulate $(cat /tmp/world)'
+
       - name: Validate iPXE entrypoint
         run: |
           set -Eeuo pipefail
