@@ -38,6 +38,13 @@
       register: fcos_service_states
       changed_when: false
 
+    - name: Assert required services are active
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Required service {{ item.item }} is not active."
+      loop: "{{ fcos_service_states.results }}"
+
     - name: Check daily timers
       ansible.builtin.command: systemctl is-enabled "{{ item }}"
       loop:
@@ -47,11 +54,24 @@
       register: fcos_timer_states
       changed_when: false
 
+    - name: Assert daily ClamAV and Lynis timers are enabled
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Required daily timer {{ item.item }} is not enabled."
+      loop: "{{ fcos_timer_states.results }}"
+
     - name: Check AIDE timer state
       ansible.builtin.command: systemctl is-enabled aide-check.timer
       register: fcos_aide_timer_state
       changed_when: false
       failed_when: fcos_aide_timer_state.rc not in [0, 1]
+
+    - name: Verify explicit egress policy is loaded
+      ansible.builtin.command: firewall-cmd --info-policy fcos-egress
+      register: fcos_egress_policy
+      changed_when: false
+      failed_when: "'192.168.1.20' not in fcos_egress_policy.stdout"
 
     - name: Check Suricata configuration
       ansible.builtin.command:
