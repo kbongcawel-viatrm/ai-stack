@@ -202,7 +202,8 @@ storage:
           nfq:
             mode: accept
 
-    # The rules inspect host traffic entering/leaving enp1s0. Queue bypass is
+    # The rules inspect host traffic entering/leaving the configured NIC.
+    # Queue bypass is
     # intentionally fail-open if Suricata is down, to avoid losing management
     # connectivity; monitoring must alert if the NFQUEUE service is inactive.
     - path: /var/lib/suricata/rules/local.rules
@@ -333,10 +334,8 @@ storage:
             printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
             chmod 0640 "$rules_dir/local.rules"
           fi
-          if [[ -s "$rules_dir/suricata.rules" ]]; then
-            cp -a "$rules_dir" "$backup_dir"
-            had_rules=1
-          fi
+          cp -a "$rules_dir" "$backup_dir"
+          had_rules=1
           rollback() {
             rc=$?
             if (( rc != 0 )); then
@@ -517,7 +516,7 @@ systemd:
       enabled: true
       contents: |
         [Unit]
-        Description=Suricata IDS/IPS (NFQUEUE on enp1s0)
+        Description=Suricata IDS/IPS (NFQUEUE on ${FCOS_INTERFACE})
         Requires=suricata-prepare.service suricata-nfq-rules.service
         After=suricata-prepare.service suricata-nfq-rules.service network-online.target
         Wants=network-online.target
