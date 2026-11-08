@@ -103,7 +103,7 @@ _print_line bold "1;32" 35
 ##############################################################
 
 # Syntax check bashrc
-mybashconfigcheck() {
+validatebash	() {
     if [[ -f "$HOME/.bashrc" ]]; then
         _terminal_msg normal ".bashrc configuration"
 
@@ -121,7 +121,7 @@ echo ""
 
 }
 
-myvalidatepath(){
+validatepath(){
   _terminal_msg normal "PATH configuration"
   sleep 2
   if printf '%s' "$PATH" | awk -v RS=: '
@@ -135,6 +135,24 @@ myvalidatepath(){
   fi
 }
 
+bashconfigcheck(){
+ sleep 1
+ _terminal_msg normal "Checklist initialize 📋"
+ sleep 1
+ echo
+validatepath
+ echo
+ sleep 1
+ validatebash
+ echo
+ sleep 1
+ _terminal_msg normal "done with all checks..."
+ _terminal_msg success "Enjoy 🎉"
+ echo
+ _print_line bold "1;32" 35 
+ echo
+ sleep 1
+}
 ##############################################################
 ### end of functions P1                                    ###
 ##############################################################
@@ -781,6 +799,269 @@ setup_ptyxis_shortcut() {
 
     _terminal_msg success "Ptyxis shortcut configured: Ctrl+1"
 }
+# Whitelist podman image
+podwhitelist() {
+    local input_path repo_scope policy_file answer
+    local toolbox_name
+
+    policy_file="$HOME/.config/containers/policy.json"
+
+    read -rp "Enter container image path (e.g., quay.io/fedora/fedora-toolbox:latest): " input_path
+
+    if [[ -z "$input_path" ]]; then
+        echo "Error: Image path cannot be empty." >&2
+        return 1
+    fi
+
+    # Strip digest or tag so trust applies to repository scope
+    repo_scope="${input_path%%@*}"
+
+    if [[ "${repo_scope##*/}" == *:* ]]; then
+        repo_scope="${repo_scope%:*}"
+    fi
+
+    # Ensure user-level policy.json exists
+    if [[ ! -f "$policy_file" ]]; then
+        mkdir -p "$HOME/.config/containers" || return 1
+
+        if [[ -f "/etc/containers/policy.json" ]]; then
+            cp "/etc/containers/policy.json" "$policy_file" || return 1
+        else
+            printf '%s\n' '{"default":[{"type":"reject"}]}' > "$policy_file" || return 1
+        fi
+    fi
+
+    # Whitelist image repository
+    if ! podman image trust set \
+        --signature-policy "$policy_file" \
+        --type accept \
+        "$repo_scope"; then
+        echo "Error: Failed to whitelist image." >&2
+        return 1
+    fi
+
+    echo "Successfully whitelisted: $repo_scope"
+
+    # Check whether image is already downloaded
+    if podman image exists "$input_path"; then
+        echo "Image already exists locally. Skipping pull."
+    else
+        read -rp "Image is not downloaded. Pull '$input_path' now? [y/N]: " answer
+
+        case "$answer" in
+            [yY]|[yY][eE][sS])
+                echo "Pulling image: $input_path"
+
+                if ! podman pull "$input_path"; then
+                    echo "Error: Failed to pull image." >&2
+                    return 1
+                fi
+
+                echo "Successfully pulled: $input_path"
+                ;;
+            *)
+                echo "Image pull skipped."
+
+                # Cannot create Toolbox without a local image
+                read -rp "Continue to Toolbox creation using an existing local image? [y/N]: " answer
+
+                case "$answer" in
+                    [yY]|[yY][eE][sS])
+                        if ! podman image exists "$input_path"; then
+                            echo "Error: Image is not available locally." >&2
+                            return 1
+                        fi
+                        ;;
+                    *)
+                        echo "Operation cancelled."
+                        return 0
+                        ;;
+                esac
+                ;;
+        esac
+    fi
+
+    # Optional Toolbox creation and entry
+    read -rp "Do you want to create and enter a Toolbox using this image? [y/N]: " answer
+
+    case "$answer" in
+        [yY]|[yY][eE][sS])
+            if ! command -v toolbox >/dev/null 2>&1; then
+                echo "Error: Toolbox command is not installed." >&2
+                return 1
+            fi
+
+            read -rp "Enter Toolbox container name [custom-toolbox]: " toolbox_name
+            toolbox_name="${toolbox_name:-custom-toolbox}"
+
+            # Check if Toolbox container already exists and is running
+            if toolbox list --containers | grep -Fq "$toolbox_name"; then
+                if podman container exists "$toolbox_name"; then
+                    if [[ "$(podman inspect --format '{{.State.Running}}' "$toolbox_name" 2>/dev/null)" == "true" ]]; then
+                        echo "Toolbox '$toolbox_name' is already running. Skipping creation."
+                        toolbox enter "$toolbox_name"
+                        return $?
+                    fi
+                fi
+
+                echo "Toolbox '$toolbox_name' already exists but is not running."
+                read -rp "Do you want to start and enter it? [y/N]: " answer
+
+                case "$answer" in
+                    [yY]|[yY][eE][sS])
+                        toolbox enter "$toolbox_name"
+                        return $?
+                        ;;
+                    *)
+                        echo "Toolbox entry skipped."
+                        return 0
+                        ;;
+                esac
+            fi
+
+            echo "Creating Toolbox container: $toolbox_name"
+
+            if ! toolbox create \
+                --container "$toolbox_name" \
+                --image "$input_path"; then
+                _terminal_msg error "Error: Failed to create Toolbox container."
+                return 1
+            fi
+
+            _terminal_msg normal "Entering Toolbox container: $toolbox_name"
+            toolbox enter "$toolbox_name"
+            ;;
+        *)
+            echo "Toolbox creation skipped."
+            ;;
+    esac
+}
+
+# Setup rootless podam
+podsetuprootless() {
+    local sock_path="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+    local host_uri="unix://${sock_path}"
+
+    # 1. Restart only podman.socket on the host (let systemd socket activation start podman.service on demand)
+    if [ -f /run/.containerenv ]; then
+        echo "Detected Toolbox environment. Restarting host rootless Podman socket..."
+        flatpak-spawn --host systemctl --user reset-failed podman.socket podman.service 2>/dev/null
+        flatpak-spawn --host systemctl --user enable --now podman.socket
+        flatpak-spawn --host systemctl --user restart podman.socket
+    else
+        echo "Restarting rootless Podman socket on host..."
+        systemctl --user reset-failed podman.socket podman.service 2>/dev/null
+        systemctl --user enable --now podman.socket
+        systemctl --user restart podman.socket
+    fi
+
+    # 2. Export and persist socket variables
+    export CONTAINER_HOST="${host_uri}"
+    export DOCKER_HOST="${host_uri}"
+    grep -qxF "export CONTAINER_HOST=\"${host_uri}\"" ~/.bashrc || echo "export CONTAINER_HOST=\"${host_uri}\"" >> ~/.bashrc
+    grep -qxF "export DOCKER_HOST=\"${host_uri}\"" ~/.bashrc || echo "export DOCKER_HOST=\"${host_uri}\"" >> ~/.bashrc
+
+    # 3. Ensure docker CLI shim is available inside Toolbox
+    if [ -f /run/.containerenv ]; then
+        rpm -q podman-docker podman-remote >/dev/null 2>&1 || sudo dnf install -y podman-docker podman-remote
+        [ -f /etc/containers/nodocker ] || sudo touch /etc/containers/nodocker 2>/dev/null
+    fi
+
+    # 4. Verify socket using podman --remote (works on both host and Toolbox)
+    if [ -S "${sock_path}" ] && podman --remote --url "${host_uri}" info >/dev/null 2>&1; then
+        echo "Success: Rootless Podman socket is active at ${host_uri}"
+    else
+        echo "Error: Socket check failed. Details:"
+        podman --remote --url "${host_uri}" info
+        return 1
+    fi
+}
+
+# Reset
+podrecoverrootless() {
+    local socket_path
+
+    socket_path="${XDG_RUNTIME_DIR}/podman/podman.sock"
+
+    # Validate prerequisites
+    if ! command -v podman >/dev/null 2>&1; then
+        echo "Error: Podman is not installed." >&2
+        return 1
+    fi
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "Error: systemctl is unavailable." >&2
+        return 1
+    fi
+
+    if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+        echo "Error: XDG_RUNTIME_DIR is not configured." >&2
+        return 1
+    fi
+
+    # Confirm destructive impact of stopping containers
+    _terminal_msg warning "WARNING: All rootless Podman containers will be stopped."
+    read -rp "Continue? [y/N]: " answer
+
+    case "$answer" in
+        [yY]|[yY][eE][sS]) ;;
+        *)
+            _terminal_msg error "Operation cancelled."
+            return 0
+            ;;
+    esac
+
+    _terminal_msg normal "Stopping rootless Podman services"
+
+    if ! systemctl --user stop podman.socket podman.service; then
+        echo "Error: Failed to stop Podman services." >&2
+        return 1
+    fi
+
+    # Stop all running containers gracefully
+    if ! podman stop --all --time 10; then
+        echo "Error: Failed to stop all containers." >&2
+        return 1
+    fi
+
+    # Confirm no containers remain running
+    if [[ -n "$(podman ps --quiet)" ]]; then
+        echo "Error: Running containers remain." >&2
+        return 1
+    fi
+
+    _terminal_msg normal "Migrating rootless Podman storage"
+
+    if ! podman system migrate; then
+        echo "Error: Podman system migration failed." >&2
+        return 1
+    fi
+
+    _terminal_msg normal "Restarting rootless Podman socket"
+
+    systemctl --user reset-failed
+
+    if ! systemctl --user start podman.socket; then
+        echo "Error: Failed to start podman.socket." >&2
+        return 1
+    fi
+
+    # Verify Docker-compatible Podman API
+    if ! podman --remote \
+        --url "unix://${socket_path}" \
+        info >/dev/null; then
+        echo "Error: Rootless Podman API is unavailable." >&2
+        return 1
+    fi
+
+    _terminal_msg normal "Podman Status"
+
+    systemctl --user status podman.socket --no-pager
+    systemctl --user status podman.service --no-pager
+
+    echo
+    echo "Rootless Podman reset completed successfully."
+}
 ##############################################################
 # End of functions  Pt2                                     ## 
 ##############################################################
@@ -788,22 +1069,8 @@ setup_ptyxis_shortcut() {
 ##############################################################
 # Validate Configuration                                    ## 
 ##############################################################
-sleep 2
-_terminal_msg normal "Checklist initialize 📋"
-sleep 3
-echo
-myvalidatepath
-echo
-sleep 2
-mybashconfigcheck
-echo
-sleep 1
-_terminal_msg normal "done with all checks..."
-_terminal_msg success "Enjoy 🎉"
-echo
-_print_line bold "1;32" 35 
-echo
-sleep 1
+
 ##############################################################
 # EOF                                                       ## 
 ##############################################################
+
