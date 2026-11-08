@@ -144,10 +144,20 @@
         name: suricata-prepare.service
         state: restarted
 
-    - name: Validate Suricata configuration before service start
-      ansible.builtin.command: >-
-        suricata -T -c /etc/suricata/suricata.yaml
-        --include /etc/suricata/fcos-overrides.yaml
+    - name: Validate base Suricata configuration after rule update
+      ansible.builtin.command:
+        argv: [suricata, -T, -c, /etc/suricata/suricata.yaml]
+      changed_when: false
+
+    - name: Validate active FCOS Suricata override before service start
+      ansible.builtin.command:
+        argv:
+          - suricata
+          - -T
+          - -c
+          - /etc/suricata/suricata.yaml
+          - --include
+          - /etc/suricata/fcos-overrides.yaml
       register: suricata_test
       changed_when: false
 
