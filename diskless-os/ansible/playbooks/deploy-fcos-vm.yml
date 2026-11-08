@@ -9,8 +9,10 @@
     fcos_vm_vcpus: 2
     fcos_vm_disk_gb: 75
     fcos_network_bridge: br0
-    fcos_image_dir: /var/lib/libvirt/images
-    fcos_ignition_remote_path: /var/lib/libvirt/images/fcos-security.ign
+    fcos_storage_mountpoint: /mnt/nvme
+    fcos_image_dir: "{{ '/mnt/nvme/libvirt/images' if host_os | default('alpine') == 'alpine' else '/var/lib/libvirt/images' }}"
+    fcos_domain_dir: "{{ fcos_image_dir }}/domains"
+    fcos_ignition_remote_path: "{{ fcos_image_dir }}/fcos-security.ign"
     fcos_lan_ip: 192.168.1.20
     fcos_qemu_user: qemu
     fcos_qemu_group: qemu
@@ -32,6 +34,20 @@
           - fcos_image_dir is defined
           - fcos_image_dir.startswith('/')
         fail_msg: "Supply a supported host_os, pinned FCOS QCOW2 URL/SHA256, Ignition file and bridge."
+
+    - name: Require persistent storage mount on Alpine diskless hosts
+      ansible.builtin.command:
+        argv: [mountpoint, -q, "{{ fcos_storage_mountpoint }}"]
+      when: host_os == "alpine"
+      changed_when: false
+
+    - name: Require Alpine VM storage paths to remain on the persistent mount
+      ansible.builtin.assert:
+        that:
+          - fcos_image_dir.startswith(fcos_storage_mountpoint + "/")
+          - fcos_domain_dir.startswith(fcos_storage_mountpoint + "/")
+        fail_msg: "Alpine FCOS images and domain XML must be stored under the mounted persistent volume."
+      when: host_os == "alpine"
 
     - name: Verify hypervisor tooling
       ansible.builtin.shell: |
@@ -236,6 +252,25 @@
         delay: 15
         sleep: 10
         timeout: 900
+
+    - name: Export persistent libvirt domain definition
+      ansible.builtin.command:
+        argv:
+          - virsh
+          - -c
+          - qemu:///system
+          - dumpxml
+          - "{{ fcos_vm_name }}"
+      register: fcos_domain_xml
+      changed_when: false
+
+    - name: Persist domain XML for Alpine diskless reboot recovery
+      ansible.builtin.copy:
+        content: "{{ fcos_domain_xml.stdout }}\n"
+        dest: "{{ fcos_domain_dir }}/{{ fcos_vm_name }}.xml"
+        owner: root
+        group: root
+        mode: "0640"
 
     - name: Report VM provisioning result
       ansible.builtin.debug:
