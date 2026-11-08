@@ -23,8 +23,9 @@
         argv:
           - python3
           - -c
-          - "import ipaddress,sys; ipaddress.IPv4Address(sys.argv[1])"
+          - "import ipaddress,sys; ip=ipaddress.IPv4Address(sys.argv[1]); net=ipaddress.IPv4Network(sys.argv[2]); assert ip in net"
           - "{{ suricata_test_target }}"
+          - "{{ fcos_lan_cidr }}"
       changed_when: false
 
     - name: Save current local rules before temporary test
@@ -46,12 +47,12 @@
 
         - name: Test Suricata configuration with temporary signatures
           ansible.builtin.command:
-            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml]
+            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml, --include, /etc/suricata/fcos-overrides.yaml]
           changed_when: false
 
         - name: Restart NFQUEUE engine with temporary signatures
           ansible.builtin.systemd:
-            name: suricata-nfq.service
+            name: suricata.service
             state: restarted
 
         - name: Send IDS test request to the second LAN endpoint
@@ -124,5 +125,5 @@
 
         - name: Restart Suricata with restored production rules
           ansible.builtin.systemd:
-            name: suricata-nfq.service
+            name: suricata.service
             state: restarted
