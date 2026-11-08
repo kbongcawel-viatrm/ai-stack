@@ -14,7 +14,7 @@ depend() {
 start() {
   ebegin "Restoring persistent libvirt domains"
 
-  if ! grep -qsE "[[:space:]]$LIBVIRT_STORAGE_MOUNTPOINT[[:space:]]" /proc/mounts; then
+  if ! grep -qsE "[[:space:]]${LIBVIRT_STORAGE_MOUNTPOINT}[[:space:]]" /proc/mounts; then
     eerror "Persistent storage is not mounted at $LIBVIRT_STORAGE_MOUNTPOINT; refusing to start VMs from tmpfs"
     eend 1
     return 1
