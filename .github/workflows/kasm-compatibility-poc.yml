@@ -3,6 +3,17 @@ on:
     branches: ["**"]
     paths: [".github/workflows/kasm-compatibility-poc.yml"]
   workflow_dispatch:
+    inputs:
+      confirm_isolated_test_vm:
+        description: Confirm this is a disposable, isolated FCOS test VM
+        required: true
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      confirm_isolated_test_vm:
+        type: boolean
+        required: true
 
 permissions:
   contents: read
@@ -16,7 +27,7 @@ jobs:
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   compatibility:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
     runs-on: [self-hosted, linux, home-server]
     environment: kasm-poc
     defaults:
