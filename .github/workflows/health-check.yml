@@ -13,6 +13,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  push-event-noop:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep manual deployment workflow idle on repository pushes
+        run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
+
   health:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: [self-hosted, linux, home-server]
