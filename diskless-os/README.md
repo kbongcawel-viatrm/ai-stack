@@ -1,64 +1,60 @@
 # Diskless Home Infrastructure
 
-Alpine Linux is the default physical host and boots disklessly through iPXE. Fedora CoreOS (FCOS) is the default guest VM and hosts rootless Podman, Docker-compatible CLI tooling, security services and the Kasm compatibility proof of concept.
+Alpine Linux is the default physical host and boots disklessly through iPXE. Fedora CoreOS (FCOS) is the default guest VM and hosts rootless Podman, Docker-compatible CLI tooling, security services and the Kasm compatibility gate.
 
-The host-VM workflow is deliberately independent of the host-OS workflow. The hypervisor may be Alpine (default), Fedora Secureblue, Arch Linux or Ubuntu, provided KVM/QEMU/libvirt are already installed and reachable. This permits a manual install, USB boot or another boot medium without changing the VM deployment pipeline.
+The Host VM workflow is deliberately independent of the Host OS workflow. The hypervisor may be Alpine (default), Fedora Secureblue, Arch Linux or Ubuntu, provided KVM/QEMU/libvirt, a bridge and persistent storage are already prepared. This permits manual OS installation, USB boot or another boot medium without changing VM deployment.
 
 ## Architecture
 
-- **Host OS (default Alpine diskless):** PXE/iPXE boot, OpenRC, KVM/QEMU/libvirt and durable VM storage. The version-controlled apkovl is the boot configuration source of truth; writable LBU persistence is a separate setup and is not currently automated.
-- **Alternative hypervisors:** Fedora Secureblue, Arch Linux or Ubuntu. These are supported as deployment targets only when virtualization prerequisites are prepared separately.
-- **FCOS VM:** Butane/Ignition lays down SSH hardening, Firewalld zone/policy XML, Suricata NFQUEUE configuration and nftables hooks, rootless Podman user socket, Docker environment exports and interactive aliases, and systemd scan/update units. Ansible installs/updates required packages, initializes rule databases, runs validation and enables gated services.
-- **Kasm:** compatibility POC inside FCOS. Production install is gated until Kasm's Docker/Compose requirements and rootless Podman behavior pass an end-to-end test.
-- **Storage:** VM disks and persistent application data live on durable storage. NAS/SMB is storage only unless it separately provides DHCP/PXE/TFTP/HTTP.
-- **CI/CD:** root-level GitHub Actions workflows use a protected self-hosted runner and Ansible.
+- **Host OS (default Alpine diskless):** iPXE boot, OpenRC, KVM/QEMU/libvirt, br0 bridge and optional persistent local NVMe mount.
+- **Alternative hypervisors:** Fedora Secureblue, Arch Linux or Ubuntu. These are deployment targets only; the VM workflow does not install or reimage them.
+- **FCOS VM:** Butane/Ignition configures SSH, static networking, Firewalld, Suricata NFQUEUE, rootless Podman and daily systemd scan services. Ansible layers missing RPMs, validates IDS/IPS and tests Compose.
+- **Kasm:** separate fail-closed compatibility POC on an isolated FCOS test VM. It does not install Kasm automatically.
+- **Storage:** live VM disks, Ignition and libvirt XML must be on persistent local storage. NAS/SMB is suitable for PXE artifacts and backups, not the live qcow2 disk by default.
+- **CI/CD:** root-level GitHub Actions workflows use protected environments, SSH secrets and Ansible.
 
-## Deployment workflows
+## Independent workflows
 
-| Workflow | Scope | Independent prerequisite |
+| Workflow | Scope | Prerequisite |
 |---|---|---|
-| Deploy Host OS | Build, verify and publish Alpine netboot assets and iPXE menu | PXE HTTP/TFTP publisher and router/firmware PXE configuration |
-| Deploy Host VM | Provision FCOS VM on an existing hypervisor | Existing host OS with KVM/QEMU/libvirt and bridge/storage ready |
-| Provision Services/Containers | Configure FCOS rootless Podman, firewall, Suricata, AIDE, ClamAV, Lynis and Compose smoke stack | Reachable FCOS VM and SSH credentials |
-| Health Check | Run Ansible checks against configured host and FCOS targets | Reachable targets and known_hosts |
-| Kasm Compatibility POC | Test Docker Engine and Compose v2 compatibility on isolated FCOS | Isolated FCOS test VM and separate SSH credentials |
+| Deploy Host OS | Build and publish Alpine netboot assets, iPXE menu and apkovl | Independent PXE HTTP/TFTP publisher and router/firmware PXE settings |
+| Deploy Host VM | Provision FCOS on an existing hypervisor | KVM/QEMU/libvirt, bridge and persistent local storage already prepared |
+| Provision Services/Containers | Layer packages, configure security services, validate IDS/IPS and test rootless Compose | Reachable FCOS VM, SSH key and preapproved container image |
+| Health Check | Validate hypervisor, FCOS services, firewall, timers and rootless Podman | Reachable targets and pinned known_hosts |
+| Kasm Compatibility POC | Check Docker Engine and Compose v2 requirements | Isolated FCOS test VM and separate credentials |
 
-The host VM workflow does not invoke or require Deploy Host OS. Alpine is the default, not a hard dependency. The Kasm POC is separate from service provisioning and never installs Kasm automatically.
+Deploy Host VM never invokes or requires Deploy Host OS. Alpine PXE is the default host lifecycle, not a hard dependency.
 
-## Deployment order
+## Deployment sequence
 
 1. Prepare PXE services and router/firmware boot settings.
-2. Run **Deploy Host OS** to publish a pinned Alpine netboot release; PXE boot the host.
-3. Alternatively, manually install Alpine, Secureblue, Arch or Ubuntu and prepare KVM/QEMU/libvirt.
-4. Run **Deploy Host VM** to create the FCOS guest on the prepared hypervisor.
-5. Run **Provision Services/Containers** to configure FCOS.
-6. Run the **Health Check** workflow.
-7. Run the Kasm POC gate. Do not install production Kasm until the installer, API, Compose, services and workspace lifecycle pass.
+2. Run Deploy Host OS and PXE boot Alpine, or manually prepare another supported hypervisor.
+3. For diskless Alpine, provide the UUID of an already formatted ext4 NVMe partition to the Host OS workflow. The workflow does not partition or format disks.
+4. Run Deploy Host VM with a persistent storage path; the playbook rejects tmpfs/overlay storage.
+5. Run Provision Services/Containers, then Health Check.
+6. Run Kasm Compatibility POC only against an isolated FCOS test VM.
 
 ## Network defaults
 
-- LAN: `192.168.1.0/24`
-- FCOS VM example: `192.168.1.20`
-- Alpine host example: `192.168.1.10`
-- FCOS capture/management NIC: `enp1s0`
-- FCOS SSH: public-key only, allowed from the LAN CIDR.
-- Firewalld inbound: default DROP with a restricted LAN SSH exception.
-- Firewalld host egress: explicit source address and HTTP/HTTPS; DNS/NTP are included for basic operation. Additional egress ports must be explicitly declared.
+- LAN: 192.168.1.0/24
+- FCOS VM: 192.168.1.20/24
+- Gateway/DNS: 192.168.1.1
+- FCOS NIC: enp1s0
+- Alpine physical NIC: enp1s0 by default; host IP is assigned to bridge br0
+- FCOS SSH: public-key only, allowed from the trusted LAN
+- Firewalld inbound: default DROP with a LAN-only SSH exception
+- Firewalld host egress: explicit source address, HTTP/HTTPS, DNS and NTP
 
-Change the example IPs in Ansible inventory before deployment. The egress policy requires the FCOS LAN host address as an explicit variable.
+Update Butane and inventory together if the FCOS IP, NIC or LAN changes. Kasm HTTPS ingress is not opened by the baseline firewall; add a narrowly scoped ingress policy only after the Kasm POC passes.
+
+## Persistent storage
+
+For Alpine diskless, the Host OS workflow can configure an existing ext4 partition by UUID, mounted at /mnt/nvme by default. FCOS base/overlay QCOW2, Ignition and persistent libvirt XML are stored under /mnt/nvme/libvirt/images. An OpenRC service restores the domain definition and starts FCOS after the storage mount and libvirtd are ready.
+
+If no storage UUID is supplied, Alpine still boots, but Deploy Host VM rejects the diskless root filesystem as VM storage. The workflow never partitions or formats the NVMe. Runtime LBU backup/persistence for arbitrary Alpine configuration changes remains a separate operation.
 
 ## Resource constraint
 
-The physical host has 8 GB RAM and an Intel i3-10320. FCOS plus Kasm services and a workspace may exceed available memory. Start with no more than one test workspace, measure memory/swap/IO, and do not assume Kasm's documented minimums are sufficient for this host.
+The physical host has 8 GB RAM and an Intel i3-10320. FCOS plus Kasm services and a workspace may exceed available memory. Start with one isolated test workspace only after compatibility passes, and measure memory, swap and storage I/O.
 
-## Repository layout
-
-- `.github/workflows/`: executable GitHub Actions workflows (must be at repository root).
-- `diskless-os/ansible/`: inventories, playbooks and roles.
-- `diskless-os/alpine/`: diskless host notes and validation.
-- `diskless-os/pxe/`: iPXE and dnsmasq configuration.
-- `diskless-os/butane/`: FCOS Ignition source.
-- `diskless-os/services/`: service and container configuration.
-- `diskless-os/docs/`: architecture, deployment plan and runbooks.
-
-See [architecture](docs/architecture.md), [deployment plan](docs/deployment-plan.md), [PXE automation](docs/pxe-automation.md) and [Ansible operations](ansible/README.md).
+See architecture, deployment plan, PXE automation, Alpine host and Ansible operations documentation.
