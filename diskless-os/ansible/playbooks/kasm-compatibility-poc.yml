@@ -23,13 +23,36 @@
       register: docker_version_output
       changed_when: false
 
-    - name: Capture Compose output through the alias
+    - name: Capture server version from Docker-compatible endpoint
+      ansible.builtin.shell: |
+        set -o pipefail
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker version"' |
+          awk '/^Server:/ { server=1; next } server && /^Version:/ { print $2; exit }'
+      args:
+        executable: /bin/bash
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      register: docker_server_version
+      changed_when: false
+
+    - name: Capture Docker Compose v2 plugin output
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker compose version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      register: compose_v2_output
+      changed_when: false
+      failed_when: false
+
+    - name: Capture legacy docker-compose alias output
       ansible.builtin.command: >-
         bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker-compose version"'
       environment:
         CONTAINER_HOST: "{{ podman_socket }}"
         DOCKER_HOST: "{{ podman_socket }}"
-      register: compose_version_output
+      register: compose_legacy_output
       changed_when: false
 
     - name: Capture API server identity
@@ -39,26 +62,31 @@
       register: podman_info_output
       changed_when: false
 
-    - name: Parse remote engine identity
+    - name: Parse remote engine identity and Compose version
       ansible.builtin.set_fact:
         podman_info: "{{ podman_info_output.stdout | from_json }}"
+        compose_v2_version: "{{ compose_v2_output.stdout | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') | default('0.0.0', true) }}"
 
     - name: Report compatibility evidence
       ansible.builtin.debug:
         msg:
           - "Docker CLI/server output: {{ docker_version_output.stdout_lines | default([]) }}"
-          - "Compose output: {{ compose_version_output.stdout_lines | default([]) }}"
+          - "Detected server version: {{ docker_server_version.stdout | default('not detected') }}"
+          - "Docker Compose v2 output: {{ compose_v2_output.stdout | default('not available') }}"
+          - "Legacy compose output: {{ compose_legacy_output.stdout_lines | default([]) }}"
           - "Rootless engine: {{ podman_info.host.security.rootless | default(false) }}"
           - "Engine distribution: {{ podman_info.host.distribution.distribution | default('unknown') }}"
 
-    - name: Gate Kasm installer on genuine Docker Engine and Compose
+    - name: Gate Kasm installer on genuine Docker Engine and Compose versions
       ansible.builtin.assert:
         that:
           - "'Podman' not in docker_version_output.stdout"
           - "'Docker Engine' in docker_version_output.stdout"
-          - "'Docker Compose version v' in compose_version_output.stdout"
+          - docker_server_version.stdout is version(kasm_min_docker_version, '>=')
+          - "'Docker Compose version' in compose_v2_output.stdout"
+          - compose_v2_version is version(kasm_min_compose_version, '>=')
         fail_msg: >-
-          Kasm 1.19 requires Docker Engine >= {{ kasm_min_docker_version }} and
+          Kasm requires Docker Engine >= {{ kasm_min_docker_version }} and
           Docker Compose >= {{ kasm_min_compose_version }}. The observed endpoint
           is Podman-compatible, not a verified Docker Engine/Compose implementation.
           Do not run the Kasm installer on this FCOS rootless Podman VM. This POC
