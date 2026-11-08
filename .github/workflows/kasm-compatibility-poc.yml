@@ -17,7 +17,6 @@ jobs:
 
   compatibility:
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, linux, home-server]
     environment: kasm-poc
     defaults:
