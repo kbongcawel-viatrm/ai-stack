@@ -14,6 +14,7 @@ all:
           fcos_vm_vcpus: 2
           fcos_vm_disk_gb: 75
           # For diskless Alpine, this must be on the mounted local NVMe volume.
+          fcos_storage_mountpoint: /mnt/nvme
           fcos_image_dir: /mnt/nvme/libvirt/images
           fcos_lan_ip: 192.168.1.20
           # Ubuntu defaults: libvirt-qemu:kvm. Alpine/Secureblue/Arch: qemu:qemu.
