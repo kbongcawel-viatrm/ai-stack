@@ -54,6 +54,7 @@ jobs:
           FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
           AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
+          AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
