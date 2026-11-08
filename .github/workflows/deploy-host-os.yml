@@ -3,6 +3,80 @@ on:
     branches: ["**"]
     paths: [".github/workflows/deploy-host-os.yml"]
   workflow_dispatch:
+    inputs:
+      alpine_version:
+        description: Alpine stable version
+        required: true
+        default: "3.24.4"
+        type: string
+      publish:
+        description: Publish the verified PXE artifacts
+        required: true
+        default: true
+        type: boolean
+      host_nic:
+        description: Physical host NIC
+        required: true
+        default: enp1s0
+        type: string
+      host_bridge:
+        description: Host bridge name
+        required: true
+        default: br0
+        type: string
+      storage_uuid:
+        description: Persistent storage filesystem UUID
+        required: true
+        type: string
+      storage_mountpoint:
+        description: Persistent storage mountpoint
+        required: true
+        default: /mnt/nvme
+        type: string
+      vm_storage_path:
+        description: Persistent VM storage path
+        required: true
+        default: /mnt/nvme/libvirt/images
+        type: string
+      storage_fstype:
+        description: Persistent storage filesystem type
+        required: true
+        default: ext4
+        type: string
+  workflow_call:
+    inputs:
+      alpine_version:
+        type: string
+        required: false
+        default: "3.24.4"
+      publish:
+        type: boolean
+        required: false
+        default: true
+      host_nic:
+        type: string
+        required: false
+        default: enp1s0
+      host_bridge:
+        type: string
+        required: false
+        default: br0
+      storage_uuid:
+        type: string
+        required: false
+        default: ""
+      storage_mountpoint:
+        type: string
+        required: false
+        default: /mnt/nvme
+      vm_storage_path:
+        type: string
+        required: false
+        default: /mnt/nvme/libvirt/images
+      storage_fstype:
+        type: string
+        required: false
+        default: ext4
 
 permissions:
   contents: read
@@ -20,7 +94,7 @@ jobs:
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   build:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +175,7 @@ jobs:
           retention-days: 14
 
   publish:
-    if: ${{ inputs.publish }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.publish }}
     needs: build
     runs-on: [self-hosted, linux, home-server]
     environment: pxe-production
