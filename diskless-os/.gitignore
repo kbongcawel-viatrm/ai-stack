@@ -1,0 +1,7 @@
+*.ign
+ansible/inventory/hosts.yml
+ansible/inventory/health.yml
+*.private
+*.key
+*.pem
+.secrets/
