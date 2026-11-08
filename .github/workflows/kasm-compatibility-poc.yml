@@ -1,0 +1,75 @@
+name: Kasm Rootless Podman Compatibility POC
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_isolated_test_vm:
+        description: Confirm target is an isolated FCOS test VM, not the production guest
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: [self-hosted, linux, home-server]
+    environment: kasm-poc
+    defaults:
+      run:
+        working-directory: diskless-os/ansible
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require isolated test VM confirmation
+        env:
+          CONFIRMED: ${{ inputs.confirm_isolated_test_vm }}
+          KASM_POC_FCOS_IP: ${{ vars.KASM_POC_FCOS_IP }}
+          KASM_POC_SSH_USER: ${{ vars.KASM_POC_SSH_USER }}
+          KASM_POC_SSH_PRIVATE_KEY: ${{ secrets.KASM_POC_SSH_PRIVATE_KEY }}
+          KASM_POC_KNOWN_HOSTS: ${{ secrets.KASM_POC_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test "$CONFIRMED" = "true" || { echo "Refusing to test Kasm on a production FCOS VM." >&2; exit 1; }
+          for value in "$KASM_POC_FCOS_IP" "$KASM_POC_SSH_USER" "$KASM_POC_SSH_PRIVATE_KEY" "$KASM_POC_KNOWN_HOSTS"; do test -n "$value"; done
+
+      - name: Install Ansible and configure isolated SSH
+        env:
+          KASM_POC_SSH_PRIVATE_KEY: ${{ secrets.KASM_POC_SSH_PRIVATE_KEY }}
+          KASM_POC_KNOWN_HOSTS: ${{ secrets.KASM_POC_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m venv "$RUNNER_TEMP/ansible-venv"
+          "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
+          echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$KASM_POC_SSH_PRIVATE_KEY" > "$HOME/.ssh/kasm-poc"
+          printf '%s\n' "$KASM_POC_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/kasm-poc" "$HOME/.ssh/known_hosts"
+
+      - name: Build isolated POC inventory
+        env:
+          KASM_POC_FCOS_IP: ${{ vars.KASM_POC_FCOS_IP }}
+          KASM_POC_SSH_USER: ${{ vars.KASM_POC_SSH_USER }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os
+          inventory = {"all": {"children": {"fcos": {"hosts": {"kasm-poc": {
+              "ansible_host": os.environ["KASM_POC_FCOS_IP"],
+              "ansible_user": os.environ["KASM_POC_SSH_USER"],
+              "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/kasm-poc")
+          }}}}}}
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "kasm-poc-inventory.json"), "w") as f:
+              json.dump(inventory, f)
+          PY
+
+      - name: Run Docker API and Compose compatibility gate
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+        run: |
+          set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/kasm-poc-inventory.json" playbooks/kasm-compatibility-poc.yml \
+            --private-key "$HOME/.ssh/kasm-poc" --diff
