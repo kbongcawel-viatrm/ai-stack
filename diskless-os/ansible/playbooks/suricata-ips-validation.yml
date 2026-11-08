@@ -23,6 +23,18 @@
         status_code: 200
         timeout: 5
 
+    - name: Remove stale validation events from previous POC runs
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        if [[ -f "{{ suricata_test_eve }}" ]]; then
+          grep -vE '"signature_id":9900000[12]' "{{ suricata_test_eve }}" > "{{ suricata_test_eve }}.tmp" || true
+          cat "{{ suricata_test_eve }}.tmp" > "{{ suricata_test_eve }}"
+          rm -f "{{ suricata_test_eve }}.tmp"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Back up generated Suricata rules
       ansible.builtin.copy:
         src: "{{ suricata_rules_file }}"
