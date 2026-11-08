@@ -58,6 +58,7 @@ jobs:
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
           SURICATA_TEST_TARGET_IP: ${{ inputs.suricata_test_target_ip }}
           CONTAINER_SMOKE_IMAGE: ${{ inputs.container_smoke_image }}
+          AIDE_BASELINE_APPROVAL_REASON: ${{ inputs.aide_baseline_approval_reason }}
           ENABLE_AIDE_TIMER: ${{ inputs.enable_aide_timer }}
           LAYER_PACKAGES: ${{ inputs.layer_packages }}
         run: |
@@ -80,6 +81,7 @@ jobs:
           inventory = {"all": {"children": {"fcos": {"hosts": {"fcos-security": host}}}}}
           variables = {
               "aide_enable_daily_timer": os.environ["ENABLE_AIDE_TIMER"].lower() == "true",
+              "aide_baseline_approval_reason": os.environ.get("AIDE_BASELINE_APPROVAL_REASON", ""),
               "layer_packages": os.environ.get("LAYER_PACKAGES", "true").lower() == "true",
               "container_smoke_image": os.environ["CONTAINER_SMOKE_IMAGE"]
           }
