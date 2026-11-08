@@ -90,7 +90,6 @@ jobs:
       - name: Run hypervisor and FCOS health checks
         env:
           ANSIBLE_HOST_KEY_CHECKING: "True"
-          ANSIBLE_SSH_ARGS: "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
         run: |
           set -Eeuo pipefail
           ansible-playbook -i "$RUNNER_TEMP/health-inventory.json" playbooks/health-check.yml --diff
