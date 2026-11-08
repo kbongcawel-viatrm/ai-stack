@@ -485,7 +485,7 @@ storage:
           suricata-update enable-source et/open
           suricata-update
           suricata -T -c /etc/suricata/suricata.yaml
-suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
+          suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
           if systemctl is-active --quiet suricata.service; then
             systemctl restart suricata.service
           fi
