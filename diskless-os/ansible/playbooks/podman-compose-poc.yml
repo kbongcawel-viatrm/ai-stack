@@ -9,11 +9,14 @@
     compose_poc_dir: /var/home/core/podman-compose-poc
     compose_poc_port: 18080
   tasks:
-    - name: Verify rootless Podman socket is active
-      ansible.builtin.command: systemctl --user is-active podman.socket
+    - name: Ensure rootless Podman socket is active
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        scope: user
+        enabled: true
+        state: started
       environment:
         XDG_RUNTIME_DIR: /run/user/1000
-      changed_when: false
 
     - name: Verify approved image is already present in rootless storage
       ansible.builtin.command:
