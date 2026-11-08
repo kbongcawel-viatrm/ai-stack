@@ -1,0 +1,65 @@
+---
+- name: Rootless Podman Docker API compatibility gate for Kasm
+  hosts: fcos
+  become: false
+  gather_facts: false
+  vars:
+    podman_socket: unix:///run/user/1000/podman/podman.sock
+    kasm_min_docker_version: "28.5.2"
+    kasm_min_compose_version: "2.40.2"
+  tasks:
+    - name: Confirm rootless user socket is active
+      ansible.builtin.command: systemctl --user is-active podman.socket
+      environment:
+        XDG_RUNTIME_DIR: /run/user/1000
+      changed_when: false
+
+    - name: Capture Docker CLI and server output through the alias
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      register: docker_version_output
+      changed_when: false
+
+    - name: Capture Compose output through the alias
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker-compose version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      register: compose_version_output
+      changed_when: false
+
+    - name: Capture API server identity
+      ansible.builtin.command: "podman --remote --url {{ podman_socket }} info --format json"
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+      register: podman_info_output
+      changed_when: false
+
+    - name: Parse remote engine identity
+      ansible.builtin.set_fact:
+        podman_info: "{{ podman_info_output.stdout | from_json }}"
+
+    - name: Report compatibility evidence
+      ansible.builtin.debug:
+        msg:
+          - "Docker CLI/server output: {{ docker_version_output.stdout_lines | default([]) }}"
+          - "Compose output: {{ compose_version_output.stdout_lines | default([]) }}"
+          - "Rootless engine: {{ podman_info.host.security.rootless | default(false) }}"
+          - "Engine distribution: {{ podman_info.host.distribution.distribution | default('unknown') }}"
+
+    - name: Gate Kasm installer on genuine Docker Engine and Compose
+      ansible.builtin.assert:
+        that:
+          - "'Podman' not in docker_version_output.stdout"
+          - "'Docker Engine' in docker_version_output.stdout"
+          - "'Docker Compose version v' in compose_version_output.stdout"
+        fail_msg: >-
+          Kasm 1.19 requires Docker Engine >= {{ kasm_min_docker_version }} and
+          Docker Compose >= {{ kasm_min_compose_version }}. The observed endpoint
+          is Podman-compatible, not a verified Docker Engine/Compose implementation.
+          Do not run the Kasm installer on this FCOS rootless Podman VM. This POC
+          deliberately fails closed rather than switching to rootful Podman.
