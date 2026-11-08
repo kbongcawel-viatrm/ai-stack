@@ -135,4 +135,5 @@ jobs:
     with:
       fcos_vm_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
       fcos_vm_name: fcos-kasm-poc
+      fcos_ssh_user: ${{ vars.KASM_POC_SSH_USER || 'core' }}
     secrets: inherit
