@@ -1,10 +1,33 @@
 ---
 all:
+  vars:
+    ansible_python_interpreter: auto_silent
+    fcos_user: core
+    fcos_vm_name: fcos-security
+    fcos_lan_ip: 192.168.1.20
+    fcos_lan_cidr: 192.168.1.0/24
+    suricata_interface: enp1s0
   children:
+    hypervisors:
+      hosts:
+        hypervisor:
+          ansible_host: 192.168.1.10
+          ansible_user: root
+          # Set to alpine, secureblue, arch, or ubuntu.
+          # This workflow assumes KVM/QEMU/libvirt are already installed.
+          host_os: alpine
+          libvirt_bridge: br0
+          fcos_memory_mib: 5120
+          fcos_vcpus: 2
+          fcos_disk_gib: 40
+          fcos_base_image: /var/lib/libvirt/images/fcos-base.qcow2
+          fcos_disk: /var/lib/libvirt/images/fcos-security.qcow2
+          fcos_ignition: /var/lib/libvirt/ignition/fcos-security.ign
+          # Set a pinned FCOS QEMU qcow2 URL and its SHA-256 digest.
+          fcos_qcow2_url: REPLACE_WITH_PINNED_FCOS_QCOW2_URL
+          fcos_qcow2_sha256: REPLACE_WITH_64_HEX_SHA256
     fcos:
       hosts:
         fcos-security:
           ansible_host: 192.168.1.20
           ansible_user: core
-  vars:
-    ansible_python_interpreter: auto_silent
