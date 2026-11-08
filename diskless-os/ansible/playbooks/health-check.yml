@@ -68,6 +68,15 @@
         fail_msg: "Required service {{ item.item }} is not active."
       loop: "{{ fcos_service_states.results }}"
 
+    - name: Gather system service facts for bootstrap firewall
+      ansible.builtin.service_facts:
+
+    - name: Assert bootstrap firewall is retired after Firewalld activation
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['fcos-bootstrap-firewall.service'].state != 'running'
+        fail_msg: "Bootstrap nftables firewall is still active; verify Firewalld policy before retiring it."
+
     - name: Check daily and weekly timers
       ansible.builtin.command:
         argv: [systemctl, is-active, "{{ item }}"]
