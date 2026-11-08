@@ -680,7 +680,7 @@ systemd:
         [Unit]
         Description=Daily AIDE integrity check
         ConditionFileIsExecutable=/usr/sbin/aide
-        ConditionPathExistsGlob=/var/lib/aide/aide.db*
+        ConditionPathExists=/var/lib/aide/aide.db.gz
 
         [Service]
         Type=oneshot
