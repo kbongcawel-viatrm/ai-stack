@@ -75,7 +75,9 @@
       ansible.builtin.assert:
         that:
           - ansible_facts.services['fcos-bootstrap-firewall.service'].state != 'running'
-        fail_msg: "Bootstrap nftables firewall is still active; verify Firewalld policy before retiring it."
+        fail_msg: >-
+          Bootstrap nftables firewall is still active. Verify the Firewalld policy
+          before retiring the bootstrap firewall.
 
     - name: Check daily and weekly timers
       ansible.builtin.command:
