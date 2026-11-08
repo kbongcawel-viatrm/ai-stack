@@ -113,6 +113,19 @@
           AIDE timer state does not match aide_enable_daily_timer.
           Keep it disabled until the baseline has been initialized and reviewed.
 
+    - name: Check AIDE timer active state
+      ansible.builtin.command:
+        argv: [systemctl, is-active, aide-check.timer]
+      register: aide_timer_active
+      changed_when: false
+      failed_when: false
+
+    - name: Assert AIDE timer active state matches baseline approval
+      ansible.builtin.assert:
+        that:
+          - (aide_timer_active.stdout == "active") == (aide_enable_daily_timer | bool)
+        fail_msg: "AIDE timer activation does not match the approved baseline state."
+
     - name: Validate Firewalld public zone target
       ansible.builtin.command:
         argv: [firewall-cmd, --zone=public, --get-target]
