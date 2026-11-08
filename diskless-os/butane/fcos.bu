@@ -714,6 +714,10 @@ systemd:
         [Install]
         WantedBy=timers.target
 
+    - name: clamav-freshclam.service
+      mask: true
+    - name: clamav-freshclam-once.timer
+      mask: true
     - name: clamav-freshclam-daily.service
       enabled: false
       contents: |
