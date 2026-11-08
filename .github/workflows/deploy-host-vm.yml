@@ -1,10 +1,54 @@
-name: Deploy Host VM - Fedora CoreOS
+name: Deploy Host VM - FCOS on an existing hypervisor
 
 on:
   workflow_dispatch:
+    inputs:
+      host_os:
+        description: Existing hypervisor OS (must already have KVM/libvirt)
+        required: true
+        type: choice
+        options: [alpine, secureblue, arch, ubuntu]
+        default: alpine
+      fcos_qcow2_url:
+        description: Direct URL to a pinned, uncompressed FCOS QCOW2 image
+        required: true
+        type: string
+      fcos_qcow2_sha256:
+        description: SHA-256 for the FCOS QCOW2 image
+        required: true
+        type: string
+      fcos_lan_ip:
+        description: Static FCOS guest IPv4 address (matches Butane firewall policy)
+        required: true
+        default: "192.168.1.20"
+        type: string
+      network_bridge:
+        description: Existing libvirt bridge on the hypervisor
+        required: true
+        default: "br0"
+        type: string
+      vm_memory_mb:
+        description: FCOS guest RAM (MB)
+        required: true
+        default: "4096"
+        type: string
+      vm_vcpus:
+        description: FCOS guest vCPU count
+        required: true
+        default: "2"
+        type: string
+      vm_disk_gb:
+        description: FCOS guest overlay disk size (GB)
+        required: true
+        default: "75"
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: fcos-host-vm-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -14,22 +58,43 @@ jobs:
       run:
         working-directory: diskless-os/ansible
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Ansible and Butane prerequisites
-        shell: bash
+      - name: Validate protected hypervisor access
+        env:
+          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
+          HYPERVISOR_KNOWN_HOSTS: ${{ secrets.HYPERVISOR_KNOWN_HOSTS }}
+          FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --user ansible-core
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          sudo install -d -m 0755 /usr/local/bin
-          sudo curl -fsSL -o /usr/local/bin/butane https://github.com/coreos/butane/releases/download/v0.23.0/butane-x86_64-unknown-linux-gnu
-          sudo chmod 0755 /usr/local/bin/butane
-          butane --version
+          for value in "$HYPERVISOR_HOST" "$HYPERVISOR_USER" "$HYPERVISOR_SSH_PRIVATE_KEY" "$HYPERVISOR_KNOWN_HOSTS" "$FCOS_SSH_PUBLIC_KEY"; do
+            test -n "$value"
+          done
+          command -v python3 ssh-keygen curl
 
-      - name: Configure Ansible SSH access
-        shell: bash
+      - name: Install Ansible and Butane
+        run: |
+          set -Eeuo pipefail
+          python3 -m venv "$RUNNER_TEMP/ansible-venv"
+          "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
+          echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
+          BUTANE_VERSION=0.23.0
+          curl -fsSL -o "$RUNNER_TEMP/butane" "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
+          chmod 0755 "$RUNNER_TEMP/butane"
+          "$RUNNER_TEMP/butane" --version
+
+      - name: Render and validate FCOS Ignition
+        env:
+          FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+        run: |
+          set -Eeuo pipefail
+          envsubst '${FCOS_SSH_PUBLIC_KEY}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
+          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
+          python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
+
+      - name: Configure SSH trust for the hypervisor
         env:
           HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
           HYPERVISOR_KNOWN_HOSTS: ${{ secrets.HYPERVISOR_KNOWN_HOSTS }}
@@ -41,55 +106,57 @@ jobs:
           printf '%s\n' "$HYPERVISOR_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 0600 "$HOME/.ssh/known_hosts"
 
-      - name: Build protected deployment inventory
-        shell: bash
+      - name: Build isolated Ansible inventory and variables
         env:
           HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
           HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
-          HOST_OS: ${{ vars.HOST_OS }}
-          LIBVIRT_BRIDGE: ${{ vars.LIBVIRT_BRIDGE }}
-          FCOS_VM_IP: ${{ vars.FCOS_VM_IP }}
-          FCOS_QCOW2_URL: ${{ vars.FCOS_QCOW2_URL }}
-          FCOS_QCOW2_SHA256: ${{ vars.FCOS_QCOW2_SHA256 }}
-          FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+          HOST_OS: ${{ inputs.host_os }}
+          FCOS_QCOW2_URL: ${{ inputs.fcos_qcow2_url }}
+          FCOS_QCOW2_SHA256: ${{ inputs.fcos_qcow2_sha256 }}
+          FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
+          FCOS_NETWORK_BRIDGE: ${{ inputs.network_bridge }}
+          FCOS_VM_MEMORY_MB: ${{ inputs.vm_memory_mb }}
+          FCOS_VM_VCPUS: ${{ inputs.vm_vcpus }}
+          FCOS_VM_DISK_GB: ${{ inputs.vm_disk_gb }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import json, os
-          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_VM_IP",
-                      "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_SSH_PUBLIC_KEY"]
-          missing = [key for key in required if not os.environ.get(key)]
+          import json, os, re
+          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE"]
+          missing = [name for name in required if not os.environ.get(name)]
           if missing:
-              raise SystemExit("Missing GitHub variables/secrets: " + ", ".join(missing))
-          inventory = {
-              "all": {
-                  "children": {
-                      "hypervisors": {
-                          "hosts": {
-                              "hypervisor": {
-                                  "ansible_host": os.environ["HYPERVISOR_HOST"],
-                                  "ansible_user": os.environ["HYPERVISOR_USER"],
-                                  "host_os": os.environ.get("HOST_OS") or "alpine",
-                                  "libvirt_bridge": os.environ.get("LIBVIRT_BRIDGE") or "br0",
-                                  "fcos_vm_ip": os.environ["FCOS_VM_IP"],
-                                  "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
-                                  "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"]
-                              }
-                          }
-                      }
-                  }
-              }
+              raise SystemExit("Missing values: " + ", ".join(missing))
+          if not re.fullmatch(r"[0-9a-fA-F]{64}", os.environ["FCOS_QCOW2_SHA256"]):
+              raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
+          vars_data = {
+              "host_os": os.environ["HOST_OS"],
+              "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
+              "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"],
+              "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
+              "fcos_network_bridge": os.environ["FCOS_NETWORK_BRIDGE"],
+              "fcos_vm_memory_mb": int(os.environ["FCOS_VM_MEMORY_MB"]),
+              "fcos_vm_vcpus": int(os.environ["FCOS_VM_VCPUS"]),
+              "fcos_vm_disk_gb": int(os.environ["FCOS_VM_DISK_GB"]),
+              "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign")
           }
-          with open("inventory/hosts.yml", "w", encoding="utf-8") as f:
-              json.dump(inventory, f, indent=2)
+          inventory = {
+              "all": {"children": {"hypervisors": {"hosts": {"hypervisor": {
+                  "ansible_host": os.environ["HYPERVISOR_HOST"],
+                  "ansible_user": os.environ["HYPERVISOR_USER"]
+              }}}}}
+          }
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "inventory.json"), "w") as f:
+              json.dump(inventory, f)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "deploy-vars.json"), "w") as f:
+              json.dump(vars_data, f)
           PY
 
-      - name: Deploy FCOS VM on the selected hypervisor
+      - name: Deploy FCOS VM (does not run Deploy Host OS)
         env:
-          FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+          ANSIBLE_SSH_ARGS: "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
         run: |
           set -Eeuo pipefail
-          ansible-playbook -i inventory/hosts.yml playbooks/deploy-host-vm.yml \
-            --limit hypervisors \
-            --private-key "$HOME/.ssh/hypervisor" \
-            --diff
+          ansible-playbook -i "$RUNNER_TEMP/inventory.json" playbooks/deploy-fcos-vm.yml \
+            --extra-vars "@$RUNNER_TEMP/deploy-vars.json" \
+            --private-key "$HOME/.ssh/hypervisor" --diff
