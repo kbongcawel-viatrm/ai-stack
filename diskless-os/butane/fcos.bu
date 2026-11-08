@@ -1,0 +1,30 @@
+variant: fcos
+version: 1.6.0
+metadata:
+  name: fcos-security
+  labels:
+    role: security
+storage:
+  files:
+    - path: /etc/ssh/sshd_config.d/00-local-security.conf
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          PubkeyAuthentication yes
+          AuthenticationMethods publickey
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+          PermitEmptyPasswords no
+          PermitRootLogin prohibit-password
+    - path: /etc/motd.d/managed-by-ansible
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          FCOS security VM - provisioned by Ignition and Ansible.
+systemd:
+  units:
+    - name: sshd.service
+      enabled: true
