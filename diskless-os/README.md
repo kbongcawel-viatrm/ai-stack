@@ -8,7 +8,7 @@ The host-VM workflow is deliberately independent of the host-OS workflow. The hy
 
 - **Host OS (default Alpine diskless):** PXE/iPXE boot, OpenRC, KVM/QEMU/libvirt and durable VM storage. Alpine LBU persists required configuration.
 - **Alternative hypervisors:** Fedora Secureblue, Arch Linux or Ubuntu. These are supported as deployment targets only when virtualization prerequisites are prepared separately.
-- **FCOS VM:** rootless Podman, Podman API socket, Docker-compatible CLI wrapper, Firewalld, Suricata, AIDE, ClamAV and Lynis.
+- **FCOS VM:** Butane/Ignition lays down SSH hardening, Firewalld zone/policy XML, Suricata NFQUEUE configuration and nftables hooks, rootless Podman/Docker wrappers, and systemd scan/update units. Ansible installs/updates required packages, initializes rule databases, runs validation and enables gated services.
 - **Kasm:** compatibility POC inside FCOS. Production install is gated until Kasm's Docker/Compose requirements and rootless Podman behavior pass an end-to-end test.
 - **Storage:** VM disks and persistent application data live on durable storage. NAS/SMB is storage only unless it separately provides DHCP/PXE/TFTP/HTTP.
 - **CI/CD:** root-level GitHub Actions workflows use a protected self-hosted runner and Ansible.
