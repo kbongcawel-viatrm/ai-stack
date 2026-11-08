@@ -1,6 +1,6 @@
 services:
   rootless-compose-smoke:
-    image: docker.io/library/alpine:3.24.4
+    image: ${CONTAINER_SMOKE_IMAGE:-docker.io/library/alpine:3.24.4}
     container_name: fcos-rootless-compose-smoke
     command:
       - sh
