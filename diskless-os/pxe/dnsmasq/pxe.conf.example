@@ -1,0 +1,15 @@
+# Example only; router remains the sole address-assigning DHCP server.
+port=0
+interface=br0
+bind-interfaces
+log-dhcp
+dhcp-range=192.168.1.0,proxy
+enable-tftp
+tftp-root=/srv/tftp
+dhcp-no-override
+dhcp-match=set:bios,option:client-arch,0
+dhcp-boot=tag:bios,undionly.kpxe
+dhcp-match=set:efi64,option:client-arch,7
+dhcp-boot=tag:efi64,ipxe.efi
+dhcp-userclass=set:ipxe,iPXE
+dhcp-boot=tag:ipxe,http://192.168.1.2/boot/menu.ipxe
