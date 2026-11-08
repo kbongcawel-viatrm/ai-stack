@@ -167,7 +167,7 @@
         group: "{{ fcos_user }}"
         mode: "0640"
 
-    - name: Pull the pre-approved smoke-test image through the FCOS rootless engine
+    - name: Confirm the podwhitelist-approved image is present in the FCOS rootless store
       become_user: "{{ fcos_user }}"
       ansible.builtin.command:
         argv:
@@ -175,14 +175,25 @@
           - --remote
           - --url
           - "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
-          - pull
+          - image
+          - exists
           - docker.io/library/alpine:3.24.4
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
         DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
-      changed_when: true
+      register: fcos_smoke_image
+      changed_when: false
+      failed_when: false
 
+    - name: Require the image to be pre-whitelisted and pulled
+      ansible.builtin.assert:
+        that:
+          - fcos_smoke_image.rc == 0
+        fail_msg: >-
+          docker.io/library/alpine:3.24.4 is not present in the FCOS rootless
+          image store. Use your existing podwhitelist helper in the FCOS
+          user shell to approve and pull this image, then rerun this workflow.
     - name: Exercise Compose create, inspect and cleanup with rootless Podman
       become_user: "{{ fcos_user }}"
       block:
