@@ -13,6 +13,10 @@ on:
         required: false
         default: fcos-security
         type: string
+      fcos_ssh_user:
+        description: FCOS SSH user; defaults to FCOS_SSH_USER variable
+        required: false
+        type: string
   workflow_call:
     inputs:
       fcos_vm_ip:
@@ -23,6 +27,10 @@ on:
         type: string
         required: false
         default: fcos-security
+      fcos_ssh_user:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -77,8 +85,8 @@ jobs:
           HOST_OS: ${{ vars.HOST_OS }}
           FCOS_VM_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_VM_IP }}
           FCOS_VM_NAME: ${{ inputs.fcos_vm_name || 'fcos-security' }}
-          FCOS_SSH_USER: ${{ vars.FCOS_SSH_USER }}
-          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
+          FCOS_SSH_USER: ${{ inputs.fcos_ssh_user || vars.FCOS_SSH_USER }}
+          FCOS_LAN_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_LAN_IP }}
           FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
           AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
