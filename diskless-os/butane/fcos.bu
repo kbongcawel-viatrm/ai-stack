@@ -450,7 +450,7 @@ systemd:
       contents: |
         [Unit]
         Description=Update ClamAV signatures
-        ConditionPathIsExecutable=/usr/bin/freshclam
+        ConditionFileIsExecutable=/usr/bin/freshclam
 
         [Service]
         Type=oneshot
@@ -482,7 +482,7 @@ systemd:
       contents: |
         [Unit]
         Description=Daily read-only ClamAV scan
-        ConditionPathIsExecutable=/usr/bin/clamscan
+        ConditionFileIsExecutable=/usr/bin/clamscan
         After=clamav-freshclam-daily.service
 
         [Service]
@@ -516,7 +516,7 @@ systemd:
       contents: |
         [Unit]
         Description=Daily Lynis system audit
-        ConditionPathIsExecutable=/usr/bin/lynis
+        ConditionFileIsExecutable=/usr/bin/lynis
 
         [Service]
         Type=oneshot
@@ -549,7 +549,7 @@ systemd:
       contents: |
         [Unit]
         Description=Daily AIDE integrity check
-        ConditionPathIsExecutable=/usr/sbin/aide
+        ConditionFileIsExecutable=/usr/sbin/aide
         ConditionPathExistsGlob=/var/lib/aide/aide.db*
 
         [Service]
