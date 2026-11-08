@@ -52,6 +52,10 @@ jobs:
           FCOS_SSH_USER: ${{ vars.FCOS_SSH_USER }}
           FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
           FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
+          FCOS_INTERFACE: ${{ vars.SURICATA_INTERFACE }}
+          AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
+          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
+          FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
         run: |
           set -Eeuo pipefail
