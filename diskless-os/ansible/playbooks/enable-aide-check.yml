@@ -36,7 +36,7 @@
       changed_when: false
 
     - name: Enable daily AIDE integrity checks
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: aide-check.timer
         enabled: true
         state: started
