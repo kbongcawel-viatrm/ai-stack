@@ -1,11 +1,14 @@
 ---
-- name: Provision FCOS system services and rootless container runtime
+- name: Provision FCOS services and rootless container runtime
   hosts: fcos
   become: true
   gather_facts: true
 
   vars:
     fcos_user: core
+    fcos_lan_ip: 192.168.1.20
+    fcos_lan_cidr: 192.168.1.0/24
+    fcos_interface: enp1s0
     fcos_layered_packages:
       - firewalld
       - nftables
@@ -15,38 +18,32 @@
       - clamav-freshclam
       - lynis
       - podman-compose
-    fcos_lan_ip: 192.168.1.20
-    fcos_lan_cidr: 192.168.1.0/24
-    suricata_interface: enp1s0
     aide_enable_daily_timer: false
     suricata_enable_update_timer: true
 
   tasks:
-    - name: Require the expected FCOS host and service network
+    - name: Validate the FCOS host and network contract
       ansible.builtin.assert:
         that:
           - ansible_facts.distribution == "Fedora"
           - ansible_facts.os_family == "RedHat"
-          - fcos_lan_ip == "192.168.1.20"
+          - ansible_facts.default_ipv4.address == fcos_lan_ip
           - fcos_lan_cidr == "192.168.1.0/24"
-          - suricata_interface == "enp1s0"
+          - fcos_interface == "enp1s0"
         fail_msg: >-
-          This Butane profile is pinned to FCOS, enp1s0, LAN 192.168.1.0/24
-          and FCOS address 192.168.1.20. Update Butane and inventory together
-          before changing these values.
+          This Butane profile expects FCOS at 192.168.1.20 on enp1s0,
+          with HOME_NET 192.168.1.0/24. Change the Butane network/firewall
+          configuration and inventory together before using another address.
 
-    - name: Check layered package presence
+    - name: Check required RPMs in the active FCOS deployment
       ansible.builtin.command:
-        argv:
-          - rpm
-          - -q
-          - "{{ item }}"
+        argv: [rpm, -q, "{{ item }}"]
       loop: "{{ fcos_layered_packages }}"
       register: fcos_package_checks
       changed_when: false
       failed_when: false
 
-    - name: Calculate packages missing from the active deployment
+    - name: Calculate missing packages
       ansible.builtin.set_fact:
         fcos_missing_packages: >-
           {{
@@ -56,14 +53,14 @@
             | list
           }}
 
-    - name: Layer required FCOS packages
+    - name: Layer required RPMs
       ansible.builtin.command:
         argv: "{{ ['rpm-ostree', 'install'] + fcos_missing_packages }}"
       when: fcos_missing_packages | length > 0
       register: fcos_layer_result
       changed_when: true
 
-    - name: Reboot into the package deployment
+    - name: Reboot into the layered FCOS deployment
       ansible.builtin.reboot:
         reboot_timeout: 1200
         connect_timeout: 10
@@ -74,53 +71,83 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: Ensure Firewalld and the public default zone are active
+    - name: Run Butane-installed package preflight
       ansible.builtin.systemd:
-        name: "{{ item }}"
+        name: fcos-services-preflight.service
+        enabled: true
+        state: restarted
+
+    - name: Ensure Firewalld is active
+      ansible.builtin.systemd:
+        name: firewalld.service
         enabled: true
         state: started
-      loop:
-        - firewalld.service
-        - fcos-firewalld-default-zone.service
 
-    - name: Reload Firewalld configuration from Butane
+    - name: Reload Firewalld XML written by Butane
       ansible.builtin.command: firewall-cmd --reload
       changed_when: true
 
-    - name: Verify the protected NIC is assigned to the public zone
-      ansible.builtin.command: firewall-cmd --get-zone-of-interface={{ suricata_interface }}
+    - name: Verify enp1s0 is assigned to the public zone
+      ansible.builtin.command:
+        argv: [firewall-cmd, --get-zone-of-interface, "{{ fcos_interface }}"]
       register: fcos_firewalld_zone
       changed_when: false
       failed_when: fcos_firewalld_zone.stdout != "public"
 
-    - name: Verify the explicit egress policy exists
-      ansible.builtin.command: firewall-cmd --info-policy fcos-egress
+    - name: Verify inbound public zone target is DROP
+      ansible.builtin.command:
+        argv: [firewall-cmd, --zone=public, --get-target]
+      register: fcos_inbound_target
+      changed_when: false
+      failed_when: fcos_inbound_target.stdout != "DROP"
+
+    - name: Verify LAN-only SSH exception
+      ansible.builtin.command:
+        argv: [firewall-cmd, --zone=public, --list-rich-rules]
+      register: fcos_ssh_rich_rules
+      changed_when: false
+      failed_when: >-
+        fcos_lan_cidr not in fcos_ssh_rich_rules.stdout or
+        "service name=\"ssh\"" not in fcos_ssh_rich_rules.stdout
+
+    - name: Verify source-bound host egress policy
+      ansible.builtin.command:
+        argv: [firewall-cmd, --info-policy, fcos-host-egress]
       register: fcos_egress_policy
       changed_when: false
-      failed_when: "'192.168.1.20' not in fcos_egress_policy.stdout"
+      failed_when: >-
+        fcos_lan_ip not in fcos_egress_policy.stdout or
+        "HOST" not in fcos_egress_policy.stdout or
+        "ANY" not in fcos_egress_policy.stdout
 
-    - name: Enable NFQUEUE nftables hooks with queue-bypass
+    - name: Start NFQUEUE nftables hooks
       ansible.builtin.systemd:
-        name: fcos-nfq-rules.service
+        name: suricata-nfq-rules.service
         enabled: true
         state: restarted
 
-    - name: Enable the rootless Podman user socket and linger
+    - name: Enable rootless Podman linger and user socket
       ansible.builtin.systemd:
-        name: fcos-podman-rootless-init.service
+        name: podman-user-socket-linger.service
         enabled: true
-        state: started
+        state: restarted
 
-    - name: Resolve the rootless user's UID
+    - name: Resolve FCOS core user UID
       ansible.builtin.command:
-        argv:
-          - id
-          - -u
-          - "{{ fcos_user }}"
+        argv: [id, -u, "{{ fcos_user }}"]
       register: fcos_user_uid
       changed_when: false
 
-    - name: Verify rootless Podman API is reachable
+    - name: Require UID 1000 because the Butane profile exports that socket
+      ansible.builtin.assert:
+        that:
+          - fcos_user_uid.stdout == "1000"
+        fail_msg: >-
+          The Butane shell profile is currently configured for UID 1000.
+          Update /etc/profile.d/podman-remote.sh and the user-socket configuration
+          if the FCOS core account has another UID.
+
+    - name: Verify rootless Podman API
       become_user: "{{ fcos_user }}"
       ansible.builtin.command:
         argv:
@@ -134,32 +161,38 @@
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
       register: fcos_podman_info
       changed_when: false
 
-    - name: Assert the Podman engine is rootless
+    - name: Assert the API reports rootless mode
       ansible.builtin.assert:
         that:
           - (fcos_podman_info.stdout | from_json).host.security.rootless | bool
-        fail_msg: "Podman API did not report rootless=true. Refusing container deployment."
+          - (fcos_podman_info.stdout | from_json).host.remoteSocket.exists | bool
+        fail_msg: "Rootless Podman socket is not reachable or the engine is not rootless."
 
-    - name: Validate Docker-compatible CLI wrapper
+    - name: Verify interactive Docker alias and API compatibility
       become_user: "{{ fcos_user }}"
-      ansible.builtin.command: /usr/local/bin/docker version
+      ansible.builtin.command:
+        argv: [bash, -lic, "docker version"]
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
       changed_when: false
 
-    - name: Validate podman-compose
+    - name: Verify interactive docker-compose alias
       become_user: "{{ fcos_user }}"
-      ansible.builtin.command: /usr/bin/podman-compose version
+      ansible.builtin.command:
+        argv: [bash, -lic, "docker-compose version"]
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
       changed_when: false
 
-    - name: Copy rootless Compose smoke stack to FCOS user home
+    - name: Copy the rootless Compose smoke stack
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../../services/compose.yaml"
         dest: "/var/home/{{ fcos_user }}/compose.yaml"
@@ -167,7 +200,7 @@
         group: "{{ fcos_user }}"
         mode: "0640"
 
-    - name: Confirm the podwhitelist-approved image is present in the FCOS rootless store
+    - name: Confirm the podwhitelist-approved smoke image is present
       become_user: "{{ fcos_user }}"
       ansible.builtin.command:
         argv:
@@ -181,26 +214,26 @@
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
-        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
       register: fcos_smoke_image
       changed_when: false
       failed_when: false
 
-    - name: Require the image to be pre-whitelisted and pulled
+    - name: Require image approval and pull through the existing podwhitelist helper
       ansible.builtin.assert:
         that:
           - fcos_smoke_image.rc == 0
         fail_msg: >-
-          docker.io/library/alpine:3.24.4 is not present in the FCOS rootless
-          image store. Use your existing podwhitelist helper in the FCOS
-          user shell to approve and pull this image, then rerun this workflow.
-    - name: Exercise Compose create, inspect and cleanup with rootless Podman
+          docker.io/library/alpine:3.24.4 is not in the FCOS rootless image store.
+          Use the existing podwhitelist helper from the FCOS core user's shell
+          to approve and pull this image, then rerun provisioning.
+
+    - name: Exercise rootless Compose and always clean up
       become_user: "{{ fcos_user }}"
       block:
-        - name: Start rootless Compose smoke container
+        - name: Start Compose smoke container
           ansible.builtin.command:
             argv:
-              - /usr/bin/podman-compose
+              - podman-compose
               - -f
               - "/var/home/{{ fcos_user }}/compose.yaml"
               - up
@@ -211,7 +244,7 @@
             DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
           changed_when: true
 
-        - name: Inspect rootless Compose smoke container
+        - name: Inspect Compose smoke container
           ansible.builtin.command:
             argv:
               - podman
@@ -229,16 +262,16 @@
           register: fcos_compose_inspect
           changed_when: false
 
-        - name: Require the Compose container to be running
+        - name: Require the smoke container to be running
           ansible.builtin.assert:
             that:
               - (fcos_compose_inspect.stdout | from_json)[0].State.Status == "running"
 
       always:
-        - name: Remove the rootless Compose smoke stack
+        - name: Remove rootless Compose smoke stack
           ansible.builtin.command:
             argv:
-              - /usr/bin/podman-compose
+              - podman-compose
               - -f
               - "/var/home/{{ fcos_user }}/compose.yaml"
               - down
@@ -249,23 +282,25 @@
           failed_when: false
           changed_when: true
 
-    - name: Update Suricata sources, enable ET Open and validate the ruleset
-      ansible.builtin.command: /usr/local/libexec/fcos/suricata-update.sh
-      register: fcos_suricata_update
-      changed_when: true
+    - name: Run Suricata initial source update and configuration test
+      ansible.builtin.systemd:
+        name: suricata-prepare.service
+        state: restarted
 
-    - name: Explicitly test the Suricata configuration
+    - name: Explicitly test Suricata 8 configuration and FCOS overrides
       ansible.builtin.command:
         argv:
-          - /usr/bin/suricata
+          - suricata
           - -T
           - -c
           - /etc/suricata/suricata.yaml
+          - --include
+          - /etc/suricata/fcos-overrides.yaml
       changed_when: false
 
-    - name: Enable and start Suricata NFQUEUE IPS after successful validation
+    - name: Enable and start Suricata NFQUEUE IDS/IPS
       ansible.builtin.systemd:
-        name: suricata-nfq.service
+        name: suricata.service
         enabled: true
         state: restarted
 
@@ -275,45 +310,44 @@
         enabled: true
         state: started
       loop:
-        - clamav-update.timer
+        - clamav-freshclam-daily.timer
         - clamav-scan.timer
         - lynis-audit.timer
 
-    - name: Enable daily Suricata rule updates
+    - name: Enable weekly Suricata ET Open refresh timer
       ansible.builtin.systemd:
-        name: suricata-update.timer
+        name: suricata-rule-refresh.timer
         enabled: true
         state: started
       when: suricata_enable_update_timer | bool
 
-    - name: Check whether an AIDE baseline exists
+    - name: Check for a compressed AIDE baseline
       ansible.builtin.stat:
         path: /var/lib/aide/aide.db.gz
       register: fcos_aide_baseline_gz
 
-    - name: Check uncompressed AIDE baseline
+    - name: Check for an uncompressed AIDE baseline
       ansible.builtin.stat:
         path: /var/lib/aide/aide.db
       register: fcos_aide_baseline
 
-    - name: Require an approved AIDE baseline before enabling its timer
+    - name: Require a reviewed AIDE baseline before enabling daily checks
       ansible.builtin.assert:
         that:
           - fcos_aide_baseline_gz.stat.exists or fcos_aide_baseline.stat.exists
         fail_msg: >-
-          AIDE baseline is absent. Initialize it through the explicit
-          initialize-aide playbook, review it, then rerun with
-          aide_enable_daily_timer=true.
+          AIDE baseline is absent. Run initialize-aide.yml, review the baseline,
+          then rerun with aide_enable_daily_timer=true.
       when: aide_enable_daily_timer | bool
 
-    - name: Enable daily AIDE integrity checks only after baseline approval
+    - name: Enable AIDE timer only after baseline approval
       ansible.builtin.systemd:
         name: aide-check.timer
         enabled: true
         state: started
       when: aide_enable_daily_timer | bool
 
-    - name: Keep AIDE timer disabled until explicitly approved
+    - name: Keep AIDE timer disabled until baseline approval
       ansible.builtin.systemd:
         name: aide-check.timer
         enabled: false
