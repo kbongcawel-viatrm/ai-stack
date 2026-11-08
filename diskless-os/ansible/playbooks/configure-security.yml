@@ -36,7 +36,7 @@
     - name: Verify required service binaries
       ansible.builtin.shell: |
         set -Eeuo pipefail
-        for binary in firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose; do
+        for binary in firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose logrotate; do
           command -v "$binary" >/dev/null || {
             echo "Missing required binary: $binary" >&2
             exit 1
@@ -119,6 +119,12 @@
           - "'80/tcp' in egress_policy.stdout"
           - "'443/tcp' in egress_policy.stdout"
         fail_msg: "Firewalld policy does not match the expected inbound/egress restrictions."
+
+    - name: Stop bootstrap firewall only after Firewalld policy is verified
+      ansible.builtin.systemd_service:
+        name: fcos-bootstrap-firewall.service
+        enabled: false
+        state: stopped
 
     - name: Run Butane-managed package preflight
       ansible.builtin.systemd_service:
