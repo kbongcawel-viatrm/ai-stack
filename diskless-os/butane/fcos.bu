@@ -154,6 +154,12 @@ storage:
     # The rules inspect host traffic entering/leaving enp1s0. Queue bypass is
     # intentionally fail-open if Suricata is down, to avoid losing management
     # connectivity; monitoring must alert if the NFQUEUE service is inactive.
+    - path: /var/lib/suricata/rules/local.rules
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          # Local IDS/IPS validation signatures are installed temporarily by Ansible.
     - path: /etc/nftables/suricata-nfq.nft
       mode: 0600
       overwrite: true
