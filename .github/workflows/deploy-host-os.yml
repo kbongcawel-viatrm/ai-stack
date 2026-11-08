@@ -13,6 +13,26 @@ on:
         required: true
         default: "enp1s0"
         type: string
+      storage_uuid:
+        description: Optional UUID of a preformatted persistent local storage partition for VM disks
+        required: false
+        default: ""
+        type: string
+      storage_mountpoint:
+        description: Mount point for the persistent local storage partition
+        required: true
+        default: "/mnt/nvme"
+        type: string
+      vm_storage_path:
+        description: Persistent directory for FCOS qcow2 disks and libvirt XML
+        required: true
+        default: "/mnt/nvme/libvirt/images"
+        type: string
+      storage_fstype:
+        description: Filesystem type of the existing persistent partition
+        required: true
+        default: "ext4"
+        type: string
       publish:
         description: Publish verified assets to the PXE server
         required: true
@@ -72,6 +92,10 @@ jobs:
           ALPINE_VERSION: ${{ inputs.alpine_version }}
           ALPINE_SSH_PUBLIC_KEY: ${{ secrets.ALPINE_SSH_PUBLIC_KEY }}
           ALPINE_HOST_NIC: ${{ inputs.host_nic }}
+          ALPINE_STORAGE_UUID: ${{ inputs.storage_uuid }}
+          ALPINE_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
+          ALPINE_VM_STORAGE_PATH: ${{ inputs.vm_storage_path }}
+          ALPINE_STORAGE_FSTYPE: ${{ inputs.storage_fstype }}
         run: |
           set -Eeuo pipefail
           work="$(cat "$RUNNER_TEMP/alpine-netboot-workdir")"
