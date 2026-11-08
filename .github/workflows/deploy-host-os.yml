@@ -9,9 +9,14 @@ on:
         default: "3.24.4"
         type: string
       host_nic:
-        description: Physical NIC name used by Alpine after boot
+        description: Physical NIC enslaved to the Linux bridge
         required: true
         default: "enp1s0"
+        type: string
+      host_bridge:
+        description: Bridge interface used by libvirt VMs
+        required: true
+        default: "br0"
         type: string
       storage_uuid:
         description: Optional UUID of a preformatted persistent local storage partition for VM disks
@@ -93,9 +98,6 @@ jobs:
           ALPINE_SSH_PUBLIC_KEY: ${{ secrets.ALPINE_SSH_PUBLIC_KEY }}
           ALPINE_HOST_NIC: ${{ inputs.host_nic }}
           ALPINE_HOST_BRIDGE: ${{ inputs.host_bridge }}
-          ALPINE_STORAGE_UUID: ${{ inputs.storage_uuid }}
-          ALPINE_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
-          ALPINE_VM_STORAGE_PATH: ${{ inputs.vm_storage_path }}
           ALPINE_STORAGE_UUID: ${{ inputs.storage_uuid }}
           ALPINE_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
           ALPINE_VM_STORAGE_PATH: ${{ inputs.vm_storage_path }}
