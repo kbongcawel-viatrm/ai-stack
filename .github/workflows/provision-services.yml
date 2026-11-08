@@ -1,0 +1,98 @@
+name: Provision FCOS Services and Containers
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_aide_timer:
+        description: Enable daily AIDE checks only if its baseline is initialized and reviewed
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: [self-hosted, linux, home-server]
+    environment: fcos-production
+    defaults:
+      run:
+        working-directory: diskless-os/ansible
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ansible in an isolated environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m venv "$RUNNER_TEMP/ansible-venv"
+          "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
+          echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Configure FCOS SSH access
+        shell: bash
+        env:
+          FCOS_SSH_PRIVATE_KEY: \${{ secrets.FCOS_SSH_PRIVATE_KEY }}
+          FCOS_KNOWN_HOSTS: \${{ secrets.FCOS_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$FCOS_SSH_PRIVATE_KEY" > "$HOME/.ssh/fcos"
+          chmod 0600 "$HOME/.ssh/fcos"
+          printf '%s\n' "$FCOS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Build FCOS inventory
+        shell: bash
+        env:
+          FCOS_VM_IP: \${{ vars.FCOS_VM_IP }}
+          FCOS_SSH_USER: \${{ vars.FCOS_SSH_USER }}
+          FCOS_LAN_IP: \${{ vars.FCOS_LAN_IP }}
+          FCOS_LAN_CIDR: \${{ vars.FCOS_LAN_CIDR }}
+          SURICATA_INTERFACE: \${{ vars.SURICATA_INTERFACE }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os
+          required = ["FCOS_VM_IP", "FCOS_LAN_IP", "FCOS_LAN_CIDR"]
+          missing = [x for x in required if not os.environ.get(x)]
+          if missing:
+              raise SystemExit("Missing repository variables: " + ", ".join(missing))
+          host = {
+              "ansible_host": os.environ["FCOS_VM_IP"],
+              "ansible_user": os.environ.get("FCOS_SSH_USER") or "core",
+              "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/fcos"),
+              "fcos_user": os.environ.get("FCOS_SSH_USER") or "core",
+              "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
+              "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
+              "suricata_interface": os.environ.get("SURICATA_INTERFACE") or "enp1s0"
+          }
+          inventory = {"all": {"children": {"fcos": {"hosts": {"fcos-security": host}}}}}
+          with open("inventory/hosts.yml", "w", encoding="utf-8") as f:
+              json.dump(inventory, f, indent=2)
+          PY
+
+      - name: Layer packages, provision security services and run Compose smoke test
+        run: |
+          set -Eeuo pipefail
+          ansible-playbook -i inventory/hosts.yml playbooks/provision-services.yml \
+            --private-key "$HOME/.ssh/fcos" \
+            --extra-vars "aide_enable_daily_timer=\${{ inputs.enable_aide_timer }}" \
+            --diff
+
+      - name: Prove Suricata IDS alerting and IPS packet drop
+        env:
+          SURICATA_TEST_TARGET: \${{ vars.SURICATA_TEST_TARGET }}
+          SURICATA_TEST_PORT: \${{ vars.SURICATA_TEST_PORT }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SURICATA_TEST_TARGET" || {
+            echo "Set repository variable SURICATA_TEST_TARGET to a second LAN HTTP host."
+            exit 1
+          }
+          ansible-playbook -i inventory/hosts.yml playbooks/validate-suricata.yml \
+            --private-key "$HOME/.ssh/fcos" \
+            --extra-vars "suricata_test_target=$SURICATA_TEST_TARGET suricata_test_port=\${SURICATA_TEST_PORT:-80}" \
+            --diff
