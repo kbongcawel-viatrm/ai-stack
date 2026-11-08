@@ -159,6 +159,85 @@
         CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
       changed_when: false
 
+    - name: Copy rootless Compose smoke stack to FCOS user home
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../services/compose.yaml"
+        dest: "/var/home/{{ fcos_user }}/compose.yaml"
+        owner: "{{ fcos_user }}"
+        group: "{{ fcos_user }}"
+        mode: "0640"
+
+    - name: Pull the pre-approved smoke-test image through the FCOS rootless engine
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --remote
+          - --url
+          - "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+          - pull
+          - docker.io/library/alpine:3.24.4
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+      changed_when: true
+
+    - name: Exercise Compose create, inspect and cleanup with rootless Podman
+      become_user: "{{ fcos_user }}"
+      block:
+        - name: Start rootless Compose smoke container
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/podman-compose
+              - -f
+              - "/var/home/{{ fcos_user }}/compose.yaml"
+              - up
+              - -d
+          environment:
+            XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+            CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+            DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+          changed_when: true
+
+        - name: Inspect rootless Compose smoke container
+          ansible.builtin.command:
+            argv:
+              - podman
+              - --remote
+              - --url
+              - "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+              - inspect
+              - --format
+              - json
+              - fcos-rootless-compose-smoke
+          environment:
+            XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+            CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+            DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+          register: fcos_compose_inspect
+          changed_when: false
+
+        - name: Require the Compose container to be running
+          ansible.builtin.assert:
+            that:
+              - (fcos_compose_inspect.stdout | from_json)[0].State.Status == "running"
+
+      always:
+        - name: Remove the rootless Compose smoke stack
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/podman-compose
+              - -f
+              - "/var/home/{{ fcos_user }}/compose.yaml"
+              - down
+          environment:
+            XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+            CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+            DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+          failed_when: false
+          changed_when: true
+
     - name: Update Suricata sources, enable ET Open and validate the ruleset
       ansible.builtin.command: /usr/local/libexec/fcos/suricata-update.sh
       register: fcos_suricata_update
