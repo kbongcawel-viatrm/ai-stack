@@ -6,6 +6,7 @@
   vars:
     podman_socket: unix:///run/user/1000/podman/podman.sock
     aide_enable_daily_timer: false
+    aide_baseline_approval_reason: ""
   tasks:
     - name: Read guest OS identity
       ansible.builtin.command:
@@ -191,7 +192,8 @@
       ansible.builtin.assert:
         that:
           - aide_database.stat.exists
-        fail_msg: "Initialize and review the AIDE baseline manually before enabling aide-check.timer."
+          - aide_baseline_approval_reason | length > 10
+        fail_msg: "Initialize and review the AIDE baseline, then provide an approval reason longer than 10 characters before enabling aide-check.timer."
       when: aide_enable_daily_timer | bool
 
     - name: Enable AIDE daily timer only after explicit approval and baseline
