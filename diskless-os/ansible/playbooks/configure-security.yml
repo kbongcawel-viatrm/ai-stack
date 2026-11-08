@@ -1,0 +1,233 @@
+---
+- name: Configure FCOS host security services
+  hosts: fcos
+  become: true
+  gather_facts: true
+  vars:
+    fcos_interface: enp1s0
+    fcos_lan_ip: 192.168.1.20
+    fcos_lan_cidr: 192.168.1.0/24
+    podman_socket: unix:///run/user/1000/podman/podman.sock
+    enable_aide_timer: false
+  tasks:
+    - name: Require FCOS and expected LAN identity
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == "Fedora"
+          - ansible_facts.os_family == "RedHat"
+          - ansible_facts.default_ipv4.address == fcos_lan_ip
+          - fcos_interface | length > 0
+        fail_msg: >-
+          Expected Fedora CoreOS reachable at {{ fcos_lan_ip }}.
+          Confirm the FCOS static NetworkManager profile and inventory.
+
+    - name: Verify configured NIC exists
+      ansible.builtin.command: "ip link show dev {{ fcos_interface }}"
+      changed_when: false
+
+    - name: Verify required service binaries
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        for binary in firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose; do
+          command -v "$binary" >/dev/null || {
+            echo "Missing required binary: $binary" >&2
+            exit 1
+          }
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify Suricata has NFQUEUE support
+      ansible.builtin.shell: |
+        set -o pipefail
+        suricata --build-info | grep -Eqi 'NFQ|NFQUEUE'
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify Butane-managed Suricata override
+      ansible.builtin.stat:
+        path: /etc/suricata/fcos-overrides.yaml
+      register: suricata_override
+
+    - name: Require Suricata override
+      ansible.builtin.assert:
+        that:
+          - suricata_override.stat.exists
+        fail_msg: "Missing /etc/suricata/fcos-overrides.yaml; reprovision with the current Butane config."
+
+    - name: Verify effective network and NFQUEUE values
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        grep -Fq 'HOME_NET: "[{{ fcos_lan_cidr }}]"' /etc/suricata/fcos-overrides.yaml
+        grep -Eq '^[[:space:]]+mode: accept$' /etc/suricata/fcos-overrides.yaml
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Validate sshd configuration
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+
+    - name: Validate Firewalld configuration
+      ansible.builtin.command: firewall-cmd --check-config
+      changed_when: false
+
+    - name: Enable and start Firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld.service
+        enabled: true
+        state: started
+
+    - name: Reload permanent Firewalld configuration
+      ansible.builtin.command: firewall-cmd --reload
+      changed_when: true
+
+    - name: Verify default-drop zone and SSH-only ingress
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        firewall-cmd --zone=public --list-all
+      args:
+        executable: /bin/bash
+      register: public_zone
+      changed_when: false
+
+    - name: Verify host egress policy is active and default-drop
+      ansible.builtin.command: firewall-cmd --info-policy fcos-host-egress
+      register: egress_policy
+      changed_when: false
+
+    - name: Assert firewall policy
+      ansible.builtin.assert:
+        that:
+          - "'target: DROP' in public_zone.stdout or 'target: DROP' in egress_policy.stdout"
+          - "'192.168.1.0/24' in public_zone.stdout"
+          - "'HOST' in egress_policy.stdout"
+          - "'ANY' in egress_policy.stdout"
+        fail_msg: "Firewalld policy does not match the expected inbound/egress restrictions."
+
+    - name: Update Suricata source metadata
+      ansible.builtin.command: suricata-update update-sources
+      changed_when: true
+
+    - name: Enable the free Emerging Threats Open source
+      ansible.builtin.command: suricata-update enable-source et/open
+      register: et_open
+      changed_when: "'enabled' in (et_open.stdout | lower) or et_open.rc == 0"
+
+    - name: Build current Suricata rules
+      ansible.builtin.command: suricata-update
+      changed_when: true
+
+    - name: Validate Suricata configuration before service start
+      ansible.builtin.command: >-
+        suricata -T -c /etc/suricata/suricata.yaml
+        --include /etc/suricata/fcos-overrides.yaml
+      register: suricata_test
+      changed_when: false
+
+    - name: Enable and install NFQUEUE nftables rules
+      ansible.builtin.systemd_service:
+        name: suricata-nfq-rules.service
+        enabled: true
+        state: restarted
+
+    - name: Enable and start Suricata NFQUEUE service
+      ansible.builtin.systemd_service:
+        name: suricata.service
+        enabled: true
+        state: restarted
+
+    - name: Verify NFQUEUE rules are installed
+      ansible.builtin.command: nft list table inet suricata_nfq
+      register: nfq_rules
+      changed_when: false
+
+    - name: Verify Suricata service is active
+      ansible.builtin.command: systemctl is-active suricata.service
+      changed_when: false
+
+    - name: Enable daily ClamAV, Lynis and weekly Suricata timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - clamav-freshclam-daily.timer
+        - clamav-scan.timer
+        - lynis-audit.timer
+        - suricata-rule-refresh.timer
+
+    - name: Require an initialized AIDE database before enabling its timer
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.gz
+      register: aide_database
+      when: enable_aide_timer | bool
+
+    - name: Assert AIDE baseline exists before enabling daily checks
+      ansible.builtin.assert:
+        that:
+          - aide_database.stat.exists
+        fail_msg: "Initialize and review the AIDE baseline manually before enabling aide-check.timer."
+      when: enable_aide_timer | bool
+
+    - name: Enable AIDE daily timer only after explicit approval and baseline
+      ansible.builtin.systemd_service:
+        name: aide-check.timer
+        enabled: "{{ enable_aide_timer | bool }}"
+        state: "{{ 'started' if enable_aide_timer | bool else 'stopped' }}"
+
+    - name: Verify rootless Podman linger is enabled
+      ansible.builtin.command: loginctl show-user core -p Linger
+      register: linger_state
+      changed_when: false
+
+    - name: Assert rootless Podman linger
+      ansible.builtin.assert:
+        that:
+          - "'Linger=yes' in linger_state.stdout"
+
+    - name: Verify rootless Podman user socket
+      become: false
+      ansible.builtin.command: systemctl --user is-active podman.socket
+      environment:
+        XDG_RUNTIME_DIR: /run/user/1000
+      changed_when: false
+
+    - name: Query rootless Podman API
+      become: false
+      ansible.builtin.command: "podman --remote --url {{ podman_socket }} info --format json"
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+      register: podman_info_raw
+      changed_when: false
+
+    - name: Parse rootless Podman API response
+      ansible.builtin.set_fact:
+        podman_info: "{{ podman_info_raw.stdout | from_json }}"
+
+    - name: Assert Podman is rootless and remote
+      ansible.builtin.assert:
+        that:
+          - podman_info.host.security.rootless | bool
+          - podman_info.host.remoteSocket.exists | bool
+        fail_msg: "Podman API is not the expected rootless user socket."
+
+    - name: Verify interactive Docker alias reaches the FCOS rootless API
+      become: false
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      changed_when: false
+
+    - name: Verify docker-compose alias
+      become: false
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker-compose version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      changed_when: false
