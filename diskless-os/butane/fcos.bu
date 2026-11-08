@@ -312,6 +312,10 @@ storage:
           backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
           had_rules=0
           install -d -m 0750 "$rules_dir"
+          if [[ ! -e "$rules_dir/local.rules" ]]; then
+            printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
+            chmod 0640 "$rules_dir/local.rules"
+          fi
           if [[ -s "$rules_dir/suricata.rules" ]]; then
             cp -a "$rules_dir" "$backup_dir"
             had_rules=1
@@ -391,6 +395,10 @@ storage:
           backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
           had_rules=0
           install -d -m 0750 "$rules_dir"
+          if [[ ! -e "$rules_dir/local.rules" ]]; then
+            printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
+            chmod 0640 "$rules_dir/local.rules"
+          fi
           if [[ -s "$rules_dir/suricata.rules" ]]; then
             cp -a "$rules_dir" "$backup_dir"
             had_rules=1
