@@ -409,10 +409,8 @@ storage:
             printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
             chmod 0640 "$rules_dir/local.rules"
           fi
-          if [[ -s "$rules_dir/suricata.rules" ]]; then
-            cp -a "$rules_dir" "$backup_dir"
-            had_rules=1
-          fi
+          cp -a "$rules_dir" "$backup_dir"
+          had_rules=1
           rollback() {
             rc=$?
             if (( rc != 0 )); then
