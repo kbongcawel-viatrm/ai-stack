@@ -1,0 +1,27 @@
+name: Diskless infrastructure health
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 1 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: [self-hosted, linux, home-server]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate target configuration
+        env:
+          ALPINE_HOST: ${{ secrets.ALPINE_HOST }}
+          FCOS_HOST: ${{ secrets.FCOS_HOST }}
+          KASM_HOST: ${{ secrets.KASM_HOST }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$ALPINE_HOST"
+          test -n "$FCOS_HOST"
+          test -n "$KASM_HOST"
+          echo "Targets configured. Invoke the Ansible health-check playbook using protected SSH credentials and pre-verified known_hosts."
+          echo "This workflow does not embed credentials or implicitly trust ssh-keyscan output."
