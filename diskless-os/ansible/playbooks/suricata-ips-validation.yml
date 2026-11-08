@@ -4,7 +4,6 @@
   become: true
   gather_facts: false
   vars:
-    suricata_test_target_ip: ""
     suricata_test_url: "http://{{ suricata_test_target_ip }}/"
     suricata_rules_file: /var/lib/suricata/rules/suricata.rules
     suricata_test_rules_backup: /var/lib/suricata/rules/suricata.rules.pre-validation
