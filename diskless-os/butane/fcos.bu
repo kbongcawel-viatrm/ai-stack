@@ -21,6 +21,8 @@ storage:
   directories:
     - path: /etc/ssh/sshd_config.d
       mode: 0700
+    - path: /etc/NetworkManager/system-connections
+      mode: 0700
     - path: /etc/firewalld/zones
       mode: 0750
     - path: /etc/firewalld/policies
@@ -68,6 +70,31 @@ storage:
           X11Forwarding no
           AllowAgentForwarding no
           PermitUserEnvironment no
+
+    # Static guest address must match the egress policy and DHCP reservation.
+    # Change this keyfile if the router gateway, subnet or FCOS address differs.
+    - path: /etc/NetworkManager/system-connections/enp1s0.nmconnection
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          [connection]
+          id=enp1s0
+          type=ethernet
+          interface-name=enp1s0
+          autoconnect=true
+          autoconnect-priority=100
+
+          [ethernet]
+
+          [ipv4]
+          method=manual
+          address1=192.168.1.20/24,192.168.1.1
+          dns=192.168.1.1;
+          ignore-auto-dns=true
+
+          [ipv6]
+          method=disabled
 
     - path: /etc/motd.d/managed-by-ansible
       mode: 0644
@@ -349,6 +376,9 @@ storage:
 
 systemd:
   units:
+    - name: NetworkManager.service
+      enabled: true
+
     - name: sshd.service
       enabled: true
 
