@@ -1,0 +1,276 @@
+---
+- name: Configure FCOS host security services
+  hosts: fcos
+  become: true
+  gather_facts: true
+  vars:
+    podman_socket: unix:///run/user/1000/podman/podman.sock
+    aide_enable_daily_timer: false
+    aide_baseline_approval_reason: ""
+  tasks:
+    - name: Read guest OS identity
+      ansible.builtin.command:
+        argv: [cat, /etc/os-release]
+      register: fcos_os_release
+      changed_when: false
+
+    - name: Refuse to configure a non-CoreOS host
+      ansible.builtin.assert:
+        that:
+          - fcos_os_release.stdout is search('VARIANT="CoreOS"')
+        fail_msg: "Target is not Fedora CoreOS. Check the fcos inventory host and SSH destination."
+    - name: Require FCOS and expected LAN identity
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == "Fedora"
+          - ansible_facts.os_family == "RedHat"
+          - ansible_facts.default_ipv4.address == fcos_lan_ip
+          - fcos_interface | length > 0
+        fail_msg: >-
+          Expected Fedora CoreOS reachable at {{ fcos_lan_ip }}.
+          Confirm the FCOS static NetworkManager profile and inventory.
+
+    - name: Verify configured NIC exists
+      ansible.builtin.command: "ip link show dev {{ fcos_interface }}"
+      changed_when: false
+
+    - name: Verify required service binaries
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        for binary in firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose logrotate; do
+          command -v "$binary" >/dev/null || {
+            echo "Missing required binary: $binary" >&2
+            exit 1
+          }
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify Suricata has NFQUEUE support
+      ansible.builtin.shell: |
+        set -o pipefail
+        suricata --build-info | grep -Eqi 'NFQ|NFQUEUE'
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify Butane-managed Suricata override
+      ansible.builtin.stat:
+        path: /etc/suricata/fcos-overrides.yaml
+      register: suricata_override
+
+    - name: Require Suricata override
+      ansible.builtin.assert:
+        that:
+          - suricata_override.stat.exists
+        fail_msg: "Missing /etc/suricata/fcos-overrides.yaml; reprovision with the current Butane config."
+
+    - name: Verify effective network and NFQUEUE values
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        grep -Fq 'HOME_NET: "[{{ fcos_lan_cidr }}]"' /etc/suricata/fcos-overrides.yaml
+        grep -Eq '^[[:space:]]+mode: accept$' /etc/suricata/fcos-overrides.yaml
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Validate sshd configuration
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+
+    - name: Validate Firewalld configuration
+      ansible.builtin.command: firewall-cmd --check-config
+      changed_when: false
+
+    - name: Enable and start Firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld.service
+        enabled: true
+        state: started
+
+    - name: Reload permanent Firewalld configuration
+      ansible.builtin.command: firewall-cmd --reload
+      changed_when: true
+
+    - name: Verify default-drop zone and SSH-only ingress
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        firewall-cmd --zone=public --list-all
+      args:
+        executable: /bin/bash
+      register: public_zone
+      changed_when: false
+
+    - name: Verify host egress policy is active and default-drop
+      ansible.builtin.command: firewall-cmd --info-policy fcos-host-egress
+      register: egress_policy
+      changed_when: false
+
+    - name: Assert firewall policy
+      ansible.builtin.assert:
+        that:
+          - "'target: DROP' in public_zone.stdout or 'target: DROP' in egress_policy.stdout"
+          - "fcos_lan_cidr in public_zone.stdout"
+          - "fcos_lan_ip in egress_policy.stdout"
+          - "'HOST' in egress_policy.stdout"
+          - "'ANY' in egress_policy.stdout"
+          - "'http' in egress_policy.stdout"
+          - "'https' in egress_policy.stdout"
+          - "'80/tcp' in egress_policy.stdout"
+          - "'443/tcp' in egress_policy.stdout"
+        fail_msg: "Firewalld policy does not match the expected inbound/egress restrictions."
+
+    - name: Stop bootstrap firewall only after Firewalld policy is verified
+      ansible.builtin.systemd_service:
+        name: fcos-bootstrap-firewall.service
+        enabled: false
+        state: stopped
+
+    - name: Run Butane-managed package preflight
+      ansible.builtin.systemd_service:
+        name: fcos-services-preflight.service
+        enabled: true
+        state: restarted
+
+    - name: Enable and install NFQUEUE nftables rules
+      ansible.builtin.systemd_service:
+        name: suricata-nfq-rules.service
+        enabled: true
+        state: restarted
+
+    - name: Run transactional Suricata source update and ET Open configuration
+      ansible.builtin.systemd_service:
+        name: suricata-prepare.service
+        state: restarted
+
+    - name: Validate base Suricata configuration after rule update
+      ansible.builtin.command:
+        argv: [suricata, -T, -c, /etc/suricata/suricata.yaml]
+      changed_when: false
+
+    - name: Validate active FCOS Suricata override before service start
+      ansible.builtin.command:
+        argv:
+          - suricata
+          - -T
+          - -c
+          - /etc/suricata/suricata.yaml
+          - --include
+          - /etc/suricata/fcos-overrides.yaml
+      register: suricata_test
+      changed_when: false
+
+    - name: Enable and start Suricata NFQUEUE service
+      ansible.builtin.systemd_service:
+        name: suricata.service
+        enabled: true
+        state: restarted
+
+    - name: Verify NFQUEUE rules are installed
+      ansible.builtin.command: nft list table inet suricata_nfq
+      register: nfq_rules
+      changed_when: false
+
+    - name: Gather system service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert Suricata service is active
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['suricata.service'].state == 'running'
+
+    - name: Enable daily scan/update, log rotation and weekly Suricata timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - clamav-freshclam-daily.timer
+        - clamav-scan.timer
+        - lynis-audit.timer
+        - suricata-rule-refresh.timer
+        - logrotate.timer
+
+    - name: Require an initialized AIDE database before enabling its timer
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.gz
+      register: aide_database
+      when: aide_enable_daily_timer | bool
+
+    - name: Assert AIDE baseline exists before enabling daily checks
+      ansible.builtin.assert:
+        that:
+          - aide_database.stat.exists
+          - aide_baseline_approval_reason | length > 10
+        fail_msg: "Initialize and review the AIDE baseline, then provide an approval reason longer than 10 characters before enabling aide-check.timer."
+      when: aide_enable_daily_timer | bool
+
+    - name: Enable AIDE daily timer only after explicit approval and baseline
+      ansible.builtin.systemd_service:
+        name: aide-check.timer
+        enabled: "{{ aide_enable_daily_timer | bool }}"
+        state: "{{ 'started' if aide_enable_daily_timer | bool else 'stopped' }}"
+
+    - name: Ensure rootless Podman linger service is enabled
+      ansible.builtin.systemd_service:
+        name: podman-user-socket-linger.service
+        enabled: true
+        state: restarted
+
+    - name: Verify rootless Podman linger is enabled  # noqa command-instead-of-module
+      ansible.builtin.command: loginctl show-user core -p Linger
+      register: linger_state
+      changed_when: false
+
+    - name: Assert rootless Podman linger
+      ansible.builtin.assert:
+        that:
+          - "'Linger=yes' in linger_state.stdout"
+
+    - name: Ensure rootless Podman user socket is enabled and active
+      become: false
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        scope: user
+        enabled: true
+        state: started
+      environment:
+        XDG_RUNTIME_DIR: /run/user/1000
+
+    - name: Query rootless Podman API
+      become: false
+      ansible.builtin.command: "podman --remote --url {{ podman_socket }} info --format json"
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+      register: podman_info_raw
+      changed_when: false
+
+    - name: Parse rootless Podman API response
+      ansible.builtin.set_fact:
+        podman_info: "{{ podman_info_raw.stdout | from_json }}"
+
+    - name: Assert Podman is rootless and remote
+      ansible.builtin.assert:
+        that:
+          - podman_info.host.security.rootless | bool
+          - podman_info.host.remoteSocket.exists | bool
+        fail_msg: "Podman API is not the expected rootless user socket."
+
+    - name: Verify interactive Docker alias reaches the FCOS rootless API
+      become: false
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      changed_when: false
+
+    - name: Verify docker-compose alias
+      become: false
+      ansible.builtin.command: >-
+        bash -ic 'source /etc/profile.d/podman-remote.sh; eval "docker-compose version"'
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+      changed_when: false

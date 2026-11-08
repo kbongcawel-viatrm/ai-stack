@@ -1,0 +1,161 @@
+on:
+  push:
+    branches: ["**"]
+    paths: [".github/workflows/deploy-host-vm.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fcos-host-vm-deploy
+  cancel-in-progress: false
+
+jobs:
+  push-event-noop:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep manual deployment workflow idle on repository pushes
+        run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
+
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: [self-hosted, linux, home-server]
+    environment: host-vm-production
+    defaults:
+      run:
+        working-directory: diskless-os/ansible
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate protected hypervisor access
+        env:
+          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
+          HYPERVISOR_KNOWN_HOSTS: ${{ secrets.HYPERVISOR_KNOWN_HOSTS }}
+          FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+        run: |
+          set -Eeuo pipefail
+          for value in "$HYPERVISOR_HOST" "$HYPERVISOR_USER" "$HYPERVISOR_SSH_PRIVATE_KEY" "$HYPERVISOR_KNOWN_HOSTS" "$FCOS_SSH_PUBLIC_KEY"; do
+            test -n "$value"
+          done
+          command -v python3 ssh-keygen curl
+
+      - name: Install Ansible and Butane
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+          python3 -m venv "$RUNNER_TEMP/ansible-venv"
+          "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
+          echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
+          BUTANE_VERSION=0.23.0
+          curl -fsSL -o "$RUNNER_TEMP/butane" "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
+          chmod 0755 "$RUNNER_TEMP/butane"
+          "$RUNNER_TEMP/butane" --version
+
+      - name: Render and validate FCOS Ignition
+        env:
+          FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+          FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
+          FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
+          FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
+          FCOS_INTERFACE: ${{ inputs.fcos_interface }}
+        run: |
+          set -Eeuo pipefail
+          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
+          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
+          python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
+
+      - name: Configure SSH trust for the hypervisor
+        env:
+          HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
+          HYPERVISOR_KNOWN_HOSTS: ${{ secrets.HYPERVISOR_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$HYPERVISOR_SSH_PRIVATE_KEY" > "$HOME/.ssh/hypervisor"
+          chmod 0600 "$HOME/.ssh/hypervisor"
+          printf '%s\n' "$HYPERVISOR_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Build isolated Ansible inventory and variables
+        env:
+          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HOST_OS: ${{ inputs.host_os }}
+          FCOS_QCOW2_URL: ${{ inputs.fcos_qcow2_url }}
+          FCOS_QCOW2_SHA256: ${{ inputs.fcos_qcow2_sha256 }}
+          FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
+          FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
+          FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
+          FCOS_INTERFACE: ${{ inputs.fcos_interface }}
+          FCOS_NETWORK_BRIDGE: ${{ inputs.network_bridge }}
+          FCOS_VM_MEMORY_MB: ${{ inputs.vm_memory_mb }}
+          FCOS_VM_VCPUS: ${{ inputs.vm_vcpus }}
+          FCOS_VM_DISK_GB: ${{ inputs.vm_disk_gb }}
+          FCOS_IMAGE_DIR: ${{ inputs.vm_storage_path }}
+          FCOS_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
+          LIBVIRT_QEMU_USER: ${{ vars.LIBVIRT_QEMU_USER }}
+          LIBVIRT_QEMU_GROUP: ${{ vars.LIBVIRT_QEMU_GROUP }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE", "FCOS_STORAGE_MOUNTPOINT"]
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("Missing values: " + ", ".join(missing))
+          if not re.fullmatch(r"[0-9a-fA-F]{64}", os.environ["FCOS_QCOW2_SHA256"]):
+              raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
+          host_os = os.environ["HOST_OS"]
+          storage_mountpoint = os.path.normpath(os.environ["FCOS_STORAGE_MOUNTPOINT"])
+          default_alpine_dir = os.path.join(storage_mountpoint, "libvirt/images")
+          image_dir = os.path.normpath(os.environ.get("FCOS_IMAGE_DIR") or (default_alpine_dir if host_os == "alpine" else "/var/lib/libvirt/images"))
+          if not os.path.isabs(image_dir):
+              raise SystemExit("FCOS_IMAGE_DIR must be an absolute path")
+          if host_os == "alpine" and (image_dir == storage_mountpoint or os.path.commonpath([storage_mountpoint, image_dir]) != storage_mountpoint):
+              raise SystemExit("For Alpine diskless, vm_storage_path must be beneath storage_mountpoint and match the Host OS workflow apkovl configuration.")
+          vars_data = {
+              "host_os": host_os,
+              "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
+              "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"],
+              "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
+              "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
+              "fcos_gateway": os.environ["FCOS_GATEWAY"],
+              "fcos_interface": os.environ["FCOS_INTERFACE"],
+              "fcos_network_bridge": os.environ["FCOS_NETWORK_BRIDGE"],
+              "fcos_vm_memory_mb": int(os.environ["FCOS_VM_MEMORY_MB"]),
+              "fcos_vm_vcpus": int(os.environ["FCOS_VM_VCPUS"]),
+              "fcos_vm_disk_gb": int(os.environ["FCOS_VM_DISK_GB"]),
+              "fcos_storage_mountpoint": os.environ["FCOS_STORAGE_MOUNTPOINT"],
+              "fcos_image_dir": image_dir,
+              "fcos_domain_dir": image_dir.rstrip("/") + "/domains",
+              "fcos_qemu_user": os.environ.get("LIBVIRT_QEMU_USER") or ("libvirt-qemu" if host_os == "ubuntu" else "qemu"),
+              "fcos_qemu_group": os.environ.get("LIBVIRT_QEMU_GROUP") or ("kvm" if host_os == "ubuntu" else "qemu"),
+              "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign")
+          }
+          inventory = {
+              "all": {"children": {"hypervisors": {"hosts": {"hypervisor": {
+                  "ansible_host": os.environ["HYPERVISOR_HOST"],
+                  "ansible_user": os.environ["HYPERVISOR_USER"],
+              "ansible_become": os.environ["HYPERVISOR_USER"] != "root"
+              }}}}}
+          }
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "inventory.json"), "w") as f:
+              json.dump(inventory, f)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "deploy-vars.json"), "w") as f:
+              json.dump(vars_data, f)
+          PY
+
+      - name: Deploy FCOS VM (does not run Deploy Host OS)
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+        run: |
+          set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/inventory.json" playbooks/deploy-fcos-vm.yml \
+            --extra-vars "@$RUNNER_TEMP/deploy-vars.json" \
+            --private-key "$HOME/.ssh/hypervisor" --diff

@@ -1,0 +1,9 @@
+variant: fcos
+version: 1.6.0
+passwd:
+  users:
+    - name: core
+      groups:
+        - wheel
+      ssh_authorized_keys:
+        - "${FCOS_SSH_PUBLIC_KEY}"

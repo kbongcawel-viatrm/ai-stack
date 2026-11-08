@@ -1,10 +1,51 @@
 variant: fcos
 version: 1.6.0
-metadata:
-  name: fcos-security
-  labels:
-    role: security
+
+# FCOS provides the core account. The workflow substitutes this environment
+# variable before Butane transpilation; never commit a real SSH key.
+passwd:
+  users:
+    - name: core
+      groups:
+        - wheel
+      ssh_authorized_keys:
+        - ${FCOS_SSH_PUBLIC_KEY}
+
 storage:
+  directories:
+    - path: /etc/ssh/sshd_config.d
+      mode: 0700
+    - path: /etc/NetworkManager/system-connections
+      mode: 0700
+    - path: /etc/firewalld/zones
+      mode: 0750
+    - path: /etc/firewalld/policies
+      mode: 0750
+    - path: /etc/nftables
+      mode: 0750
+    - path: /etc/systemd/system/firewalld.service.d
+      mode: 0755
+    - path: /etc/systemd/user/sockets.target.wants
+      mode: 0755
+    - path: /etc/suricata
+      mode: 0750
+    - path: /etc/sysctl.d
+      mode: 0755
+    - path: /etc/profile.d
+      mode: 0755
+    - path: /var/lib/systemd/linger
+      mode: 0755
+    - path: /var/log/clamav
+      mode: 0750
+    - path: /var/log/lynis
+      mode: 0750
+    - path: /var/log/aide
+      mode: 0750
+    - path: /var/lib/suricata/rules
+      mode: 0750
+    - path: /var/log/suricata
+      mode: 0750
+
   files:
     - path: /etc/ssh/sshd_config.d/00-local-security.conf
       mode: 0600
@@ -18,13 +59,886 @@ storage:
           ChallengeResponseAuthentication no
           PermitEmptyPasswords no
           PermitRootLogin prohibit-password
+          MaxAuthTries 3
+          LoginGraceTime 30
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+          X11Forwarding no
+          AllowAgentForwarding no
+          PermitUserEnvironment no
+          AllowTcpForwarding no
+          GatewayPorts no
+          PermitTunnel no
+
+    # Static guest address must match the egress policy and DHCP reservation.
+    # Change this keyfile if the router gateway, subnet or FCOS address differs.
+    - path: /etc/NetworkManager/system-connections/${FCOS_INTERFACE}.nmconnection
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          [connection]
+          id=${FCOS_INTERFACE}
+          type=ethernet
+          interface-name=${FCOS_INTERFACE}
+          autoconnect=true
+          autoconnect-priority=100
+
+          [ethernet]
+
+          [ipv4]
+          method=manual
+          address1=${FCOS_LAN_IP}/24,${FCOS_GATEWAY}
+          dns=${FCOS_GATEWAY};
+          ignore-auto-dns=true
+
+          [ipv6]
+          method=disabled
+
     - path: /etc/motd.d/managed-by-ansible
       mode: 0644
       overwrite: true
       contents:
         inline: |
-          FCOS security VM - provisioned by Ignition and Ansible.
+          Fedora CoreOS security VM
+          Provisioned with Butane/Ignition and Ansible.
+          Host firewall: default DROP; SSH restricted to ${FCOS_LAN_CIDR}.
+          Suricata: NFQUEUE on ${FCOS_INTERFACE}; HOME_NET ${FCOS_LAN_CIDR}.
+
+    # FCOS host ingress: deny by default; SSH is the only inbound exception.
+    - path: /etc/firewalld/firewalld.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          DefaultZone=public
+          CleanupOnExit=yes
+          Lockdown=no
+          IPv6_rpfilter=yes
+          IndividualCalls=no
+          LogDenied=unicast
+
+    - path: /etc/firewalld/zones/public.xml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          <?xml version="1.0" encoding="utf-8"?>
+          <zone target="DROP">
+            <short>FCOS restricted LAN interface</short>
+            <description>Default-deny inbound policy. SSH is permitted only from the trusted LAN.</description>
+            <interface name="${FCOS_INTERFACE}"/>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_CIDR}"/>
+              <service name="ssh"/>
+              <accept/>
+            </rule>
+          </zone>
+
+    # HOST -> ANY is host-originated OUTPUT traffic. The source address is
+    # explicit so this policy only permits egress from the FCOS LAN address.
+    # DNS and NTP are included for name resolution and time synchronization.
+    - path: /etc/firewalld/policies/fcos-host-egress.xml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          <?xml version="1.0" encoding="utf-8"?>
+          <policy target="DROP" priority="-100">
+            <short>FCOS explicit host egress</short>
+            <description>Allow only declared IPv4 egress from ${FCOS_LAN_IP}.</description>
+            <ingress-zone name="HOST"/>
+            <egress-zone name="ANY"/>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_IP}"/>
+              <service name="http"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_IP}"/>
+              <service name="https"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_IP}"/>
+              <service name="dns"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_IP}"/>
+              <service name="ntp"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_IP}"/>
+              <port port="80" protocol="tcp"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="${FCOS_LAN_IP}"/>
+              <port port="443" protocol="tcp"/>
+              <accept/>
+            </rule>
+          </policy>
+
+    # Temporary bootstrap firewall: FCOS does not ship firewalld in its base
+    # image. This nftables policy protects first boot and remains active until
+    # Ansible verifies the layered Firewalld policy.
+    - path: /etc/nftables/fcos-bootstrap.nft
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          table inet fcos_bootstrap {
+            chain input {
+              type filter hook input priority -160; policy drop;
+              iifname "lo" accept
+              ct state established,related accept
+              iifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_CIDR} tcp dport 22 ct state new accept
+            }
+
+            chain output {
+              type filter hook output priority -160; policy drop;
+              oifname "lo" accept
+              ct state established,related accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} ip daddr ${FCOS_GATEWAY} udp dport 53 accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} ip daddr ${FCOS_GATEWAY} tcp dport 53 accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} udp dport 123 accept
+              oifname "${FCOS_INTERFACE}" ip saddr ${FCOS_LAN_IP} tcp dport { 80, 443 } accept
+            }
+          }
+
+    - path: /etc/systemd/system/firewalld.service.d/10-fcos-bootstrap.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          After=fcos-bootstrap-firewall.service
+
+    # Suricata 8 override is passed with --include so package defaults remain
+    # intact. Ansible validates this file against the installed Suricata build.
+    - path: /etc/suricata/fcos-overrides.yaml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          vars:
+            address-groups:
+              HOME_NET: "[${FCOS_LAN_CIDR}]"
+              EXTERNAL_NET: "!$HOME_NET"
+          rule-files:
+            - suricata.rules
+            - local.rules
+          nfq:
+            mode: accept
+
+    # The rules inspect host traffic entering/leaving the configured NIC.
+    # Queue bypass is
+    # intentionally fail-open if Suricata is down, to avoid losing management
+    # connectivity; monitoring must alert if the NFQUEUE service is inactive.
+    - path: /var/lib/suricata/rules/local.rules
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          # Local IDS/IPS validation signatures are installed temporarily by Ansible.
+    - path: /etc/nftables/suricata-nfq.nft
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          table inet suricata_nfq {
+            chain input {
+              type filter hook input priority -150; policy accept;
+              iifname "${FCOS_INTERFACE}" queue num 0 bypass
+            }
+            chain output {
+              type filter hook output priority -150; policy accept;
+              oifname "${FCOS_INTERFACE}" queue num 0 bypass
+            }
+          }
+
+    - path: /etc/logrotate.d/fcos-security-scans
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          /var/log/clamav/*.log /var/log/lynis/*.log /var/log/aide/*.log {
+              daily
+              rotate 30
+              missingok
+              notifempty
+              compress
+              delaycompress
+              dateext
+              create 0640 root root
+              sharedscripts
+          }
+
+    - path: /etc/sysctl.d/90-fcos-security.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          # FCOS is a guest endpoint, not a router. Keep forwarding disabled;
+          # rootless Podman uses user-mode networking and user namespaces remain enabled.
+          net.ipv4.ip_forward = 0
+          net.ipv6.conf.all.forwarding = 0
+          net.ipv6.conf.default.forwarding = 0
+          net.ipv4.conf.all.accept_redirects = 0
+          net.ipv4.conf.default.accept_redirects = 0
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.default.send_redirects = 0
+          net.ipv4.conf.all.accept_source_route = 0
+          net.ipv4.conf.default.accept_source_route = 0
+          net.ipv4.conf.all.secure_redirects = 0
+          net.ipv4.conf.default.secure_redirects = 0
+          net.ipv4.conf.all.shared_media = 0
+          net.ipv4.conf.default.shared_media = 0
+          net.ipv4.conf.all.rp_filter = 1
+          net.ipv4.conf.default.rp_filter = 1
+          net.ipv4.conf.all.log_martians = 1
+          net.ipv4.tcp_syncookies = 1
+          net.ipv4.tcp_rfc1337 = 1
+          net.ipv4.icmp_echo_ignore_broadcasts = 1
+          net.ipv4.icmp_ignore_bogus_error_responses = 1
+          net.ipv6.conf.all.accept_redirects = 0
+          net.ipv6.conf.default.accept_redirects = 0
+          net.ipv6.conf.all.accept_source_route = 0
+          net.ipv6.conf.default.accept_source_route = 0
+          kernel.dmesg_restrict = 1
+          kernel.kptr_restrict = 2
+          kernel.yama.ptrace_scope = 1
+          kernel.perf_event_paranoid = 3
+          kernel.unprivileged_bpf_disabled = 1
+          kernel.kexec_load_disabled = 1
+          kernel.sysrq = 0
+          kernel.core_pattern = |/bin/false
+          fs.suid_dumpable = 0
+          fs.protected_hardlinks = 1
+          fs.protected_symlinks = 1
+          fs.protected_fifos = 2
+          fs.protected_regular = 2
+
+    # Rootless Podman socket is globally enabled for user managers. The linger
+    # marker keeps core's user manager alive after logout/reboot.
+    - path: /var/lib/systemd/linger/core
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: ""
+
+    - path: /var/home/core/.bashrc
+      mode: 0644
+      overwrite: true
+      user:
+        name: core
+      group:
+        name: core
+      contents:
+        inline: |
+          # Preserve Fedora's system-wide interactive Bash configuration.
+          if [ -r /etc/bashrc ]; then
+            . /etc/bashrc
+          fi
+          # Load the rootless Podman/Docker-compatible client environment.
+          if [ -r /etc/profile.d/podman-remote.sh ]; then
+            . /etc/profile.d/podman-remote.sh
+          fi
+
+    - path: /etc/profile.d/podman-remote.sh
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          # Rootless Podman API socket for the FCOS core user.
+          export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
+          export CONTAINER_HOST="unix:///run/user/1000/podman/podman.sock"
+          export DOCKER_HOST="$CONTAINER_HOST"
+          if [ -n "${BASH_VERSION:-}" ] && [[ $- == *i* ]]; then
+            alias docker='podman --remote --url "${CONTAINER_HOST}"'
+            alias docker-compose='podman-compose'
+          fi
+
+    - path: /usr/local/sbin/fcos-services-preflight
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          required=(
+            firewall-cmd nft suricata suricata-update
+            aide clamscan freshclam lynis podman podman-compose logrotate
+          )
+          missing=()
+          for cmd in "${required[@]}"; do
+            command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+          done
+          if (("${#missing[@]}" > 0)); then
+            printf 'Missing required FCOS image packages/commands: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+          suricata --build-info | grep -Eqi 'NFQ|NFQUEUE' || {
+            echo "Installed Suricata binary lacks NFQUEUE support." >&2
+            exit 1
+          }
+          test -r /usr/lib/systemd/user/podman.socket || {
+            echo "Rootless podman.socket user unit is missing." >&2
+            exit 1
+          }
+          echo "FCOS service package preflight passed."
+
+    - path: /usr/local/sbin/suricata-prepare
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          /usr/local/sbin/fcos-services-preflight
+          rules_dir=/var/lib/suricata/rules
+          backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
+          had_rules=0
+          install -d -m 0750 "$rules_dir"
+          if [[ ! -e "$rules_dir/local.rules" ]]; then
+            printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
+            chmod 0640 "$rules_dir/local.rules"
+          fi
+          cp -a "$rules_dir" "$backup_dir"
+          had_rules=1
+          rollback() {
+            rc=$?
+            if (( rc != 0 )); then
+              rm -rf -- "$rules_dir"
+              if (( had_rules == 1 )) && [[ -d "$backup_dir" ]]; then
+                mv -- "$backup_dir" "$rules_dir"
+              fi
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+          suricata-update update-sources
+          suricata-update enable-source et/open
+          suricata-update
+          suricata -T -c /etc/suricata/suricata.yaml
+          suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
+          trap - EXIT
+          find /var/lib/suricata -maxdepth 1 -type d -name 'rules.rollback.*' -mtime +7 -exec rm -rf -- {} +
+
+    - path: /usr/local/sbin/clamav-daily-scan
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          install -d -m 0750 /var/log/clamav
+          log="/var/log/clamav/scan-$(date +%F).log"
+          echo "[$(date --iso-8601=seconds)] Starting read-only ClamAV scan" | tee -a "$log"
+          # No --remove or --move: detection is logged, never auto-deleted/quarantined.
+          clamscan --recursive --infected --log="$log" \
+            --exclude-dir='^/proc(/|$)' \
+            --exclude-dir='^/sys(/|$)' \
+            --exclude-dir='^/dev(/|$)' \
+            --exclude-dir='^/run(/|$)' \
+            --exclude-dir='^/var/lib/containers(/|$)' \
+            --exclude-dir='^/var/home/[^/]+/\.local/share/containers(/|$)' \
+            /etc /usr /opt /var/home
+
+    - path: /usr/local/sbin/lynis-daily-audit
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          install -d -m 0750 /var/log/lynis
+          log="/var/log/lynis/lynis-$(date +%F).log"
+          report="/var/log/lynis/report-$(date +%F).dat"
+          lynis audit system --cronjob --quiet --no-colors \
+            --log-file "$log" --report-file "$report"
+
+    - path: /usr/local/sbin/aide-daily-check
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          install -d -m 0750 /var/log/aide
+          log="/var/log/aide/check-$(date +%F).log"
+          echo "[$(date --iso-8601=seconds)] AIDE integrity check" | tee -a "$log"
+          # AIDE baseline creation/replacement is a separate, manual operation.
+          aide --check 2>&1 | tee -a "$log"
+
+    - path: /usr/local/sbin/suricata-rule-refresh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          rules_dir=/var/lib/suricata/rules
+          backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
+          had_rules=0
+          install -d -m 0750 "$rules_dir"
+          if [[ ! -e "$rules_dir/local.rules" ]]; then
+            printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
+            chmod 0640 "$rules_dir/local.rules"
+          fi
+          cp -a "$rules_dir" "$backup_dir"
+          had_rules=1
+          rollback() {
+            rc=$?
+            if (( rc != 0 )); then
+              rm -rf -- "$rules_dir"
+              if (( had_rules == 1 )) && [[ -d "$backup_dir" ]]; then
+                mv -- "$backup_dir" "$rules_dir"
+              fi
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+          suricata-update update-sources
+          suricata-update enable-source et/open
+          suricata-update
+          suricata -T -c /etc/suricata/suricata.yaml
+          suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
+          if systemctl is-active --quiet suricata.service; then
+            systemctl restart suricata.service
+          fi
+          trap - EXIT
+          find /var/lib/suricata -maxdepth 1 -type d -name 'rules.rollback.*' -mtime +7 -exec rm -rf -- {} +
+
+  links:
+    - path: /etc/systemd/user/sockets.target.wants/podman.socket
+      target: /usr/lib/systemd/user/podman.socket
+      hard: false
+      overwrite: true
+
 systemd:
   units:
+    - name: NetworkManager.service
+      enabled: true
+
+    - name: fcos-bootstrap-firewall.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Temporary FCOS bootstrap nftables firewall
+        DefaultDependencies=no
+        After=local-fs.target
+        Before=NetworkManager.service
+        ConditionPathIsExecutable=/usr/sbin/nft
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=-/usr/sbin/nft delete table inet fcos_bootstrap
+        ExecStartPre=/usr/sbin/nft -c -f /etc/nftables/fcos-bootstrap.nft
+        ExecStart=/usr/sbin/nft -f /etc/nftables/fcos-bootstrap.nft
+        ExecStop=-/usr/sbin/nft delete table inet fcos_bootstrap
+        RemainAfterExit=yes
+        NoNewPrivileges=true
+        CapabilityBoundingSet=CAP_NET_ADMIN
+        AmbientCapabilities=CAP_NET_ADMIN
+        RestrictAddressFamilies=AF_NETLINK AF_INET AF_INET6
+        ProtectSystem=full
+        ProtectHome=true
+        PrivateTmp=true
+
+        [Install]
+        WantedBy=multi-user.target
+
     - name: sshd.service
       enabled: true
+
+    - name: firewalld.service
+      enabled: true
+
+    - name: logrotate.timer
+      enabled: true
+
+    - name: fcos-services-preflight.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Verify FCOS security service dependencies
+        After=local-fs.target
+        Before=suricata-prepare.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/fcos-services-preflight
+        RemainAfterExit=yes
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        UMask=0077
+        TimeoutStartSec=5m
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: suricata-nfq-rules.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install Suricata NFQUEUE nftables rules
+        Wants=network-online.target firewalld.service
+        After=network-online.target firewalld.service
+        Before=suricata.service
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=-/usr/sbin/nft delete table inet suricata_nfq
+        ExecStart=/usr/sbin/nft -f /etc/nftables/suricata-nfq.nft
+        ExecStop=-/usr/sbin/nft delete table inet suricata_nfq
+        RemainAfterExit=yes
+        CapabilityBoundingSet=CAP_NET_ADMIN
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_NETLINK
+        UMask=0077
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: suricata-prepare.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Update Suricata sources and validate configuration before IDS/IPS
+        Requires=fcos-services-preflight.service
+        After=fcos-services-preflight.service network-online.target
+        Wants=network-online.target
+        Before=suricata.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/suricata-prepare
+        RemainAfterExit=yes
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/suricata /var/log/suricata /run
+        UMask=0027
+        TimeoutStartSec=15m
+
+    # This replaces the package's passive/AF_PACKET unit with explicit NFQUEUE.
+    # The service starts only after rule preparation and nftables queue setup.
+    - name: suricata.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Suricata IDS/IPS (NFQUEUE on ${FCOS_INTERFACE})
+        Requires=suricata-prepare.service suricata-nfq-rules.service
+        After=suricata-prepare.service suricata-nfq-rules.service network-online.target
+        Wants=network-online.target
+        StartLimitIntervalSec=300
+        StartLimitBurst=5
+
+        [Service]
+        Type=simple
+        ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml -q 0
+        Restart=on-failure
+        RestartSec=5
+        User=root
+        Group=root
+        AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+        CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        RestrictSUIDSGID=true
+        LockPersonality=true
+        ProtectClock=true
+        RestrictRealtime=true
+        SystemCallArchitectures=native
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+        UMask=0027
+        ReadWritePaths=/var/log/suricata /var/lib/suricata /run
+        LimitNOFILE=65535
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: suricata-rule-refresh.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Refresh Suricata free rules and validate before restart
+        Wants=network-online.target
+        After=network-online.target
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/suricata-rule-refresh
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/suricata /var/log/suricata /run
+        UMask=0027
+        TimeoutStartSec=15m
+
+    - name: suricata-rule-refresh.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Weekly Suricata free rule refresh
+
+        [Timer]
+        OnCalendar=Sun *-*-* 03:30:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=suricata-rule-refresh.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: clamav-freshclam.service
+      mask: true
+    - name: clamav-freshclam-once.timer
+      mask: true
+    - name: clamav-freshclam-daily.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Update ClamAV signatures
+        ConditionFileIsExecutable=/usr/bin/freshclam
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/freshclam --verbose
+        Nice=10
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        ProtectSystem=full
+        ProtectHome=read-only
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/lib/clamav /var/log/clamav
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        TimeoutStartSec=600
+
+    - name: clamav-freshclam-daily.timer
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily ClamAV signature update
+
+        [Timer]
+        OnCalendar=*-*-* 01:30:00
+        RandomizedDelaySec=15m
+        Persistent=true
+        Unit=clamav-freshclam-daily.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: clamav-scan.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily read-only ClamAV scan
+        ConditionFileIsExecutable=/usr/bin/clamscan
+        Requires=clamav-freshclam-daily.service
+        After=clamav-freshclam-daily.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/clamav-daily-scan
+        Nice=15
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        CPUWeight=20
+        ProtectSystem=full
+        ProtectHome=read-only
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/log/clamav
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        TimeoutStartSec=6h
+
+    - name: clamav-scan.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily ClamAV filesystem scan
+
+        [Timer]
+        OnCalendar=*-*-* 02:00:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=clamav-scan.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: lynis-audit.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily Lynis system audit
+        ConditionFileIsExecutable=/usr/bin/lynis
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/lynis-daily-audit
+        Nice=15
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        CPUWeight=20
+        ProtectSystem=full
+        ProtectHome=read-only
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/log/lynis
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        TimeoutStartSec=30m
+
+    - name: lynis-audit.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily Lynis system audit
+
+        [Timer]
+        OnCalendar=*-*-* 03:00:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=lynis-audit.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: aide-check.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily AIDE integrity check
+        ConditionFileIsExecutable=/usr/sbin/aide
+        ConditionPathExists=/var/lib/aide/aide.db.gz
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/aide-daily-check
+        Nice=10
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        CPUWeight=20
+        ProtectSystem=full
+        ProtectHome=read-only
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/lib/aide /var/log/aide
+        RestrictAddressFamilies=AF_UNIX
+        TimeoutStartSec=4h
+
+    # Deliberately disabled until an administrator initializes and reviews
+    # the trusted AIDE database. Never auto-initialize/rebaseline in a timer.
+    - name: aide-check.timer
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily AIDE integrity check (enable after baseline review)
+
+        [Timer]
+        OnCalendar=*-*-* 04:00:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=aide-check.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: podman-user-socket-linger.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Enable lingering for rootless Podman user socket
+        After=systemd-logind.service
+        Wants=systemd-logind.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/loginctl enable-linger core
+        RemainAfterExit=yes
+
+        [Install]
+        WantedBy=multi-user.target
+
+    # Do not start or expose the rootful Podman API socket.
+    - name: podman.socket
+      mask: true
+    - name: podman.service
+      mask: true
+    - name: docker.service
+      mask: true
+    - name: docker.socket
+      mask: true

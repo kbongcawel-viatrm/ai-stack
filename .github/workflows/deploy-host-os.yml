@@ -1,0 +1,160 @@
+on:
+  push:
+    branches: ["**"]
+    paths: [".github/workflows/deploy-host-os.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diskless-host-os-publish
+  cancel-in-progress: false
+
+jobs:
+  push-event-noop:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep manual deployment workflow idle on repository pushes
+        run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
+
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Download and verify Alpine netboot archive
+        shell: bash
+        env:
+          ALPINE_VERSION: ${{ inputs.alpine_version }}
+        run: |
+          set -Eeuo pipefail
+          case "$ALPINE_VERSION" in
+            3.24.*) ;;
+            *) echo "Only Alpine v3.24 stable is configured." >&2; exit 1 ;;
+          esac
+          branch="v${ALPINE_VERSION%.*}"
+          base="https://dl-cdn.alpinelinux.org/alpine/$branch/releases/x86_64"
+          archive="alpine-netboot-$ALPINE_VERSION-x86_64.tar.gz"
+          work="$RUNNER_TEMP/alpine-netboot"
+          mkdir -p "$work/extract" "$work/release"
+          curl --fail --show-error --location --retry 3 --output "$work/$archive" "$base/$archive"
+          curl --fail --show-error --location --retry 3 --output "$work/$archive.sha256" "$base/$archive.sha256"
+          (cd "$work" && sha256sum --check "$archive.sha256")
+          tar -xzf "$work/$archive" -C "$work/extract"
+
+          for name in vmlinuz-lts initramfs-lts modloop-lts; do
+            source="$(find "$work/extract" -type f -name "$name" -print -quit)"
+            test -n "$source" || { echo "Missing netboot asset: $name" >&2; exit 1; }
+            install -m 0644 "$source" "$work/release/$name"
+          done
+
+          echo "$work" > "$RUNNER_TEMP/alpine-netboot-workdir"
+
+      - name: Build diskless Alpine apkovl
+        shell: bash
+        env:
+          ALPINE_VERSION: ${{ inputs.alpine_version }}
+          ALPINE_SSH_PUBLIC_KEY: ${{ secrets.ALPINE_SSH_PUBLIC_KEY }}
+          ALPINE_HOST_NIC: ${{ inputs.host_nic }}
+          ALPINE_HOST_BRIDGE: ${{ inputs.host_bridge }}
+          ALPINE_STORAGE_UUID: ${{ inputs.storage_uuid }}
+          ALPINE_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
+          ALPINE_VM_STORAGE_PATH: ${{ inputs.vm_storage_path }}
+          ALPINE_STORAGE_FSTYPE: ${{ inputs.storage_fstype }}
+        run: |
+          set -Eeuo pipefail
+          work="$(cat "$RUNNER_TEMP/alpine-netboot-workdir")"
+          bash diskless-os/alpine/scripts/build-apkovl.sh "$work/release/host.apkovl.tar.gz"
+          tar -tzf "$work/release/host.apkovl.tar.gz" >/dev/null
+          printf '%s\n' "$ALPINE_VERSION" > "$work/release/ALPINE_VERSION"
+
+      - name: Render iPXE menu
+        shell: bash
+        env:
+          PXE_HTTP_BASE_URL: ${{ vars.PXE_HTTP_BASE_URL }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "$PXE_HTTP_BASE_URL" ]]; then
+            PXE_HTTP_BASE_URL="http://192.168.1.2"
+          fi
+          export PXE_HTTP_BASE_URL
+          work="$(cat "$RUNNER_TEMP/alpine-netboot-workdir")"
+          envsubst '${PXE_HTTP_BASE_URL}' < diskless-os/pxe/boot/menu.ipxe > "$work/release/menu.ipxe"
+          grep -q 'host.apkovl.tar.gz' "$work/release/menu.ipxe"
+          (cd "$work/release" && sha256sum vmlinuz-lts initramfs-lts modloop-lts host.apkovl.tar.gz ALPINE_VERSION menu.ipxe > manifest.sha256)
+
+      - name: Upload verified netboot release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpine-netboot-${{ inputs.alpine_version }}-${{ github.sha }}
+          path: ${{ runner.temp }}/alpine-netboot/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: ${{ inputs.publish }}
+    needs: build
+    runs-on: [self-hosted, linux, home-server]
+    environment: pxe-production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: alpine-netboot-${{ inputs.alpine_version }}-${{ github.sha }}
+          path: release
+
+      - name: Configure authenticated PXE publisher access
+        shell: bash
+        env:
+          PXE_SSH_PRIVATE_KEY: ${{ secrets.PXE_SSH_PRIVATE_KEY }}
+          PXE_KNOWN_HOSTS: ${{ secrets.PXE_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$PXE_SSH_PRIVATE_KEY"
+          test -n "$PXE_KNOWN_HOSTS"
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$PXE_SSH_PRIVATE_KEY" > "$HOME/.ssh/pxe_deploy"
+          chmod 0600 "$HOME/.ssh/pxe_deploy"
+          printf '%s\n' "$PXE_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Publish immutable release and atomically promote current
+        shell: bash
+        env:
+          ALPINE_VERSION: ${{ inputs.alpine_version }}
+          PXE_HOST: ${{ secrets.PXE_HOST }}
+          PXE_USER: ${{ secrets.PXE_USER }}
+          PXE_HTTP_ROOT: ${{ secrets.PXE_HTTP_ROOT }}
+        run: |
+          set -Eeuo pipefail
+          for value in "$PXE_HOST" "$PXE_USER" "$PXE_HTTP_ROOT"; do test -n "$value"; done
+          release_name="$ALPINE_VERSION-$GITHUB_SHA"
+          release_dir="$PXE_HTTP_ROOT/boot/alpine/releases/$release_name"
+          ssh -i "$HOME/.ssh/pxe_deploy" "$PXE_USER@$PXE_HOST" "mkdir -p '$release_dir' '$PXE_HTTP_ROOT/boot/alpine'"
+          scp -i "$HOME/.ssh/pxe_deploy" -r release/. "$PXE_USER@$PXE_HOST:$release_dir/"
+          ssh -i "$HOME/.ssh/pxe_deploy" "$PXE_USER@$PXE_HOST" "cd '$release_dir' && sha256sum --check manifest.sha256"
+          ssh -i "$HOME/.ssh/pxe_deploy" "$PXE_USER@$PXE_HOST" "cd '$PXE_HTTP_ROOT/boot/alpine' && ln -sfn 'releases/$release_name' current.new && mv -Tf current.new current"
+          scp -i "$HOME/.ssh/pxe_deploy" release/menu.ipxe "$PXE_USER@$PXE_HOST:$PXE_HTTP_ROOT/boot/menu.ipxe"
+
+          PXE_HTTP_BASE_URL="${{ vars.PXE_HTTP_BASE_URL }}"
+          if [[ -z "$PXE_HTTP_BASE_URL" ]]; then PXE_HTTP_BASE_URL="http://192.168.1.2"; fi
+          curl -fsS "$PXE_HTTP_BASE_URL/boot/alpine/current/manifest.sha256" -o "$RUNNER_TEMP/remote-manifest"
+          diff -u release/manifest.sha256 "$RUNNER_TEMP/remote-manifest"
+          curl -fsS "$PXE_HTTP_BASE_URL/boot/menu.ipxe" -o "$RUNNER_TEMP/published-menu.ipxe"
+          cmp release/menu.ipxe "$RUNNER_TEMP/published-menu.ipxe"
+          for asset in vmlinuz-lts initramfs-lts modloop-lts host.apkovl.tar.gz; do
+            curl -fsSI "$PXE_HTTP_BASE_URL/boot/alpine/current/$asset" >/dev/null
+          done
+          echo "Published Alpine $ALPINE_VERSION release $release_name."
+
+      - name: Report PXE boundary
+        run: |
+          echo "Assets are published and verified. Router DHCP/firmware boot order and host reboot remain explicit operator actions."

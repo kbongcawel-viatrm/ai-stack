@@ -1,0 +1,119 @@
+---
+- name: Validate rootless Podman Compose deployment
+  hosts: fcos
+  become: false
+  gather_facts: false
+  vars:
+    podman_socket: unix:///run/user/1000/podman/podman.sock
+    container_smoke_image: docker.io/library/nginx:alpine
+    compose_poc_dir: /var/home/core/podman-compose-poc
+    compose_poc_port: 18080
+  tasks:
+    - name: Ensure rootless Podman socket is active
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        scope: user
+        enabled: true
+        state: started
+      environment:
+        XDG_RUNTIME_DIR: /run/user/1000
+
+    - name: Verify approved image is already present in rootless storage
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --remote
+          - --url
+          - "{{ podman_socket }}"
+          - image
+          - exists
+          - "{{ container_smoke_image }}"
+      register: container_image_check
+      changed_when: false
+      failed_when: container_image_check.rc != 0
+      # Run podwhitelist from the FCOS user's interactive shell before this
+      # workflow to approve/pull the selected image. Automation never broadens
+      # the registry trust policy on its own.
+
+    - name: Create Compose POC directory
+      ansible.builtin.file:
+        path: "{{ compose_poc_dir }}"
+        state: directory
+        owner: core
+        group: core
+        mode: "0750"
+
+    - name: Write Compose smoke application
+      ansible.builtin.copy:
+        dest: "{{ compose_poc_dir }}/compose.yaml"
+        owner: core
+        group: core
+        mode: "0640"
+        content: |
+          services:
+            web:
+              image: "{{ container_smoke_image }}"
+              container_name: rootless-compose-poc
+              restart: "no"
+              ports:
+                - "127.0.0.1:{{ compose_poc_port }}:80"
+
+    - name: Remove stale Compose POC stack if present
+      ansible.builtin.command:
+        argv:
+          - podman-compose
+          - -f
+          - "{{ compose_poc_dir }}/compose.yaml"
+          - down
+      environment:
+        CONTAINER_HOST: "{{ podman_socket }}"
+        DOCKER_HOST: "{{ podman_socket }}"
+        XDG_RUNTIME_DIR: /run/user/1000
+      failed_when: false
+      changed_when: false
+
+    - name: Exercise Compose HTTP lifecycle and always clean up
+      block:
+        - name: Start Compose POC stack through rootless Podman
+          ansible.builtin.command:
+            argv:
+              - podman-compose
+              - -f
+              - "{{ compose_poc_dir }}/compose.yaml"
+              - up
+              - -d
+          environment:
+            CONTAINER_HOST: "{{ podman_socket }}"
+            DOCKER_HOST: "{{ podman_socket }}"
+            XDG_RUNTIME_DIR: /run/user/1000
+          register: compose_up
+          changed_when: true
+
+        - name: Verify HTTP endpoint published to loopback
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ compose_poc_port }}/"
+            status_code: 200
+            timeout: 5
+          register: compose_http
+          retries: 20
+          delay: 3
+          until: compose_http.status | default(0) == 200
+
+      always:
+        - name: Remove Compose POC stack
+          ansible.builtin.command:
+            argv:
+              - podman-compose
+              - -f
+              - "{{ compose_poc_dir }}/compose.yaml"
+              - down
+          environment:
+            CONTAINER_HOST: "{{ podman_socket }}"
+            DOCKER_HOST: "{{ podman_socket }}"
+            XDG_RUNTIME_DIR: /run/user/1000
+          failed_when: false
+          changed_when: true
+
+    - name: Report rootless Compose result
+      ansible.builtin.debug:
+        msg: "Rootless Podman Compose successfully started, served HTTP, and removed the test stack."

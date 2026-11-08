@@ -1,0 +1,8 @@
+auto lo
+iface lo inet loopback
+
+auto br0
+iface br0 inet dhcp
+    bridge-ports enp1s0
+    bridge-stp off
+    bridge-fd 0

@@ -1,0 +1,53 @@
+#!/sbin/openrc-run
+# shellcheck disable=SC2034,SC2154
+
+description="Restore persistent libvirt domains from the Alpine diskless data volume"
+
+[ -n "$LIBVIRT_STORAGE_MOUNTPOINT" ] || LIBVIRT_STORAGE_MOUNTPOINT=/mnt/nvme
+[ -n "$LIBVIRT_DOMAIN_DIR" ] || LIBVIRT_DOMAIN_DIR="$LIBVIRT_STORAGE_MOUNTPOINT/libvirt/images/domains"
+
+depend() {
+  need libvirtd
+  after localmount
+}
+
+start() {
+  ebegin "Restoring persistent libvirt domains"
+
+  if ! grep -qsE "[[:space:]]${LIBVIRT_STORAGE_MOUNTPOINT}[[:space:]]" /proc/mounts; then
+    eerror "Persistent storage is not mounted at $LIBVIRT_STORAGE_MOUNTPOINT; refusing to start VMs from tmpfs"
+    eend 1
+    return 1
+  fi
+
+  if [ ! -d "$LIBVIRT_DOMAIN_DIR" ]; then
+    eend 0
+    return 0
+  fi
+
+  for xml in "$LIBVIRT_DOMAIN_DIR"/*.xml; do
+    [ -f "$xml" ] || continue
+    domain="$(basename "$xml" .xml)"
+    virsh -c qemu:///system define "$xml" >/dev/null || {
+      eerror "Failed to define libvirt domain $domain"
+      eend 1
+      return 1
+    }
+    state="$(virsh -c qemu:///system domstate "$domain" 2>/dev/null || true)"
+    case "$state" in
+      running|paused) ;;
+      *) virsh -c qemu:///system start "$domain" >/dev/null || {
+        eerror "Failed to start libvirt domain $domain"
+        eend 1
+        return 1
+      } ;;
+    esac
+  done
+
+  eend 0
+}
+
+stop() {
+  ebegin "Leaving guest shutdown to libvirtd"
+  eend 0
+}

@@ -1,0 +1,160 @@
+name: Validate diskless infrastructure
+
+on:
+  pull_request:
+    paths: [".github/workflows/**", "diskless-os/**"]
+  push:
+    branches: [main]
+    paths: [".github/workflows/**", "diskless-os/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install validators
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-yaml shellcheck gettext-base nftables
+
+      - name: Install Ansible
+        run: |
+          set -Eeuo pipefail
+          python3 -m venv "$RUNNER_TEMP/ansible-venv"
+          "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core ansible-lint
+          echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Validate Butane and embedded service assets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BUTANE_VERSION=0.23.0
+          curl -fsSL -o "$RUNNER_TEMP/butane" "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
+          chmod 0755 "$RUNNER_TEMP/butane"
+
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/fcos-validation-key"
+          export FCOS_SSH_PUBLIC_KEY="$(cat "$RUNNER_TEMP/fcos-validation-key.pub")"
+          export FCOS_LAN_IP=192.168.1.20
+          export FCOS_LAN_CIDR=192.168.1.0/24
+          export FCOS_GATEWAY=192.168.1.1
+          export FCOS_INTERFACE=enp1s0
+          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < diskless-os/butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
+
+          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
+          python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
+
+          python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP" <<'PY'
+          from pathlib import Path
+          import sys
+          import configparser
+          import xml.etree.ElementTree as ET
+          import yaml
+
+          config = yaml.safe_load(Path(sys.argv[1]).read_text())
+          output = Path(sys.argv[2])
+          files = config.get("storage", {}).get("files", [])
+          nft_path = output / "suricata-nfq.nft"
+          bootstrap_nft_path = output / "fcos-bootstrap.nft"
+          for entry in files:
+              path = entry["path"]
+              body = entry.get("contents", {}).get("inline", "")
+              if path.endswith(".xml"):
+                  ET.fromstring(body)
+              if path == "/etc/nftables/suricata-nfq.nft":
+                  nft_path.write_text(body)
+              if path == "/etc/nftables/fcos-bootstrap.nft":
+                  bootstrap_nft_path.write_text(body)
+              if path == "/etc/suricata/fcos-overrides.yaml":
+                  override = yaml.safe_load(body)
+                  assert override["nfq"]["mode"] == "accept"
+                  assert "local.rules" in override["rule-files"]
+                  assert "192.168.1.0/24" in override["vars"]["address-groups"]["HOME_NET"]
+              if path.startswith("/usr/local/sbin/"):
+                  target = output / Path(path).name
+                  target.write_text(body)
+                  target.chmod(0o700)
+
+          units = config.get("systemd", {}).get("units", [])
+          for unit in units:
+              body = unit.get("contents")
+              if not body:
+                  continue
+              parser = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
+              parser.read_string(body)
+              if not parser.sections():
+                  raise SystemExit(f"Invalid systemd unit: {unit['name']}")
+              (output / unit["name"]).write_text(body)
+          print(f"Parsed {len(files)} Butane files, {len(units)} systemd units and embedded XML/YAML assets.")
+          PY
+
+          for script in "$RUNNER_TEMP"/fcos-services-preflight "$RUNNER_TEMP"/suricata-prepare "$RUNNER_TEMP"/clamav-daily-scan "$RUNNER_TEMP"/lynis-daily-audit "$RUNNER_TEMP"/aide-daily-check "$RUNNER_TEMP"/suricata-rule-refresh; do
+            bash -n "$script"
+          done
+          sudo nft -c -f "$RUNNER_TEMP/fcos-bootstrap.nft"
+          sudo nft -c -f "$RUNNER_TEMP/suricata-nfq.nft"
+
+      - name: Validate shell scripts
+        run: |
+          set -Eeuo pipefail
+          find diskless-os -type f -name '*.sh' -print0 | xargs -0 -r bash -n
+          find diskless-os -type f -name '*.sh' -print0 | xargs -0 -r shellcheck
+          shellcheck -s sh diskless-os/alpine/apkovl/etc/init.d/libvirt-vms
+
+      - name: Validate Ansible playbook syntax and lint
+        working-directory: diskless-os/ansible
+        run: |
+          set -Eeuo pipefail
+          for playbook in playbooks/*.yml; do
+            ansible-playbook -i localhost, --syntax-check "$playbook"
+          done
+          ansible-lint --profile basic playbooks/
+
+      - name: Parse repository YAML
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              pass
+
+          def construct_unique_mapping(loader, node, deep=False):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise ValueError(f"Duplicate YAML key: {key!r}")
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          UniqueKeyLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+              construct_unique_mapping,
+          )
+
+          files = list(Path("diskless-os").rglob("*.yml")) + list(Path("diskless-os").rglob("*.yaml"))
+          files += list(Path(".github/workflows").glob("*.yml")) + list(Path(".github/workflows").glob("*.yaml"))
+          for path in files:
+              yaml.load(path.read_text(), Loader=UniqueKeyLoader)
+          print(f"Parsed {len(files)} YAML files with duplicate-key detection")
+          PY
+
+      - name: Resolve Alpine diskless host package set
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            -v "$PWD/diskless-os/alpine/apkovl/etc/apk/world:/tmp/world:ro" \
+            alpine:3.24.4 sh -ec 'apk update && apk add --simulate $(cat /tmp/world)'
+
+      - name: Validate iPXE entrypoint
+        run: |
+          set -Eeuo pipefail
+          grep -q '^#!ipxe' diskless-os/pxe/boot/menu.ipxe
+          grep -q 'modloop=' diskless-os/pxe/boot/menu.ipxe
+          grep -q 'apkovl=' diskless-os/pxe/boot/menu.ipxe

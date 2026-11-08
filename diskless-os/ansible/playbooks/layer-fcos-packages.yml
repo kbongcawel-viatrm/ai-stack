@@ -1,0 +1,68 @@
+---
+- name: Layer FCOS security and Compose packages
+  hosts: fcos
+  become: true
+  gather_facts: false
+  vars:
+    fcos_layered_packages:
+      - firewalld
+      - nftables
+      - suricata
+      - aide
+      - clamav
+      - clamav-freshclam
+      - lynis
+      - podman-compose
+      - logrotate
+  tasks:
+    - name: Confirm target is rpm-ostree based Fedora CoreOS
+      ansible.builtin.command: rpm-ostree status
+      register: ostree_status
+      changed_when: false
+
+    - name: Read guest OS identity
+      ansible.builtin.command:
+        argv: [cat, /etc/os-release]
+      register: fcos_os_release
+      changed_when: false
+
+    - name: Refuse to layer FCOS packages on a non-CoreOS host
+      ansible.builtin.assert:
+        that:
+          - fcos_os_release.stdout is search('VARIANT="CoreOS"')
+        fail_msg: "Target is not Fedora CoreOS. Check the fcos inventory host and SSH destination."
+
+    - name: Stage required FCOS packages
+      ansible.builtin.command:
+        argv: "{{ ['rpm-ostree', 'install'] + fcos_layered_packages }}"
+      register: package_layer
+      changed_when: "'Changes staged' in package_layer.stdout or 'Staged deployment' in package_layer.stdout"
+
+    - name: Reboot into the package deployment
+      ansible.builtin.reboot:
+        msg: "Rebooting FCOS to activate the security service package deployment"
+        reboot_timeout: 900
+        connect_timeout: 10
+        post_reboot_delay: 30
+        test_command: rpm-ostree status
+      when: package_layer.changed
+
+    - name: Wait for FCOS after package deployment
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        sleep: 10
+        timeout: 900
+      when: package_layer.changed
+
+    - name: Verify required binaries after layering
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        for binary in firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose; do
+          command -v "$binary" >/dev/null || {
+            echo "Missing after package layering: $binary" >&2
+            exit 1
+          }
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false

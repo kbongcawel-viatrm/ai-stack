@@ -1,50 +1,84 @@
 # Operations Runbook
 
+## Deploy workflow boundaries
+
+- **Deploy Host OS:** publishes the Alpine netboot assets and generated apkovl. It does not configure router DHCP, change firmware boot order or reboot the physical host.
+- **Deploy Host VM:** targets an already-prepared hypervisor. It does not invoke Deploy Host OS.
+- **Provision Services/Containers:** layers packages if requested, configures FCOS, validates Suricata and tests rootless Compose.
+- **Health Check:** runs Ansible validation; it does not repair a failed service.
+- **Kasm Compatibility POC:** targets an isolated FCOS test VM and never installs Kasm automatically.
+
 ## PXE
 ```bash
-ip route
-curl -fsS http://192.168.1.2/boot/alpine/current/manifest.txt
+curl -fsS http://192.168.1.2/boot/alpine/current/manifest.sha256
+curl -fsS http://192.168.1.2/boot/menu.ipxe
+readlink -f /srv/tftp/boot/alpine/current
 ```
-Inspect DHCP logs and confirm server/boot filename. Test TFTP retrieval of the exact boot filename.
 
-## Alpine
+Verify the active symlink points to the expected release and that TFTP/HTTP serves the exact files. Keep prior releases for rollback.
+
+## Hypervisor
 ```bash
-cat /etc/alpine-release
-rc-status
-ip -br addr
-ip route
-lbu status
-virsh list --all
+virsh -c qemu:///system list --all
+virsh -c qemu:///system dominfo fcos-security
+virsh -c qemu:///system domifaddr fcos-security
+qemu-img info /var/lib/libvirt/images/fcos-security.qcow2
+ip -br link
 ```
+
+The VM deployment playbook requires KVM, libvirt, a pre-existing bridge and durable image storage. It refuses to overwrite an existing domain or orphaned disk.
 
 ## FCOS
 ```bash
 cat /etc/os-release
+ip -br addr show enp1s0
 systemctl is-system-running
 systemctl --failed
-systemctl status firewalld suricata clamav-freshclam
-systemctl list-timers --all | grep -E 'aide|clamav|lynis'
+systemctl status firewalld suricata-nfq-rules.service suricata.service
+systemctl --user status podman.socket
+loginctl show-user core -p Linger
+systemctl list-timers --all | grep -E 'aide|clamav|lynis|suricata'
 firewall-cmd --get-active-zones
-firewall-cmd --list-all
-sshd -t
-sshd -T -C user=root,host=localhost,addr=192.168.1.10
+firewall-cmd --info-policy fcos-host-egress
 ```
-SSH must permit public keys only from 192.168.1.0/24, with root key login. Keep sshd and Firewalld aligned.
 
-## Scan logs
+## Suricata
+```bash
+suricata --build-info | grep -Ei 'NFQ|NFQUEUE'
+suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
+suricata-update list-enabled-sources
+nft list table inet suricata_nfq
+journalctl -u suricata -u suricata-nfq-rules --since today
+tail -f /var/log/suricata/eve.json
+```
+
+A running service is not sufficient proof of IPS. Run `playbooks/suricata-ips-validation.yml` with a controlled LAN HTTP server on TCP/80. The playbook temporarily installs alert/drop signatures, checks EVE events and restores the production rule file.
+
+## Daily scan logs
 ```bash
 find /var/log/aide /var/log/clamav /var/log/lynis -maxdepth 2 -type f
-systemctl status aide-check.timer clamav-scan.timer lynis-audit.timer
-journalctl -u aide-check.service -u clamav-scan.service -u lynis-audit.service --since today
+systemctl status aide-check.timer clamav-freshclam-daily.timer clamav-scan.timer lynis-audit.timer
+journalctl -u aide-check.service -u clamav-freshclam-daily.service -u clamav-scan.service -u lynis-audit.service --since today
 ```
-Never automatically regenerate the AIDE baseline after unexplained changes.
 
-## Ubuntu/Kasm
+AIDE timer remains disabled until the trusted baseline has been initialized and reviewed. Confirm the database path from `/etc/aide.conf` before initializing or replacing the baseline.
+
+## Rootless Podman and Compose
 ```bash
-sudo systemctl is-active docker
-sudo docker ps --format 'table {{.Names}}\t{{.Status}}'
-curl -kI https://127.0.0.1/
+printf '%s\n' "$CONTAINER_HOST"
+printf '%s\n' "$DOCKER_HOST"
+systemctl --user status podman.socket
+podman --remote --url "$CONTAINER_HOST" info
+docker version
+docker compose version
+docker-compose version
+podman-compose ps
 ```
+
+Run these commands inside the actual FCOS VM as `core`, not in a Toolbox sharing the Secureblue host socket. Verify the returned distribution/hostname and `rootless: true`.
+
+Before the Compose smoke workflow, use the existing `podwhitelist` function inside the FCOS user's shell to approve and pull the exact image reference. The workflow checks that the image is already present and does not change registry policy or pull it.
 
 ## Recovery
-Inspect DHCP/PXE logs; select previous iPXE release; use console for initramfs/rootfs errors; verify NAS mounts, libvirt storage/networks and VM state; preserve logs/artifacts before retry.
+
+Use hypervisor/VM console access if firewall or SSH changes lock out remote access. Preserve journal and Suricata logs before retrying. Restore the previous known-good PXE release or FCOS overlay/base image as appropriate. Do not delete VM disks or AIDE databases as a troubleshooting shortcut.

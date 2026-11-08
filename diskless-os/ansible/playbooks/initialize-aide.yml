@@ -1,0 +1,104 @@
+---
+- name: Initialize a trusted AIDE baseline without enabling its timer
+  hosts: fcos
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require explicit authorization to initialize the first baseline
+      ansible.builtin.assert:
+        that:
+          - aide_initialize_baseline | default(false) | bool
+        fail_msg: >-
+          Set aide_initialize_baseline=true only after FCOS provisioning is
+          complete, trusted, and reviewed. This playbook never runs automatically.
+
+    - name: Keep AIDE timer disabled during baseline initialization
+      ansible.builtin.systemd_service:
+        name: aide-check.timer
+        enabled: false
+        state: stopped
+
+    - name: Check whether a compressed baseline already exists
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.gz
+      register: aide_db_gz
+
+    - name: Check whether an uncompressed baseline already exists
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db
+      register: aide_db
+
+    - name: Refuse to overwrite an existing AIDE baseline
+      ansible.builtin.assert:
+        that:
+          - not aide_db_gz.stat.exists
+          - not aide_db.stat.exists
+        fail_msg: >-
+          An AIDE baseline already exists. This playbook will not rebaseline
+          automatically. Investigate the difference and use a separately
+          reviewed recovery procedure if replacement is genuinely required.
+
+    - name: Ensure AIDE log directory exists
+      ansible.builtin.file:
+        path: /var/log/aide
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Initialize AIDE database
+      ansible.builtin.command:
+        argv: [aide, --init, --config, /etc/aide.conf]
+      register: aide_init
+      changed_when: true
+
+    - name: Check generated compressed database
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.new.gz
+      register: aide_new_db_gz
+
+    - name: Check generated uncompressed database
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.new
+      register: aide_new_db
+
+    - name: Require AIDE to have created a database
+      ansible.builtin.assert:
+        that:
+          - aide_new_db_gz.stat.exists or aide_new_db.stat.exists
+        fail_msg: >-
+          AIDE did not create the expected .new database. Inspect /etc/aide.conf
+          database_out and the aide --init output; do not enable the timer.
+
+    - name: Promote the new compressed database to the configured baseline
+      ansible.builtin.command:
+        argv: [mv, /var/lib/aide/aide.db.new.gz, /var/lib/aide/aide.db.gz]
+      when: aide_new_db_gz.stat.exists
+      changed_when: true
+
+    - name: Promote the new uncompressed database to the configured baseline
+      ansible.builtin.command:
+        argv: [mv, /var/lib/aide/aide.db.new, /var/lib/aide/aide.db]
+      when:
+        - not aide_new_db_gz.stat.exists
+        - aide_new_db.stat.exists
+      changed_when: true
+
+    - name: Verify the newly initialized baseline
+      ansible.builtin.command:
+        argv: [aide, --check, --config, /etc/aide.conf]
+      register: aide_check
+      changed_when: false
+
+    - name: Keep AIDE timer disabled pending administrator review
+      ansible.builtin.systemd_service:
+        name: aide-check.timer
+        enabled: false
+        state: stopped
+
+    - name: Report baseline review requirement
+      ansible.builtin.debug:
+        msg: >-
+          AIDE baseline initialized and check completed. Review the baseline
+          and the initial check output. Enable aide-check.timer only with the
+          separate enable-aide-check.yml playbook after approval.
