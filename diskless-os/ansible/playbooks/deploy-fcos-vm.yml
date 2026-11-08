@@ -100,15 +100,15 @@
         fcos_storage_mount_target: "{{ fcos_storage_mount.stdout.split()[0] }}"
         fcos_storage_fstype: "{{ fcos_storage_mount.stdout.split()[1] }}"
 
-    - name: Refuse to place VM disks on a diskless or volatile filesystem
+    - name: Require local persistent storage for VM disks
       ansible.builtin.assert:
         that:
-          - fcos_storage_fstype not in ["tmpfs", "overlay", "ramfs"]
+          - fcos_storage_fstype in ["ext4", "xfs", "btrfs", "f2fs"]
         fail_msg: >-
           {{ fcos_image_dir }} resolves to {{ fcos_storage_fstype }} at
-          {{ fcos_storage_mount_target }}. FCOS VM disks, Ignition and domain XML
-          must live on persistent storage. Mount the local NVMe volume before
-          running this workflow; do not store VM disks in Alpine's diskless rootfs.
+          {{ fcos_storage_mount_target }}. FCOS VM disks, Ignition and domain XML must live on local persistent
+          ext4, XFS, Btrfs or F2FS storage. Mount the NVMe volume before
+          running this workflow; do not use Alpine's diskless rootfs or SMB/NFS.
 
     - name: Download pinned FCOS base QCOW2
       ansible.builtin.get_url:
