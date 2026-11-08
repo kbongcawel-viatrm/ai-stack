@@ -1,91 +1,143 @@
 # Ansible Operations
 
-Ansible runs after the FCOS VM is reachable over SSH. Butane/Ignition owns first-boot configuration files and systemd units. Ansible owns FCOS package layering/reboot coordination, rootless Podman socket activation, Suricata rule-source initialization, IPS service activation, traffic validation and health checks.
+Ansible configures the FCOS guest after its base image has booted and SSH is reachable. Butane/Ignition owns first-boot configuration; Ansible handles package layering/reboot coordination, rule updates, active validation and health checks.
 
 ## Playbooks
 
-| Playbook | Target | Purpose |
-|---|---|---|
-| deploy-host-vm.yml | hypervisors | Create FCOS VM on an already prepared Alpine, Secureblue, Arch or Ubuntu hypervisor |
-| provision-services.yml | fcos | Layer missing RPMs, reboot, configure rootless Podman, Firewalld, Suricata and daily timers |
-| validate-suricata.yml | fcos | Prove IDS alerting and IPS packet drop against a second LAN HTTP endpoint |
-| health-check.yml | hypervisors + fcos | Verify hypervisor, services, timers, firewall, SSH and rootless Podman |
-
-Deploy Host VM is independent of Deploy Host OS. It does not install or reimage the hypervisor. KVM/QEMU/libvirt, the bridge and VM storage must already be prepared.
+| Playbook | Purpose |
+|---|---|
+| `layer-fcos-packages.yml` | Layer Firewalld, nftables, Suricata, AIDE, ClamAV, Lynis, podman-compose and logrotate with rpm-ostree; reboot only when a deployment is staged |
+| `configure-security.yml` | Validate FCOS identity/NIC, Firewalld, SSH, Suricata NFQUEUE/rules, rootless Podman API and daily timers |
+| `suricata-ips-validation.yml` | Add temporary IDS/IPS signatures, generate controlled HTTP traffic, verify EVE alerts/drop, restore production rules |
+| `podman-compose-poc.yml` | Verify a preapproved local image, start an HTTP Compose stack through rootless Podman, test it and remove it |
+| `kasm-compatibility-poc.yml` | Check Docker Engine and Docker Compose v2 requirements; fail closed before the Kasm installer if the endpoint is Podman |
+| `deploy-fcos-vm.yml` | Provision FCOS on an existing libvirt hypervisor; refuses existing VM domains and orphaned disks |
+| `health-check.yml` | Check hypervisor/KVM/VM state, FCOS services/timers, firewall, Suricata, AIDE timer state and rootless Podman |
 
 ## Butane package contract
 
-The FCOS Butane config writes:
-- SSH public-key-only policy.
-- Firewalld public zone and HOST-to-ANY egress policy.
-- Suricata YAML, NFQUEUE nftables rules, rule-update script and custom systemd unit.
-- ClamAV scan/update, Lynis audit and AIDE check scripts/services/timers.
-- Rootless Podman Docker API shell aliases and wrapper commands.
-- A rootless Podman bootstrap script/service.
+The Butane config expects these commands and units to exist in the FCOS deployment before service activation:
 
-Butane does not install RPMs. The provisioning playbook layers the Fedora packages and reboots into the new deployment before activating services. The package list is firewalld, nftables, suricata, aide, clamav, clamav-freshclam, lynis and podman-compose. Podman itself is expected from the FCOS base image.
+- `firewalld`, `firewall-cmd`, `nft`
+- `suricata` built with NFQUEUE support and the `suricata-update` command
+- `aide`
+- `clamscan`, `freshclam`
+- `lynis`
+- `podman`, `podman-compose`, and `/usr/lib/systemd/user/podman.socket`
+- `logrotate`
 
-## Required network defaults
+Butane writes files, policy and systemd units; it does not install RPMs. The package-layering playbook installs the Fedora packages through rpm-ostree and reboots only if a new deployment is staged. The rootless Podman engine remains rootless.
 
-The checked-in profile assumes:
-- FCOS interface: enp1s0
-- FCOS IPv4 address: 192.168.1.20 (must be static or DHCP-reserved)
-- Trusted LAN: 192.168.1.0/24
-- FCOS SSH user: core
+## Butane-managed first boot
 
-Change the Butane configuration and inventory together if these values differ. Firewalld inbound target is DROP; SSH is the only inbound exception from the LAN. Host egress is source-bound to 192.168.1.20 and allows HTTP, HTTPS, DNS and NTP. This is a host egress policy, not a complete container-forwarding policy.
+Butane/Ignition configures:
+
+- Core user's public SSH key; password and keyboard-interactive SSH are disabled.
+- NetworkManager static IPv4 identity on the configured guest NIC (default `enp1s0`), with the configured gateway/DNS.
+- Firewalld default-DROP inbound zone; SSH is the only inbound exception and is restricted to `192.168.1.0/24`.
+- A `HOST -> ANY` Firewalld egress policy bound to the explicit FCOS source IP; HTTP/HTTPS, DNS and NTP are allowed. TCP 80/443 are explicit.
+- Suricata `HOME_NET`, NFQUEUE mode and local rule file; nftables queue rules on ingress/egress of the configured NIC.
+- Suricata rule preparation, configuration test, service start ordering and weekly free-rule refresh.
+- Daily ClamAV signature update at 01:30 and read-only scan at 02:00; no automatic delete/quarantine.
+- Daily Lynis audit at 03:00.
+- Daily AIDE check at 04:00, with its timer disabled until the trusted baseline is initialized and reviewed.
+- Log rotation for ClamAV, Lynis and AIDE logs.
+- Rootless Podman user socket, linger, `CONTAINER_HOST`, `DOCKER_HOST`, interactive `docker` and `docker-compose` aliases.
+- Rootful system Podman/Docker socket activation is masked.
+
+The static guest address must match the DHCP reservation and the egress policy. Defaults are FCOS `192.168.1.20/24`, gateway/DNS `192.168.1.1`, LAN `192.168.1.0/24`, NIC `enp1s0`. The VM workflow renders these as Butane variables.
+
+## Firewalld behavior
+
+- Inbound defaults to DROP.
+- SSH from `192.168.1.0/24` is the only inbound exception. If you require zero inbound services, remove that rich rule and retain console access.
+- Host-originated IPv4 egress is source-bound to the FCOS LAN IP and permits HTTP, HTTPS, DNS and NTP.
+- Other host-originated IPv4 egress is dropped. Add required ports explicitly and narrowly.
+- This is not a complete container/forwarding egress policy. Validate rootless container traffic separately.
+
+## Suricata NFQUEUE behavior
+
+- Interface: `enp1s0` by default.
+- HOME_NET: `192.168.1.0/24` by default.
+- NFQUEUE number: `0`.
+- Rule source: Emerging Threats Open (`et/open`).
+- Boot sequence: update sources, enable ET Open, update rules, run `suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml`, then start the NFQUEUE service.
+- Weekly rule refresh validates configuration before restarting Suricata. A failed update restores the previous rules directory.
+- nftables uses queue bypass to preserve management connectivity if Suricata stops. This is fail-open; inspection is absent while the service is down, so monitor service health.
+- The chains inspect traffic to/from the FCOS host. They do not inspect arbitrary traffic between other LAN clients; transit IPS needs routing/bridging or mirrored traffic and a separate FORWARD queue design.
+
+The active validation playbook requires a controlled HTTP server on TCP/80 inside `192.168.1.0/24`. It adds temporary IDS/IPS rules, verifies EVE alert IDs and restores the original generated rule file even when a test fails.
 
 ## Rootless Podman and Docker compatibility
 
-The rootless bootstrap script enables linger for core, creates the user-level podman.socket link and starts the user socket. The system socket must remain at /run/user/<UID>/podman/podman.sock. The interactive profile exports CONTAINER_HOST and defines:
-- docker -> podman --remote --url "$CONTAINER_HOST"
-- docker-compose -> podman-compose
+Butane:
+- Enables the user-level `podman.socket` for the `core` user.
+- Enables lingering for `core`.
+- Exports `CONTAINER_HOST` and `DOCKER_HOST` as `unix:///run/user/1000/podman/podman.sock`.
+- Adds interactive aliases for `docker` and `docker-compose`.
+- Masks rootful system-level Podman and Docker services/sockets.
 
-Executable wrappers are installed for automation. Do not enable the rootful Podman socket or expose the API over TCP. A successful Docker CLI connection is not proof of Kasm compatibility.
+The API socket remains a Unix socket under the `core` user's runtime directory. Do not expose it over TCP. Aliases are interactive conveniences; automation uses explicit socket URLs.
 
-## Suricata
+### Registry approval and Compose smoke test
 
-The service profile pins:
-- NIC: enp1s0
-- HOME_NET: 192.168.1.0/24
-- NFQUEUE queue: 0
-- Rules: Emerging Threats Open (et/open)
-- Update sequence: suricata-update update-sources, enable-source et/open, update, then suricata -T -c /etc/suricata/suricata.yaml.
-- Engine: custom suricata-nfq.service, enabled only after the initial rule update and config test pass.
+The Compose POC does not change registry trust policy and does not pull images. It requires the exact image to already exist in FCOS rootless storage. Before running Provision Services/Containers, use the existing `podwhitelist` function in the FCOS user's shell to approve and pull the selected image, then pass the exact image reference as `container_smoke_image`. The playbook checks that image exists and refuses to pull an unapproved image.
 
-The nftables hooks inspect FCOS host INPUT/OUTPUT traffic, not arbitrary transit traffic. Queue bypass is fail-open to preserve management connectivity if Suricata stops. IPS inspection is absent during that failure state.
+The repository does not hard-code or reimplement the local `podwhitelist` function. To automate that exact function call inside the workflow, its function body and argument syntax must be added to the project.
 
-The validate-suricata playbook requires a reachable second LAN host serving HTTP. Set suricata_test_target and suricata_test_port. It installs temporary local signatures, confirms an IDS alert in EVE, confirms an IPS drop, and restores the original rules in an always block. Do not claim IDS/IPS validation from service status alone.
+## Kasm compatibility gate
 
-## Daily jobs
+The Kasm POC targets an isolated FCOS test VM, not the production guest. It verifies:
+1. Docker CLI/server identity.
+2. Docker Engine version (minimum currently pinned in the playbook).
+3. Docker Compose v2 command and version.
+4. Rootless Podman API identity.
 
-| Timer | Schedule | Purpose |
-|---|---:|---|
-| clamav-update.timer | 01:40 | Refresh ClamAV signatures |
-| clamav-scan.timer | 02:00 | Read-only scan of /var/home/core |
-| lynis-audit.timer | 03:00 | Daily Lynis audit |
-| aide-check.timer | 04:00 | Daily AIDE integrity check; disabled until baseline review |
-| suricata-update.timer | 01:30 | Daily ET Open rules update after initial validation |
+If the endpoint identifies as Podman or lacks Docker Compose v2, the playbook fails closed and does not run the Kasm installer. Passing the basic Compose smoke test is not equivalent to Kasm compatibility. Production Kasm remains blocked until the official installer, services, volumes, networking, HTTPS and workspace lifecycle pass on the isolated VM.
 
-ClamAV never auto-deletes or quarantines files. The initial scan scope is the FCOS core user's home directory; expand it deliberately after measuring resource usage.
+## AIDE baseline
 
-AIDE timer stays disabled until its baseline is initialized and reviewed. Never automatically regenerate the baseline after an unexpected change. The AIDE baseline location must be confirmed against /etc/aide.conf before initialization.
+The AIDE timer is intentionally disabled. After trusted provisioning, inspect `/etc/aide.conf` and initialize/review the database using the paths configured by that file. On the current Fedora package defaults, the database is expected under `/var/lib/aide`; confirm the actual `DBDIR` and `database_out` before copying the new baseline into place.
 
-## Commands
+Never automatically initialize or replace an AIDE baseline after unexplained changes.
 
-Run from diskless-os/ansible:
+## Workflow separation
+
+| GitHub Actions workflow | Scope | Prerequisite |
+|---|---|---|
+| Deploy Host OS | Build and publish Alpine diskless iPXE assets/apkovl | PXE server, protected SSH publisher credentials |
+| Deploy Host VM | Create FCOS VM on a prepared hypervisor | Existing KVM/QEMU/libvirt host, bridge, pinned QCOW2 URL/SHA |
+| Provision Services/Containers | Layer packages, configure FCOS, validate IDS/IPS, test rootless Compose | Reachable FCOS VM, test HTTP endpoint, preapproved image |
+| Health Check | Run Ansible hypervisor and FCOS checks | Host/FCOS SSH credentials and pinned known_hosts |
+| Kasm Compatibility POC | Run Docker API/Compose gate on isolated FCOS VM | Isolated test VM and separate SSH credentials |
+
+Deploy Host VM does not depend on Deploy Host OS. The selected host OS may be Alpine (default), Fedora Secureblue, Arch Linux or Ubuntu, provided the hypervisor is already prepared.
+
+## Required GitHub configuration
+
+### Repository variables
+
+- `HYPERVISOR_HOST`, `HYPERVISOR_USER`, `HOST_OS`
+- `FCOS_VM_IP`, `FCOS_SSH_USER`, `FCOS_LAN_IP`, `FCOS_LAN_CIDR`, `FCOS_INTERFACE`
+- `PXE_HTTP_BASE_URL`
+
+### Repository secrets / protected environments
+
+- `HYPERVISOR_SSH_PRIVATE_KEY`, `HYPERVISOR_KNOWN_HOSTS`
+- `FCOS_SSH_PUBLIC_KEY`, `FCOS_SSH_PRIVATE_KEY`, `FCOS_KNOWN_HOSTS`
+- `ALPINE_SSH_PUBLIC_KEY`
+- `PXE_HOST`, `PXE_USER`, `PXE_SSH_PRIVATE_KEY`, `PXE_KNOWN_HOSTS`, `PXE_HTTP_ROOT`
+- For Kasm POC: `KASM_POC_FCOS_IP`, `KASM_POC_SSH_USER`, `KASM_POC_SSH_PRIVATE_KEY`, `KASM_POC_KNOWN_HOSTS`
+
+Use protected GitHub environments `pxe-production`, `host-vm-production`, `fcos-production` and `kasm-poc` with required reviewers.
+
+## Local validation
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/deploy-host-vm.yml --syntax-check
-ansible-playbook -i inventory/hosts.yml playbooks/provision-services.yml --syntax-check
-ansible-playbook -i inventory/hosts.yml playbooks/validate-suricata.yml --syntax-check
+ansible-playbook -i inventory/hosts.yml playbooks/layer-fcos-packages.yml --syntax-check
+ansible-playbook -i inventory/hosts.yml playbooks/configure-security.yml --syntax-check
+ansible-playbook -i inventory/hosts.yml playbooks/suricata-ips-validation.yml --syntax-check
+ansible-playbook -i inventory/hosts.yml playbooks/podman-compose-poc.yml --syntax-check
 ansible-playbook -i inventory/hosts.yml playbooks/health-check.yml --syntax-check
-
-ansible-playbook -i inventory/hosts.yml playbooks/provision-services.yml --check --diff
-ansible-playbook -i inventory/hosts.yml playbooks/provision-services.yml --diff
-ansible-playbook -i inventory/hosts.yml playbooks/validate-suricata.yml \
-  --extra-vars "suricata_test_target=192.168.1.100 suricata_test_port=80"
-ansible-playbook -i inventory/health.yml playbooks/health-check.yml
+ansible-lint playbooks/
 ```
-
-The 192.168.1.100 endpoint above is an example only; use a real reachable LAN HTTP test host.
