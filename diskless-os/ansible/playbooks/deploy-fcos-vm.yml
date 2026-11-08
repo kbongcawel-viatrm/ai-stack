@@ -29,12 +29,14 @@
           - fcos_qcow2_sha256 is match('^[a-fA-F0-9]{64}$')
           - fcos_ignition_local_path is defined
           - fcos_network_bridge | length > 0
+          - fcos_image_dir is defined
+          - fcos_image_dir.startswith('/')
         fail_msg: "Supply a supported host_os, pinned FCOS QCOW2 URL/SHA256, Ignition file and bridge."
 
     - name: Verify hypervisor tooling
       ansible.builtin.shell: |
         set -Eeuo pipefail
-        for binary in virsh virt-install qemu-img; do
+        for binary in virsh virt-install qemu-img findmnt; do
           command -v "$binary" >/dev/null || {
             echo "Missing hypervisor tool: $binary" >&2
             exit 1
@@ -84,7 +86,29 @@
       loop:
         - "{{ fcos_image_dir }}"
         - "{{ fcos_image_dir }}/base"
-        - /var/lib/libvirt/ignition
+        - "{{ fcos_image_dir }}/ignition"
+        - "{{ fcos_image_dir }}/domains"
+
+    - name: Resolve filesystem backing the FCOS VM storage path
+      ansible.builtin.command:
+        argv: [findmnt, -n, -o, TARGET,FSTYPE, --target, "{{ fcos_image_dir }}"]
+      register: fcos_storage_mount
+      changed_when: false
+
+    - name: Parse persistent storage mount information
+      ansible.builtin.set_fact:
+        fcos_storage_mount_target: "{{ fcos_storage_mount.stdout.split()[0] }}"
+        fcos_storage_fstype: "{{ fcos_storage_mount.stdout.split()[1] }}"
+
+    - name: Refuse to place VM disks on a diskless or volatile filesystem
+      ansible.builtin.assert:
+        that:
+          - fcos_storage_fstype not in ["tmpfs", "overlay", "ramfs"]
+        fail_msg: >-
+          {{ fcos_image_dir }} resolves to {{ fcos_storage_fstype }} at
+          {{ fcos_storage_mount_target }}. FCOS VM disks, Ignition and domain XML
+          must live on persistent storage. Mount the local NVMe volume before
+          running this workflow; do not store VM disks in Alpine's diskless rootfs.
 
     - name: Download pinned FCOS base QCOW2
       ansible.builtin.get_url:
@@ -117,7 +141,7 @@
     - name: Restore SELinux labels where SELinux is available
       ansible.builtin.shell: |
         if command -v restorecon >/dev/null 2>&1; then
-          restorecon -Rv "{{ fcos_image_dir }}" /var/lib/libvirt/ignition
+          restorecon -Rv "{{ fcos_image_dir }}"
         fi
       args:
         executable: /bin/bash
@@ -189,6 +213,21 @@
           - "-fw_cfg name=opt/com.coreos/config,file={{ fcos_ignition_remote_path }}"
       register: virt_install
       changed_when: true
+
+    - name: Persist libvirt domain XML outside the diskless Alpine rootfs
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        virsh -c qemu:///system dumpxml "{{ fcos_vm_name }}" > "{{ fcos_image_dir }}/domains/{{ fcos_vm_name }}.xml"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Set persistent libvirt domain XML permissions
+      ansible.builtin.file:
+        path: "{{ fcos_image_dir }}/domains/{{ fcos_vm_name }}.xml"
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Wait for FCOS SSH to become reachable
       ansible.builtin.wait_for:
