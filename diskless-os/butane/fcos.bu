@@ -403,6 +403,7 @@ storage:
           suricata-update update-sources
           suricata-update enable-source et/open
           suricata-update
+          suricata -T -c /etc/suricata/suricata.yaml
           suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
           trap - EXIT
           find /var/lib/suricata -maxdepth 1 -type d -name 'rules.rollback.*' -mtime +7 -exec rm -rf -- {} +
