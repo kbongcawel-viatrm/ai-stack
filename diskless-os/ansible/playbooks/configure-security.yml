@@ -103,6 +103,10 @@
           - "fcos_lan_ip in egress_policy.stdout"
           - "'HOST' in egress_policy.stdout"
           - "'ANY' in egress_policy.stdout"
+          - "'http' in egress_policy.stdout"
+          - "'https' in egress_policy.stdout"
+          - "'80/tcp' in egress_policy.stdout"
+          - "'443/tcp' in egress_policy.stdout"
         fail_msg: "Firewalld policy does not match the expected inbound/egress restrictions."
 
     - name: Run Butane-managed package preflight
