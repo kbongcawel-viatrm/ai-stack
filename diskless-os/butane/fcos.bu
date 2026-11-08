@@ -292,7 +292,7 @@ storage:
           set -Eeuo pipefail
           required=(
             firewall-cmd nft suricata suricata-update
-            aide clamscan freshclam lynis podman podman-compose
+            aide clamscan freshclam lynis podman podman-compose logrotate
           )
           missing=()
           for cmd in "${required[@]}"; do
