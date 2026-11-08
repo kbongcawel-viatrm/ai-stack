@@ -1,0 +1,110 @@
+name: Deploy Host OS - Alpine Diskless PXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      alpine_version:
+        description: Pinned Alpine release version
+        required: true
+        default: "3.24.4"
+        type: string
+      publish:
+        description: Publish verified assets to the PXE HTTP server
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download and verify Alpine netboot archive
+        shell: bash
+        env:
+          ALPINE_VERSION: ${{ inputs.alpine_version }}
+        run: |
+          set -Eeuo pipefail
+          branch="v${ALPINE_VERSION%.*}"
+          base="https://dl-cdn.alpinelinux.org/alpine/${branch}/releases/x86_64"
+          archive="alpine-netboot-${ALPINE_VERSION}-x86_64.tar.gz"
+          work="$RUNNER_TEMP/alpine-netboot"
+          mkdir -p "$work/extract" "$work/release"
+          cd "$work"
+          curl --fail --show-error --location --retry 3 --output "$archive" "$base/$archive"
+          curl --fail --show-error --location --retry 3 --output "$archive.sha256" "$base/$archive.sha256"
+          sha256sum --check "$archive.sha256"
+          tar -xzf "$archive" -C "$work/extract"
+
+          for name in vmlinuz-lts initramfs-lts modloop-lts; do
+            source="$(find "$work/extract" -type f -name "$name" -print -quit)"
+            test -n "$source"
+            install -m 0644 "$source" "$work/release/$name"
+          done
+
+          sha256sum "$work/release/"* > "$work/release/manifest.sha256"
+          PXE_HTTP_BASE_URL="${{ vars.PXE_HTTP_BASE_URL }}"
+          if [[ -z "$PXE_HTTP_BASE_URL" ]]; then
+            PXE_HTTP_BASE_URL="http://192.168.1.2"
+          fi
+          export PXE_HTTP_BASE_URL
+          envsubst '${PXE_HTTP_BASE_URL}' < diskless-os/pxe/boot/menu.ipxe > "$work/release/menu.ipxe"
+          echo "$ALPINE_VERSION" > "$work/release/ALPINE_VERSION"
+          echo "ALPINE_RELEASE_DIR=$work/release" >> "$GITHUB_ENV"
+
+      - name: Upload verified netboot release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpine-netboot-${{ inputs.alpine_version }}
+          path: ${{ runner.temp }}/alpine-netboot/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: ${{ inputs.publish }}
+    needs: build
+    runs-on: [self-hosted, linux, home-server]
+    environment: pxe-production
+    steps:
+      - name: Download verified netboot artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: alpine-netboot-${{ inputs.alpine_version }}
+          path: release
+
+      - name: Configure authenticated PXE publisher access
+        shell: bash
+        env:
+          PXE_SSH_PRIVATE_KEY: ${{ secrets.PXE_SSH_PRIVATE_KEY }}
+          PXE_KNOWN_HOSTS: ${{ secrets.PXE_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$PXE_SSH_PRIVATE_KEY" > "$HOME/.ssh/pxe_deploy"
+          chmod 0600 "$HOME/.ssh/pxe_deploy"
+          printf '%s\n' "$PXE_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Publish release, verify remote checksums and promote current
+        shell: bash
+        env:
+          ALPINE_VERSION: ${{ inputs.alpine_version }}
+          PXE_HOST: ${{ secrets.PXE_HOST }}
+          PXE_USER: ${{ secrets.PXE_USER }}
+          PXE_HTTP_ROOT: ${{ secrets.PXE_HTTP_ROOT }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$PXE_HOST"
+          test -n "$PXE_USER"
+          test -n "$PXE_HTTP_ROOT"
+          release_dir="$PXE_HTTP_ROOT/boot/alpine/releases/$ALPINE_VERSION"
+          ssh -i "$HOME/.ssh/pxe_deploy" "$PXE_USER@$PXE_HOST" "mkdir -p '$release_dir' '$PXE_HTTP_ROOT/boot'"
+          scp -i "$HOME/.ssh/pxe_deploy" -r release/. "$PXE_USER@$PXE_HOST:$release_dir/"
+          ssh -i "$HOME/.ssh/pxe_deploy" "$PXE_USER@$PXE_HOST" "cd '$release_dir' && sha256sum --check manifest.sha256"
+          scp -i "$HOME/.ssh/pxe_deploy" release/menu.ipxe "$PXE_USER@$PXE_HOST:$PXE_HTTP_ROOT/boot/menu.ipxe"
+          ssh -i "$HOME/.ssh/pxe_deploy" "$PXE_USER@$PXE_HOST" "ln -sfn '$release_dir' '$PXE_HTTP_ROOT/boot/alpine/current'"
