@@ -5,7 +5,7 @@ Butane/Ignition writes the first-boot configuration, security policy, scripts an
 ## Services
 
 - **Firewalld:** public zone bound to the configured FCOS NIC (default enp1s0); inbound target DROP; SSH accepted only from the configured trusted LAN (default 192.168.1.0/24). Host-originated IPv4 egress uses HOST -> ANY, defaults to DROP and permits HTTP, HTTPS, DNS and NTP only from the explicit FCOS LAN address (default 192.168.1.20).
-- **Suricata:** NFQUEUE queue 0 on host INPUT/OUTPUT for enp1s0; HOME_NET 192.168.1.0/24. The override includes suricata.rules and local.rules, and sets NFQ mode accept. The prepare unit runs suricata-update update-sources, enables free ET Open (et/open), updates rules and validates suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml before suricata.service starts.
+- **Suricata:** NFQUEUE queue 0 on host INPUT/OUTPUT for enp1s0; HOME_NET 192.168.1.0/24. The override includes suricata.rules and local.rules, and sets NFQ mode accept. The prepare unit runs suricata-update update-sources, enables free ET Open (et/open), updates rules and validates suricata -T -c /etc/suricata/suricata.yaml and then validates the active FCOS override before suricata.service starts.
 - **ClamAV:** one daily clamav-scan.timer at 02:00. Its service starts the freshclam one-shot dependency before the read-only scan. No automatic deletion or quarantine.
 - **Lynis:** daily system audit at 03:00.
 - **AIDE:** daily integrity check at 04:00; timer remains disabled until a trusted baseline is initialized and reviewed.
