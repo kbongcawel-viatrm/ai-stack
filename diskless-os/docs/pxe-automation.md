@@ -16,7 +16,7 @@ GitHub Actions coordinates the process; it does not replace DHCP, TFTP/HTTP, iPX
 5. Alpine boots its diskless root filesystem.
 6. Networking and OpenRC services initialize.
 7. The self-hosted runner/controller verifies SSH availability.
-8. Ansible configures Alpine and provisions/updates FCOS and Ubuntu VMs.
+8. The Deploy Host OS workflow publishes the Alpine netboot release and generated apkovl. The Deploy Host VM workflow independently provisions FCOS on an already-prepared hypervisor; it does not require or invoke the Host OS workflow.
 9. Health checks validate host/guest services, timers, containers and HTTPS endpoints.
 
 PXE must be enabled and placed in firmware boot order. This is initially manual unless hardware exposes a supported remote-management API. CI cannot power on a machine without WOL/IPMI/Redfish/managed PDU.
@@ -79,10 +79,10 @@ Check iPXE script, boot manifest/checksums, Butane strict conversion, Ansible sy
 Build/assemble a pinned Alpine diskless image, generate Ignition from Butane, and produce a SHA-256 manifest. Never embed credentials in boot artifacts.
 
 ### Stage and publish
-Copy files to a versioned release directory such as `/srv/tftp/boot/alpine/releases/<git-sha>/`; verify checksums after transfer; test TFTP/HTTP retrieval; promote the boot manifest/menu only after success; retain the previous release.
+Copy files to a versioned release directory such as `/srv/tftp/boot/alpine/releases/<alpine-version>-<git-sha>/`; verify checksums after transfer; atomically promote the `current` symlink; test HTTP retrieval; retain previous releases.
 
 ### Deploy
-Run a protected workflow on the `home-server` runner; publish with a restricted identity; reboot only in an approved maintenance window; wait for Alpine SSH; run Ansible and health checks.
+Run the protected Deploy Host OS workflow on the `home-server` runner. Router DHCP/PXE options, firmware boot order and the physical reboot remain operator actions. The independent Deploy Host VM workflow can target any preconfigured supported hypervisor.
 
 ### Rollback
 Point iPXE to the prior release, reboot via console or supported management, and preserve failed artifacts/logs for diagnosis.
@@ -97,7 +97,7 @@ Point iPXE to the prior release, reboot via console or supported management, and
 | Router DHCP options | Manual initially or supported router API |
 | Firmware PXE/boot order | Manual initially unless remote management exists |
 | Power/reboot | WOL/IPMI/Redfish/PDU if available |
-| OS and service configuration | Ignition, Ansible, cloud-init |
+| Alpine diskless host configuration | Versioned apkovl built and published by CI |\n| FCOS guest configuration | Butane/Ignition, Ansible |
 | Health checks | Ansible/GitHub Actions |
 
 ## Security
