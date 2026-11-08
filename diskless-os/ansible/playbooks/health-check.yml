@@ -29,7 +29,7 @@
   become: true
   gather_facts: true
   vars:
-    fcos_user: core
+    fcos_user: "{{ ansible_user | default('core') }}"
   tasks:
     - name: Read guest OS identity
       ansible.builtin.command:
