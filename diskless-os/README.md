@@ -6,9 +6,9 @@ The host-VM workflow is deliberately independent of the host-OS workflow. The hy
 
 ## Architecture
 
-- **Host OS (default Alpine diskless):** PXE/iPXE boot, OpenRC, KVM/QEMU/libvirt and durable VM storage. Alpine LBU persists required configuration.
+- **Host OS (default Alpine diskless):** PXE/iPXE boot, OpenRC, KVM/QEMU/libvirt and durable VM storage. The version-controlled apkovl is the boot configuration source of truth; writable LBU persistence is a separate setup and is not currently automated.
 - **Alternative hypervisors:** Fedora Secureblue, Arch Linux or Ubuntu. These are supported as deployment targets only when virtualization prerequisites are prepared separately.
-- **FCOS VM:** Butane/Ignition lays down SSH hardening, Firewalld zone/policy XML, Suricata NFQUEUE configuration and nftables hooks, rootless Podman/Docker wrappers, and systemd scan/update units. Ansible installs/updates required packages, initializes rule databases, runs validation and enables gated services.
+- **FCOS VM:** Butane/Ignition lays down SSH hardening, Firewalld zone/policy XML, Suricata NFQUEUE configuration and nftables hooks, rootless Podman user socket, Docker environment exports and interactive aliases, and systemd scan/update units. Ansible installs/updates required packages, initializes rule databases, runs validation and enables gated services.
 - **Kasm:** compatibility POC inside FCOS. Production install is gated until Kasm's Docker/Compose requirements and rootless Podman behavior pass an end-to-end test.
 - **Storage:** VM disks and persistent application data live on durable storage. NAS/SMB is storage only unless it separately provides DHCP/PXE/TFTP/HTTP.
 - **CI/CD:** root-level GitHub Actions workflows use a protected self-hosted runner and Ansible.
@@ -21,8 +21,9 @@ The host-VM workflow is deliberately independent of the host-OS workflow. The hy
 | Deploy Host VM | Provision FCOS VM on an existing hypervisor | Existing host OS with KVM/QEMU/libvirt and bridge/storage ready |
 | Provision Services/Containers | Configure FCOS rootless Podman, firewall, Suricata, AIDE, ClamAV, Lynis and Compose smoke stack | Reachable FCOS VM and SSH credentials |
 | Health Check | Run Ansible checks against configured host and FCOS targets | Reachable targets and known_hosts |
+| Kasm Compatibility POC | Test Docker Engine and Compose v2 compatibility on isolated FCOS | Isolated FCOS test VM and separate SSH credentials |
 
-The host VM workflow does not invoke or require Deploy Host OS. Alpine is the default, not a hard dependency.
+The host VM workflow does not invoke or require Deploy Host OS. Alpine is the default, not a hard dependency. The Kasm POC is separate from service provisioning and never installs Kasm automatically.
 
 ## Deployment order
 
