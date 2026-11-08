@@ -16,7 +16,7 @@ Ansible configures the FCOS guest after its base image has booted and SSH is rea
 | kasm-compatibility-poc.yml | Check Docker Engine and Docker Compose v2 requirements; fail closed before any Kasm installer if the endpoint is Podman |
 | health-check.yml | Check hypervisor/KVM/VM state, FCOS services/timers, firewall, Suricata, AIDE timer state and rootless Podman |
 
-The Host VM workflow is independent of Deploy Host OS. It requires an existing hypervisor with KVM/QEMU/libvirt, a bridge and a persistent local filesystem. For diskless Alpine, the storage path must be on the mounted NVMe volume; the playbook rejects tmpfs/overlay storage. The workflow stores the FCOS base/overlay QCOW2, Ignition and libvirt domain XML under that persistent path. Alpine's optional libvirt-vms OpenRC service restores the XML and starts the VM on reboot.
+The Host VM workflow is independent of Deploy Host OS. It requires an existing hypervisor with KVM/QEMU/libvirt, a bridge and a persistent local filesystem. For Alpine diskless, any custom VM storage path must match the Host OS apkovl path so libvirt-vms can restore the same domain directory. For diskless Alpine, the storage path must be on the mounted NVMe volume; the playbook rejects tmpfs/overlay storage. The workflow stores the FCOS base/overlay QCOW2, Ignition and libvirt domain XML under that persistent path. Alpine's optional libvirt-vms OpenRC service restores the XML and starts the VM on reboot.
 
 ## Butane package contract
 
