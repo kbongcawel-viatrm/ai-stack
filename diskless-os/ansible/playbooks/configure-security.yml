@@ -218,7 +218,7 @@
         enabled: true
         state: restarted
 
-    - name: Verify rootless Podman linger is enabled
+    - name: Verify rootless Podman linger is enabled  # noqa command-instead-of-module
       ansible.builtin.command: loginctl show-user core -p Linger
       register: linger_state
       changed_when: false
