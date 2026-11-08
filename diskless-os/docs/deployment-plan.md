@@ -46,7 +46,8 @@
 - [ ] Run Kasm Compatibility POC on an isolated FCOS test VM, not the production guest.
 - [ ] Verify Docker API identity and Docker Compose v2 version. Podman identity or missing Compose v2 fails the gate.
 - [ ] Do not run the Kasm installer unless the Docker/Compose gate passes.
-- [ ] If the gate passes, perform the installer, service, storage, networking, HTTPS and workspace lifecycle tests on the isolated VM.
+- [ ] If the gate passes, perform the installer, service, storage, networking and HTTPS tests on the isolated VM.
+- [ ] Defer a default workspace lifecycle test until the host has sufficient memory. Kasm documents 4 GB/2 cores minimum for the host and its default workspace uses 2768 MB/2 cores; the current 8 GB physical host has insufficient headroom for Alpine, FCOS, Kasm and a default workspace.
 - [ ] If any gate fails, stop and decide whether Kasm needs a separately supported runtime. Do not silently switch FCOS to rootful Podman.
 
 ## Phase 5 — CI/CD and health
