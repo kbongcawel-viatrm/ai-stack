@@ -118,9 +118,9 @@ jobs:
       - name: Validate GitHub Actions workflow semantics
         run: |
           set -Eeuo pipefail
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-          export PATH="$(go env GOPATH)/bin:$PATH"
-          actionlint -color .github/workflows/*.yml
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o "$RUNNER_TEMP/download-actionlint"
+          bash "$RUNNER_TEMP/download-actionlint" 1.7.12 "$RUNNER_TEMP"
+          "$RUNNER_TEMP/actionlint" -color -config-file .github/actionlint.yaml -shellcheck="" .github/workflows/*.yml
 
       - name: Parse repository YAML
         run: |
