@@ -1,34 +1,39 @@
 # Alpine Diskless Host (Default)
 
-The default physical host is Alpine Linux booted by iPXE. The Host OS workflow downloads a pinned Alpine netboot release, verifies its SHA-256, builds a deterministic apkovl, publishes versioned kernel/initramfs/modloop/apkovl artifacts, and atomically promotes the `current` release.
+Alpine Linux is the default physical hypervisor and boots through iPXE. The Deploy Host OS workflow downloads a pinned Alpine netboot archive, verifies its SHA-256, builds a deterministic apkovl, publishes versioned kernel/initramfs/modloop/apkovl artifacts and atomically promotes the current release.
 
 ## Included apkovl configuration
 
-The repository apkovl provides:
-
 - Alpine v3.24 main/community repositories.
-- A pinned package set for OpenSSH, Python, QEMU x86_64, libvirt, virt-install, nftables and base host utilities.
-- Root public-key-only SSH access.
-- DHCP management networking on the selected physical NIC (default `enp1s0`).
-- OpenRC startup for networking, kernel modules, SSH and libvirtd.
-- Intel KVM module loading (`kvm`, `kvm_intel`).
+- OpenSSH, Python, QEMU x86_64, libvirt, virt-install, nftables, bridge executor and util-linux.
+- Root public-key-only SSH access; the private key is never included.
+- Physical NIC selected at build time (default enp1s0) attached to br0; DHCP runs on br0.
+- OpenRC networking, localmount (when storage is configured), KVM modules, SSH, libvirtd and optional persistent-domain restore service.
+- Intel KVM modules kvm and kvm_intel.
 
-The public key is injected at build time from `ALPINE_SSH_PUBLIC_KEY`; no private key is included in the apkovl. The Host OS workflow also requires the PXE publisher secrets and `PXE_HTTP_BASE_URL` repository variable.
+## Optional persistent local NVMe
+
+The diskless root filesystem is volatile. The Host OS workflow therefore accepts an optional UUID for an existing, already formatted ext4 partition:
+
+- storage_uuid: filesystem UUID (do not supply a disk device name).
+- storage_mountpoint: default /mnt/nvme.
+- vm_storage_path: default /mnt/nvme/libvirt/images.
+- storage_fstype: ext4 only.
+
+When a UUID is supplied, the apkovl writes an /etc/fstab entry, creates the mountpoint and enables libvirt-vms. On boot, libvirt-vms waits for localmount and libvirtd, checks that the storage mount is present, redefines persistent domain XML and starts the FCOS guest.
+
+The workflow does not partition, format, encrypt or resize disks. Prepare the ext4 filesystem and obtain its UUID first. If no UUID is supplied, Alpine still boots, but the Deploy Host VM playbook will refuse to store VM data on the diskless root filesystem.
+
+The FCOS QCOW2 base/overlay, Ignition file and libvirt domain XML are stored under vm_storage_path. Use local NVMe for live VM disks. NAS/SMB is appropriate for PXE artifacts and backups, not the default live qcow2 storage path.
 
 ## Deploy
 
-Run the root-level **Deploy Host OS - Alpine diskless PXE** workflow manually. Set `publish=true` only after configuring the protected `pxe-production` environment and its SSH credentials.
+Run Deploy Host OS - Alpine Diskless PXE. Set publish=true only after configuring the protected pxe-production environment and SSH credentials. The workflow does not alter router DHCP, firmware boot order or reboot the physical host.
 
-The workflow retains previous releases and promotes the new one through an atomic symlink update. It does not change router DHCP, firmware boot order, or reboot the physical host.
-
-## Persistence model
-
-The generated apkovl is a version-controlled, read-only HTTP boot artifact. Runtime edits made on the diskless host are not automatically written back to the repository or PXE server. To persist runtime changes, configure and test an Alpine LBU target on writable local/NAS storage separately; this repository does not yet mount or write LBU backups to SMB.
-
-Treat the apkovl as the source of truth for reproducible boot configuration. Change the repository files and republish rather than relying on uncommitted changes in RAM.
+The generated apkovl is a version-controlled, read-only HTTP artifact. Arbitrary runtime changes are not automatically committed to the repository or PXE server. LBU backup/persistence for changes outside the apkovl remains a separate operation.
 
 ## Host VM deployment independence
 
-The **Deploy Host VM** workflow does not require this PXE workflow. It can target an already-installed Alpine, Fedora Secureblue, Arch Linux or Ubuntu hypervisor, provided KVM/QEMU/libvirt, the requested bridge and durable image storage are already prepared.
+Deploy Host VM does not require this PXE workflow. It can target an already-installed Alpine, Fedora Secureblue, Arch Linux or Ubuntu hypervisor, provided KVM/QEMU/libvirt, the requested bridge and persistent local storage are ready. For a diskless Alpine target, use the NVMe UUID/mountpoint configured by Deploy Host OS.
 
-See [PXE automation](../docs/pxe-automation.md) and [deployment plan](../docs/deployment-plan.md).
+See PXE automation and deployment plan.
