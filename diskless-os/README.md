@@ -18,6 +18,35 @@ Alpine Linux is the PXE-booted physical hypervisor host. Fedora CoreOS (FCOS) ru
 - `services/`: service configuration notes.
 - `.github/workflows/`: validation, health and gated PXE workflow.
 
+## Deployment and Configuration management
+```bash
+                          GitHub Actions
+                                |
+                       Self-hosted LAN Runner
+                                |
+                                + runs
+                                + 
+                              Ansible            
+           +--------------------+---------------------+
+           |                    |                     |
+         Deploy              Health               Services 
+           |                    |                     |              
+       +------------------------+---------------------------+
+       |                        |                           |              
+      Alpine               Fedora CoreOS VM                 |
+      Diskless                Security                      |    
+         |                      |                           |
+         +----------------------+---------------------------+                                     
+      OpenRC                  Suricata                Podman / Docker                 
+      Networking              Firewalld               Kasm Services                              
+      SSH                     ClamAV                        |                                   
+                              Aide                          + 
+                              Lynis                         |       
+                                         +---------------------------------+
+                                         |                                 |                                     
+                                    Workspace-1                       Workspace-N
+                                   Firefox Browser       ...         
+```
 ## Deployment order
 1. Configure DHCP/PXE (router boot options or one dedicated DHCP/PXE service; never run competing DHCP servers).
 2. Build/publish Alpine kernel/initramfs/rootfs and iPXE menu.
@@ -38,3 +67,4 @@ Alpine Linux is the PXE-booted physical hypervisor host. Fedora CoreOS (FCOS) ru
 - FCOS Ansible is configuration-only; required packages must already be in the FCOS image.
 
 Read [PXE automation](docs/pxe-automation.md) and [deployment plan](docs/deployment-plan.md).
+
