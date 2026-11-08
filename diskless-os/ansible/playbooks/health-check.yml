@@ -4,8 +4,9 @@
   become: true
   gather_facts: false
   tasks:
-    - name: Check libvirt daemon
-      ansible.builtin.command: virsh uri
+    - name: Check libvirt connection
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, uri]
       changed_when: false
 
     - name: Check KVM device
@@ -19,28 +20,33 @@
           - kvm_device.stat.exists
 
     - name: Check FCOS domain
-      ansible.builtin.command: "virsh dominfo {{ fcos_vm_name | default('fcos-security') }}"
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, dominfo, "{{ fcos_vm_name | default('fcos-security') }}"]
       changed_when: false
 
-- name: Validate FCOS services and rootless Podman
+- name: Validate FCOS security services and rootless Podman
   hosts: fcos
   become: true
   gather_facts: true
   vars:
-    podman_socket: unix:///run/user/1000/podman/podman.sock
+    fcos_user: core
+    aide_enable_daily_timer: false
   tasks:
-    - name: Verify expected FCOS address
+    - name: Verify expected FCOS guest address
       ansible.builtin.assert:
         that:
           - ansible_facts.default_ipv4.address == fcos_lan_ip
 
-    - name: Check required services
-      ansible.builtin.command: "systemctl is-active {{ item }}"
+    - name: Check required FCOS services
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ item }}"]
       loop:
         - sshd.service
         - firewalld.service
+        - fcos-services-preflight.service
         - suricata-nfq-rules.service
         - suricata.service
+        - podman-user-socket-linger.service
       register: fcos_service_states
       changed_when: false
 
@@ -52,7 +58,8 @@
       loop: "{{ fcos_service_states.results }}"
 
     - name: Check daily and weekly timers
-      ansible.builtin.command: "systemctl is-active {{ item }}"
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ item }}"]
       loop:
         - clamav-freshclam-daily.timer
         - clamav-scan.timer
@@ -68,19 +75,48 @@
         fail_msg: "Required timer {{ item.item }} is not active."
       loop: "{{ fcos_timer_states.results }}"
 
-    - name: Verify AIDE timer remains disabled until baseline approval
-      ansible.builtin.command: systemctl is-enabled aide-check.timer
+    - name: Check AIDE timer state
+      ansible.builtin.command:
+        argv: [systemctl, is-enabled, aide-check.timer]
       register: aide_timer
       changed_when: false
-      failed_when: aide_timer.stdout != "disabled"
+      failed_when: false
 
-    - name: Validate Firewalld policy
-      ansible.builtin.command: firewall-cmd --info-policy fcos-host-egress
+    - name: Assert AIDE timer state matches baseline approval
+      ansible.builtin.assert:
+        that:
+          - (aide_timer.stdout == "enabled") == (aide_enable_daily_timer | bool)
+        fail_msg: >-
+          AIDE timer state does not match aide_enable_daily_timer.
+          Keep it disabled until the baseline has been initialized and reviewed.
+
+    - name: Validate Firewalld public zone target
+      ansible.builtin.command:
+        argv: [firewall-cmd, --zone=public, --get-target]
+      register: fcos_inbound_target
+      changed_when: false
+      failed_when: fcos_inbound_target.stdout != "DROP"
+
+    - name: Validate Firewalld LAN SSH exception
+      ansible.builtin.command:
+        argv: [firewall-cmd, --zone=public, --list-rich-rules]
+      register: fcos_ssh_rules
+      changed_when: false
+      failed_when: >-
+        fcos_lan_cidr not in fcos_ssh_rules.stdout or
+        "service name=\"ssh\"" not in fcos_ssh_rules.stdout
+
+    - name: Validate source-bound host egress policy
+      ansible.builtin.command:
+        argv: [firewall-cmd, --info-policy, fcos-host-egress]
       register: fcos_egress_policy
       changed_when: false
-      failed_when: "'HOST' not in fcos_egress_policy.stdout or 'ANY' not in fcos_egress_policy.stdout"
+      failed_when: >-
+        fcos_lan_ip not in fcos_egress_policy.stdout or
+        "HOST" not in fcos_egress_policy.stdout or
+        "ANY" not in fcos_egress_policy.stdout
 
-    - name: Check Suricata configuration
+    - name: Test Suricata configuration with FCOS overrides
       ansible.builtin.command:
         argv:
           - suricata
@@ -91,12 +127,14 @@
           - /etc/suricata/fcos-overrides.yaml
       changed_when: false
 
-    - name: Verify NFQUEUE table exists
-      ansible.builtin.command: nft list table inet suricata_nfq
+    - name: Verify NFQUEUE nftables hooks exist
+      ansible.builtin.command:
+        argv: [nft, list, table, inet, suricata_nfq]
       changed_when: false
 
     - name: Verify ET Open source is enabled
-      ansible.builtin.command: suricata-update list-enabled-sources
+      ansible.builtin.command:
+        argv: [suricata-update, list-enabled-sources]
       register: enabled_sources
       changed_when: false
       failed_when: "'et/open' not in enabled_sources.stdout"
@@ -117,12 +155,27 @@
           - item.stat.isdir | default(false)
       loop: "{{ log_dirs.results }}"
 
+    - name: Resolve rootless Podman user UID
+      ansible.builtin.command:
+        argv: [id, -u, "{{ fcos_user }}"]
+      register: fcos_user_uid
+      changed_when: false
+
     - name: Verify rootless Podman API
-      become: false
-      ansible.builtin.command: "podman --remote --url {{ podman_socket }} info --format json"
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --remote
+          - --url
+          - "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+          - info
+          - --format
+          - json
       environment:
-        CONTAINER_HOST: "{{ podman_socket }}"
-        XDG_RUNTIME_DIR: /run/user/1000
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
       register: podman_info_raw
       changed_when: false
 
@@ -130,11 +183,31 @@
       ansible.builtin.set_fact:
         podman_info: "{{ podman_info_raw.stdout | from_json }}"
 
-    - name: Assert rootless Podman mode
+    - name: Assert rootless Podman API and socket
       ansible.builtin.assert:
         that:
           - podman_info.host.security.rootless | bool
           - podman_info.host.remoteSocket.exists | bool
+
+    - name: Verify interactive Docker alias
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command:
+        argv: [bash, -lic, "docker version"]
+      environment:
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+      changed_when: false
+
+    - name: Verify interactive Compose alias
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command:
+        argv: [bash, -lic, "docker-compose version"]
+      environment:
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        DOCKER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+      changed_when: false
 
     - name: Verify password SSH remains disabled
       ansible.builtin.command: sshd -T
