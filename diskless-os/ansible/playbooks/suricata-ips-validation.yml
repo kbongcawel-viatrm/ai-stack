@@ -41,6 +41,7 @@
         method: GET
         status_code: 200
         timeout: 5
+      changed_when: false
 
     - name: Remove stale validation events from previous POC runs
       ansible.builtin.shell: |
@@ -87,6 +88,7 @@
             method: GET
             status_code: 200
             timeout: 5
+          changed_when: false
 
         - name: Wait for IDS alert in EVE
           ansible.builtin.wait_for:
@@ -121,6 +123,7 @@
             timeout: 5
           register: ips_request
           failed_when: false
+          changed_when: false
 
         - name: Assert IPS blocked the request
           ansible.builtin.assert:
