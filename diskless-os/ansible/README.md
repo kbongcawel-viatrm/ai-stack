@@ -13,6 +13,8 @@ Ansible configures the FCOS guest after its base image has booted and SSH is rea
 | `kasm-compatibility-poc.yml` | Check Docker Engine and Docker Compose v2 requirements; fail closed before the Kasm installer if the endpoint is Podman |
 | `deploy-fcos-vm.yml` | Provision FCOS on an existing libvirt hypervisor; refuses existing VM domains and orphaned disks |
 | `health-check.yml` | Check hypervisor/KVM/VM state, FCOS services/timers, firewall, Suricata, AIDE timer state and rootless Podman |
+| `initialize-aide.yml` | Explicitly initialize a missing AIDE baseline; refuses to overwrite an existing database and leaves the timer disabled |
+| `enable-aide-check.yml` | Enable daily AIDE checks only after an explicit approval reason and successful baseline check |
 
 ## Butane package contract
 
@@ -127,6 +129,7 @@ Deploy Host VM does not depend on Deploy Host OS. The selected host OS may be Al
 - `FCOS_SSH_PUBLIC_KEY`, `FCOS_SSH_PRIVATE_KEY`, `FCOS_KNOWN_HOSTS`
 - `ALPINE_SSH_PUBLIC_KEY`
 - `PXE_HOST`, `PXE_USER`, `PXE_SSH_PRIVATE_KEY`, `PXE_KNOWN_HOSTS`, `PXE_HTTP_ROOT`
+- For health checks: `HEALTH_KNOWN_HOSTS`, optional `AIDE_ENABLE_DAILY_TIMER` (set to `true` only after baseline approval)
 - For Kasm POC: `KASM_POC_FCOS_IP`, `KASM_POC_SSH_USER`, `KASM_POC_SSH_PRIVATE_KEY`, `KASM_POC_KNOWN_HOSTS`
 
 Use protected GitHub environments `pxe-production`, `host-vm-production`, `fcos-production` and `kasm-poc` with required reviewers.
