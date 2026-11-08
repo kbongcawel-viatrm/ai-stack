@@ -21,6 +21,7 @@
     aide_enable_daily_timer: false
     suricata_enable_update_timer: true
     layer_packages: true
+    fcos_missing_packages: []
     container_smoke_image: docker.io/library/alpine:3.24.4
 
   tasks:
@@ -55,6 +56,7 @@
             | map(attribute='item')
             | list
           }}
+      when: layer_packages | bool
 
     - name: Layer required RPMs
       ansible.builtin.command:
