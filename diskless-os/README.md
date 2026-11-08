@@ -35,15 +35,17 @@ Alpine Linux is the PXE-booted physical hypervisor host. Fedora CoreOS (FCOS) ru
        |                      |                           |              
      Alpine OS               FCOS                         |
        |                      |                           |
-       +----------------------+---------------------------+                                     
-      OpenRC          +----- Services ---------------------- Podman
-                      |      Suricata                          | (docker.socket)
-      Networking      |      Firewalld                   Kasm Workspaces                              
-      SSH             |      ClamAV                            |                                   
-                      |      Aide                              + 
-                      |      Lynis                             |       
-                      +----- SSH               +---------------------------------+
-                                               |                                 |                                     
+       +----------------------+---------------------------+          
+       |                      |
+      OpenRC          +--- Services ---------------------- Podman
+                      |       |                              |
+                      |    Suricata                          + (docker.socket)
+      Networking      |    Firewalld                   Kasm Workspaces                              
+      SSH             |    ClamAV                            |                                   
+                      |    Aide                              + 
+                      |    Lynis                             |       
+                           SSH               +---------------------------------+
+                           ...               |                                 |                                     
                                           Workspace-1                       Workspace-N
                                          Firefox Browser       ...         
 ```
