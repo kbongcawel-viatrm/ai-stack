@@ -1,72 +1,8 @@
-name: Deploy Host VM - FCOS on an existing hypervisor
-
 on:
+  push:
+    branches: ["**"]
+    paths: [".github/workflows/deploy-host-vm.yml"]
   workflow_dispatch:
-    inputs:
-      host_os:
-        description: Existing hypervisor OS (must already have KVM/libvirt)
-        required: true
-        type: choice
-        options: [alpine, secureblue, arch, ubuntu]
-        default: alpine
-      fcos_qcow2_url:
-        description: Direct URL to a pinned, uncompressed FCOS QCOW2 image
-        required: true
-        type: string
-      fcos_qcow2_sha256:
-        description: SHA-256 for the FCOS QCOW2 image
-        required: true
-        type: string
-      fcos_lan_ip:
-        description: Static FCOS guest IPv4 address (matches Butane firewall policy)
-        required: true
-        default: "192.168.1.20"
-        type: string
-      fcos_lan_cidr:
-        description: Trusted LAN CIDR used by SSH and Suricata HOME_NET
-        required: true
-        default: "192.168.1.0/24"
-        type: string
-      fcos_gateway:
-        description: LAN default gateway and DNS server
-        required: true
-        default: "192.168.1.1"
-        type: string
-      fcos_interface:
-        description: FCOS guest NIC name
-        required: true
-        default: "enp1s0"
-        type: string
-      network_bridge:
-        description: Existing libvirt bridge on the hypervisor
-        required: true
-        default: "br0"
-        type: string
-      vm_memory_mb:
-        description: FCOS guest RAM (MB)
-        required: true
-        default: "4096"
-        type: string
-      vm_vcpus:
-        description: FCOS guest vCPU count
-        required: true
-        default: "2"
-        type: string
-      storage_mountpoint:
-        description: Alpine persistent ext4 mountpoint configured by Deploy Host OS
-        required: true
-        default: "/mnt/nvme"
-        type: string
-      vm_storage_path:
-        description: Override for the persistent FCOS image directory (blank uses host-OS default)
-        required: false
-        default: ""
-        type: string
-      vm_disk_gb:
-        description: FCOS guest overlay disk size (GB)
-        required: true
-        default: "75"
-        type: string
 
 permissions:
   contents: read
