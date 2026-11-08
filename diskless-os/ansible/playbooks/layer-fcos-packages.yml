@@ -8,10 +8,9 @@
       - firewalld
       - nftables
       - suricata
-      - suricata-update
       - aide
       - clamav
-      - clamav-update
+      - clamav-freshclam
       - lynis
       - podman-compose
   tasks:
