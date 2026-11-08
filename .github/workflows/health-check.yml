@@ -1,9 +1,8 @@
-name: Hypervisor and FCOS Health Check
-
 on:
+  push:
+    branches: ["**"]
+    paths: [".github/workflows/health-check.yml"]
   workflow_dispatch:
-  schedule:
-    - cron: "17 21 * * *"
 
 permissions:
   contents: read
