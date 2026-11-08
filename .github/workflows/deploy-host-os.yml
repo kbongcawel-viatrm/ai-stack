@@ -133,6 +133,18 @@ jobs:
 
           echo "$work" > "$RUNNER_TEMP/alpine-netboot-workdir"
 
+      - name: Require persistent storage configuration
+        shell: bash
+        env:
+          ALPINE_STORAGE_UUID: ${{ inputs.storage_uuid }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "$ALPINE_STORAGE_UUID" ]]; then
+            echo "STORAGE_UUID is required: the diskless Alpine host must mount persistent local storage for libvirt VM disks." >&2
+            exit 1
+          fi
+          [[ "$ALPINE_STORAGE_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+
       - name: Build diskless Alpine apkovl
         shell: bash
         env:
