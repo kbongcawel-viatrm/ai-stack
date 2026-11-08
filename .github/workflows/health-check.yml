@@ -52,11 +52,8 @@ jobs:
           FCOS_SSH_USER: ${{ vars.FCOS_SSH_USER }}
           FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
           FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
-          FCOS_INTERFACE: ${{ vars.SURICATA_INTERFACE }}
-          AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
-          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
-          FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
+          AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -70,6 +67,7 @@ jobs:
                   "hypervisors": {"hosts": {"hypervisor": {
                       "ansible_host": os.environ["HYPERVISOR_HOST"],
                       "ansible_user": os.environ["HYPERVISOR_USER"],
+                      "ansible_become": os.environ["HYPERVISOR_USER"] != "root",
                       "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/hypervisor"),
                       "host_os": os.environ.get("HOST_OS") or "alpine",
                       "fcos_vm_name": "fcos-security"
@@ -80,7 +78,8 @@ jobs:
                       "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/fcos"),
                       "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
                       "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
-                      "fcos_interface": os.environ.get("FCOS_INTERFACE") or "enp1s0"
+                      "fcos_interface": os.environ.get("FCOS_INTERFACE") or "enp1s0",
+                      "aide_enable_daily_timer": (os.environ.get("AIDE_ENABLE_DAILY_TIMER") or "false").lower() == "true"
                   }}}
               }}
           }
