@@ -4,9 +4,6 @@
   become: true
   gather_facts: true
   vars:
-    fcos_interface: enp1s0
-    fcos_lan_ip: 192.168.1.20
-    fcos_lan_cidr: 192.168.1.0/24
     podman_socket: unix:///run/user/1000/podman/podman.sock
     enable_aide_timer: false
   tasks:
