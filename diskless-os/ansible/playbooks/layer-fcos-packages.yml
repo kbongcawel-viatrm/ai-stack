@@ -13,6 +13,7 @@
       - clamav-freshclam
       - lynis
       - podman-compose
+      - logrotate
   tasks:
     - name: Confirm target is rpm-ostree based Fedora CoreOS
       ansible.builtin.command: rpm-ostree status
