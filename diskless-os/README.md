@@ -28,7 +28,7 @@ Alpine Linux is the PXE-booted physical hypervisor host. Fedora CoreOS (FCOS) ru
                               Ansible            
            +--------------------+---------------------+
            |                    |                     |
-         Deploy               Health               Services 
+         Deploy               Health              Provision 
            |                    |                     |              
        +------------------------+-------------------------+
        |                        |                         |              
