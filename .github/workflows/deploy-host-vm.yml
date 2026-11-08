@@ -142,6 +142,8 @@ jobs:
           FCOS_VM_MEMORY_MB: ${{ inputs.vm_memory_mb }}
           FCOS_VM_VCPUS: ${{ inputs.vm_vcpus }}
           FCOS_VM_DISK_GB: ${{ inputs.vm_disk_gb }}
+          LIBVIRT_QEMU_USER: ${{ vars.LIBVIRT_QEMU_USER }}
+          LIBVIRT_QEMU_GROUP: ${{ vars.LIBVIRT_QEMU_GROUP }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -164,6 +166,8 @@ jobs:
               "fcos_vm_memory_mb": int(os.environ["FCOS_VM_MEMORY_MB"]),
               "fcos_vm_vcpus": int(os.environ["FCOS_VM_VCPUS"]),
               "fcos_vm_disk_gb": int(os.environ["FCOS_VM_DISK_GB"]),
+              "fcos_qemu_user": os.environ.get("LIBVIRT_QEMU_USER") or ("libvirt-qemu" if os.environ["HOST_OS"] == "ubuntu" else "qemu"),
+              "fcos_qemu_group": os.environ.get("LIBVIRT_QEMU_GROUP") or ("kvm" if os.environ["HOST_OS"] == "ubuntu" else "qemu"),
               "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign")
           }
           inventory = {
