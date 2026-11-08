@@ -28,12 +28,11 @@
           - image
           - exists
           - "{{ container_smoke_image }}"
-      changed_when: false
-      failed_when: >-
-        container_image_check.rc != 0
       register: container_image_check
+      changed_when: false
+      failed_when: container_image_check.rc != 0
       # Run podwhitelist from the FCOS user's interactive shell before this
-      # workflow to approve/pull the selected image; automation never broadens
+      # workflow to approve/pull the selected image. Automation never broadens
       # the registry trust policy on its own.
 
     - name: Create Compose POC directory
@@ -75,46 +74,33 @@
 
     - name: Exercise Compose HTTP lifecycle and always clean up
       block:
-          - name: Start Compose POC stack through rootless Podman
-        ansible.builtin.command:
-          argv:
-            - podman-compose
-            - -f
-            - "{{ compose_poc_dir }}/compose.yaml"
-            - up
-            - -d
-        environment:
-          CONTAINER_HOST: "{{ podman_socket }}"
-          DOCKER_HOST: "{{ podman_socket }}"
-          XDG_RUNTIME_DIR: /run/user/1000
-        register: compose_up
-        changed_when: true
+        - name: Start Compose POC stack through rootless Podman
+          ansible.builtin.command:
+            argv:
+              - podman-compose
+              - -f
+              - "{{ compose_poc_dir }}/compose.yaml"
+              - up
+              - -d
+          environment:
+            CONTAINER_HOST: "{{ podman_socket }}"
+            DOCKER_HOST: "{{ podman_socket }}"
+            XDG_RUNTIME_DIR: /run/user/1000
+          register: compose_up
+          changed_when: true
 
-          - name: Verify HTTP endpoint published to loopback
-        ansible.builtin.uri:
-          url: "http://127.0.0.1:{{ compose_poc_port }}/"
-          status_code: 200
-          timeout: 5
-        register: compose_http
-        retries: 20
-        delay: 3
-        until: compose_http.status | default(0) == 200
-
-          - name: Remove Compose POC stack
-        ansible.builtin.command:
-          argv:
-            - podman-compose
-            - -f
-            - "{{ compose_poc_dir }}/compose.yaml"
-            - down
-        environment:
-          CONTAINER_HOST: "{{ podman_socket }}"
-          DOCKER_HOST: "{{ podman_socket }}"
-          XDG_RUNTIME_DIR: /run/user/1000
-        changed_when: true
+        - name: Verify HTTP endpoint published to loopback
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ compose_poc_port }}/"
+            status_code: 200
+            timeout: 5
+          register: compose_http
+          retries: 20
+          delay: 3
+          until: compose_http.status | default(0) == 200
 
       always:
-        - name: Remove Compose POC stack even after a failed assertion
+        - name: Remove Compose POC stack
           ansible.builtin.command:
             argv:
               - podman-compose
