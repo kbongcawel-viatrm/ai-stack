@@ -9,11 +9,19 @@ on:
         required: true
         default: false
         type: boolean
+      fcos_ip:
+        description: Isolated FCOS VM IP; defaults to KASM_POC_FCOS_IP
+        required: false
+        type: string
   workflow_call:
     inputs:
       confirm_isolated_test_vm:
         type: boolean
         required: true
+      fcos_ip:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -39,7 +47,7 @@ jobs:
       - name: Require isolated test VM confirmation
         env:
           CONFIRMED: ${{ inputs.confirm_isolated_test_vm }}
-          KASM_POC_FCOS_IP: ${{ vars.KASM_POC_FCOS_IP }}
+          KASM_POC_FCOS_IP: ${{ inputs.fcos_ip || vars.KASM_POC_FCOS_IP }}
           KASM_POC_SSH_USER: ${{ vars.KASM_POC_SSH_USER }}
           KASM_POC_SSH_PRIVATE_KEY: ${{ secrets.KASM_POC_SSH_PRIVATE_KEY }}
           KASM_POC_KNOWN_HOSTS: ${{ secrets.KASM_POC_KNOWN_HOSTS }}
@@ -64,7 +72,7 @@ jobs:
 
       - name: Build isolated POC inventory
         env:
-          KASM_POC_FCOS_IP: ${{ vars.KASM_POC_FCOS_IP }}
+          KASM_POC_FCOS_IP: ${{ inputs.fcos_ip || vars.KASM_POC_FCOS_IP }}
           KASM_POC_SSH_USER: ${{ vars.KASM_POC_SSH_USER }}
         run: |
           set -Eeuo pipefail
