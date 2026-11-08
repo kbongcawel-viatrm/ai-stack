@@ -13,9 +13,8 @@ all:
         fcos-security:
           ansible_host: 192.168.1.20
           ansible_user: core
-          fcos_user: core
           fcos_lan_ip: 192.168.1.20
           fcos_lan_cidr: 192.168.1.0/24
-          suricata_interface: enp1s0
+          fcos_interface: enp1s0
   vars:
     ansible_python_interpreter: auto_silent
