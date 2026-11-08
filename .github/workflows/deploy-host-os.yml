@@ -30,6 +30,8 @@ jobs:
           ALPINE_VERSION: ${{ inputs.alpine_version }}
         run: |
           set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
           branch="v${ALPINE_VERSION%.*}"
           base="https://dl-cdn.alpinelinux.org/alpine/${branch}/releases/x86_64"
           archive="alpine-netboot-${ALPINE_VERSION}-x86_64.tar.gz"
