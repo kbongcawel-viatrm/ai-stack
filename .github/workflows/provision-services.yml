@@ -1,27 +1,8 @@
-name: Provision FCOS Services and Containers
-
 on:
+  push:
+    branches: ["**"]
+    paths: [".github/workflows/provision-services.yml"]
   workflow_dispatch:
-    inputs:
-      layer_packages:
-        description: Layer missing packages with rpm-ostree and reboot FCOS if needed
-        required: true
-        default: true
-        type: boolean
-      enable_aide_timer:
-        description: Enable daily AIDE checks only after its baseline is initialized and reviewed
-        required: true
-        default: false
-        type: boolean
-      suricata_test_target_ip:
-        description: Controlled HTTP test server on the LAN (TCP/80) for IDS/IPS validation
-        required: true
-        type: string
-      container_smoke_image:
-        description: Image already approved and pulled on FCOS using podwhitelist
-        required: true
-        default: "docker.io/library/nginx:alpine"
-        type: string
 
 permissions:
   contents: read
