@@ -30,7 +30,6 @@
   gather_facts: true
   vars:
     fcos_user: core
-    aide_enable_daily_timer: false
   tasks:
     - name: Verify expected FCOS guest address
       ansible.builtin.assert:
@@ -61,9 +60,11 @@
       ansible.builtin.command:
         argv: [systemctl, is-active, "{{ item }}"]
       loop:
+        - clamav-freshclam-daily.timer
         - clamav-scan.timer
         - lynis-audit.timer
         - suricata-rule-refresh.timer
+        - logrotate.timer
       register: fcos_timer_states
       changed_when: false
 
@@ -161,6 +162,7 @@
       changed_when: false
 
     - name: Verify rootless Podman API
+      become: true
       become_user: "{{ fcos_user }}"
       ansible.builtin.command:
         argv:
@@ -189,6 +191,7 @@
           - podman_info.host.remoteSocket.exists | bool
 
     - name: Verify interactive Docker alias
+      become: true
       become_user: "{{ fcos_user }}"
       ansible.builtin.command:
         argv: [bash, -lic, "docker version"]
@@ -199,6 +202,7 @@
       changed_when: false
 
     - name: Verify interactive Compose alias
+      become: true
       become_user: "{{ fcos_user }}"
       ansible.builtin.command:
         argv: [bash, -lic, "docker-compose version"]
