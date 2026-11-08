@@ -3,14 +3,32 @@ name: Provision FCOS Services and Containers
 on:
   workflow_dispatch:
     inputs:
+      layer_packages:
+        description: Layer missing packages with rpm-ostree and reboot FCOS if needed
+        required: true
+        default: true
+        type: boolean
       enable_aide_timer:
-        description: Enable daily AIDE checks only if its baseline is initialized and reviewed
+        description: Enable daily AIDE checks only after its baseline is initialized and reviewed
         required: true
         default: false
         type: boolean
+      suricata_test_target_ip:
+        description: Controlled HTTP test server on the LAN (TCP/80) for IDS/IPS validation
+        required: true
+        type: string
+      container_smoke_image:
+        description: Image already approved and pulled on FCOS using podwhitelist
+        required: true
+        default: "docker.io/library/nginx:alpine"
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: fcos-service-provisioning
+  cancel-in-progress: false
 
 jobs:
   provision:
@@ -20,79 +38,103 @@ jobs:
       run:
         working-directory: diskless-os/ansible
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Ansible in an isolated environment
-        shell: bash
+      - name: Install Ansible
         run: |
           set -Eeuo pipefail
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
 
-      - name: Configure FCOS SSH access
-        shell: bash
+      - name: Configure pinned FCOS SSH trust
         env:
-          FCOS_SSH_PRIVATE_KEY: \${{ secrets.FCOS_SSH_PRIVATE_KEY }}
-          FCOS_KNOWN_HOSTS: \${{ secrets.FCOS_KNOWN_HOSTS }}
+          FCOS_SSH_PRIVATE_KEY: ${{ secrets.FCOS_SSH_PRIVATE_KEY }}
+          FCOS_KNOWN_HOSTS: ${{ secrets.FCOS_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
+          test -n "$FCOS_SSH_PRIVATE_KEY"
+          test -n "$FCOS_KNOWN_HOSTS"
           install -d -m 0700 "$HOME/.ssh"
           printf '%s\n' "$FCOS_SSH_PRIVATE_KEY" > "$HOME/.ssh/fcos"
-          chmod 0600 "$HOME/.ssh/fcos"
           printf '%s\n' "$FCOS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 0600 "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/fcos" "$HOME/.ssh/known_hosts"
 
-      - name: Build FCOS inventory
-        shell: bash
+      - name: Build FCOS inventory and provisioning variables
         env:
-          FCOS_VM_IP: \${{ vars.FCOS_VM_IP }}
-          FCOS_SSH_USER: \${{ vars.FCOS_SSH_USER }}
-          FCOS_LAN_IP: \${{ vars.FCOS_LAN_IP }}
-          FCOS_LAN_CIDR: \${{ vars.FCOS_LAN_CIDR }}
-          SURICATA_INTERFACE: \${{ vars.SURICATA_INTERFACE }}
+          FCOS_VM_IP: ${{ vars.FCOS_VM_IP }}
+          FCOS_SSH_USER: ${{ vars.FCOS_SSH_USER }}
+          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
+          FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
+          FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
+          SURICATA_TEST_TARGET_IP: ${{ inputs.suricata_test_target_ip }}
+          CONTAINER_SMOKE_IMAGE: ${{ inputs.container_smoke_image }}
+          ENABLE_AIDE_TIMER: ${{ inputs.enable_aide_timer }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
           import json, os
-          required = ["FCOS_VM_IP", "FCOS_LAN_IP", "FCOS_LAN_CIDR"]
-          missing = [x for x in required if not os.environ.get(x)]
+          required = ["FCOS_VM_IP", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "SURICATA_TEST_TARGET_IP", "CONTAINER_SMOKE_IMAGE"]
+          missing = [name for name in required if not os.environ.get(name)]
           if missing:
-              raise SystemExit("Missing repository variables: " + ", ".join(missing))
+              raise SystemExit("Missing values: " + ", ".join(missing))
           host = {
               "ansible_host": os.environ["FCOS_VM_IP"],
               "ansible_user": os.environ.get("FCOS_SSH_USER") or "core",
               "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/fcos"),
-              "fcos_user": os.environ.get("FCOS_SSH_USER") or "core",
               "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
               "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
-              "suricata_interface": os.environ.get("SURICATA_INTERFACE") or "enp1s0"
+              "fcos_interface": os.environ.get("FCOS_INTERFACE") or "enp1s0",
+              "suricata_test_target_ip": os.environ["SURICATA_TEST_TARGET_IP"]
           }
           inventory = {"all": {"children": {"fcos": {"hosts": {"fcos-security": host}}}}}
-          with open("inventory/hosts.yml", "w", encoding="utf-8") as f:
+          variables = {
+              "enable_aide_timer": os.environ["ENABLE_AIDE_TIMER"].lower() == "true",
+              "container_smoke_image": os.environ["CONTAINER_SMOKE_IMAGE"]
+          }
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "fcos-inventory.json"), "w") as f:
               json.dump(inventory, f, indent=2)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "provision-vars.json"), "w") as f:
+              json.dump(variables, f, indent=2)
           PY
 
-      - name: Layer packages, provision security services and run Compose smoke test
-        run: |
-          set -Eeuo pipefail
-          ansible-playbook -i inventory/hosts.yml playbooks/provision-services.yml \
-            --private-key "$HOME/.ssh/fcos" \
-            --extra-vars "aide_enable_daily_timer=\${{ inputs.enable_aide_timer }}" \
-            --diff
-
-      - name: Prove Suricata IDS alerting and IPS packet drop
+      - name: Layer FCOS packages and reboot if required
+        if: ${{ inputs.layer_packages }}
         env:
-          SURICATA_TEST_TARGET: \${{ vars.SURICATA_TEST_TARGET }}
-          SURICATA_TEST_PORT: \${{ vars.SURICATA_TEST_PORT }}
+          ANSIBLE_HOST_KEY_CHECKING: "True"
         run: |
           set -Eeuo pipefail
-          test -n "$SURICATA_TEST_TARGET" || {
-            echo "Set repository variable SURICATA_TEST_TARGET to a second LAN HTTP host."
-            exit 1
-          }
-          ansible-playbook -i inventory/hosts.yml playbooks/validate-suricata.yml \
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/layer-fcos-packages.yml \
+            --private-key "$HOME/.ssh/fcos" --diff
+
+      - name: Configure Firewalld, Suricata NFQUEUE, rootless Podman and daily scan timers
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+        run: |
+          set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/configure-security.yml \
             --private-key "$HOME/.ssh/fcos" \
-            --extra-vars "suricata_test_target=$SURICATA_TEST_TARGET suricata_test_port=\${SURICATA_TEST_PORT:-80}" \
-            --diff
+            --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
+
+      - name: Prove Suricata IDS alerting and IPS drop
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+          SURICATA_TEST_TARGET_IP: ${{ inputs.suricata_test_target_ip }}
+        run: |
+          set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/suricata-ips-validation.yml \
+            --private-key "$HOME/.ssh/fcos" \
+            --extra-vars "suricata_test_target_ip=$SURICATA_TEST_TARGET_IP" --diff
+
+      - name: Validate rootless Podman Compose lifecycle
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+        run: |
+          set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/podman-compose-poc.yml \
+            --private-key "$HOME/.ssh/fcos" \
+            --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
