@@ -20,7 +20,7 @@ on:
       container_smoke_image:
         description: Image already approved and pulled on FCOS using podwhitelist
         required: true
-        default: "docker.io/library/alpine:3.24.4"
+        default: "docker.io/library/nginx:alpine"
         type: string
 
 permissions:
