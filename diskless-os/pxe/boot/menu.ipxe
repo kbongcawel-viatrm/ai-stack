@@ -7,7 +7,7 @@ item shell iPXE shell
 choose --default alpine --timeout 5000 target || exit
 goto ${target}
 :alpine
-kernel ${base}/vmlinuz-lts initrd=initramfs-lts modules=loop,squashfs ip=dhcp alpine_repo=https://dl-cdn.alpinelinux.org/alpine/v3.24/main,https://dl-cdn.alpinelinux.org/alpine/v3.24/community modloop=${base}/modloop-lts quiet
+kernel ${base}/vmlinuz-lts initrd=initramfs-lts modules=loop,squashfs ip=dhcp alpine_repo=https://dl-cdn.alpinelinux.org/alpine/v3.24/main,https://dl-cdn.alpinelinux.org/alpine/v3.24/community modloop=${base}/modloop-lts apkovl=${base}/host.apkovl.tar.gz quiet
 initrd ${base}/initramfs-lts
 boot
 :shell
