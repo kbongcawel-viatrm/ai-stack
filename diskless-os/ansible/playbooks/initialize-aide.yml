@@ -85,7 +85,7 @@
       changed_when: false
 
     - name: Keep AIDE timer disabled pending administrator review
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: aide-check.timer
         enabled: false
         state: stopped
