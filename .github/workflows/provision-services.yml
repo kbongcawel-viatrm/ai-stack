@@ -113,7 +113,7 @@ jobs:
         env:
           FCOS_VM_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_VM_IP }}
           FCOS_SSH_USER: ${{ inputs.fcos_ssh_user || vars.FCOS_SSH_USER }}
-          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
+          FCOS_LAN_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_LAN_IP }}
           FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
           SURICATA_TEST_TARGET_IP: ${{ inputs.suricata_test_target_ip }}
