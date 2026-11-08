@@ -2,4 +2,9 @@ auto lo
 iface lo inet loopback
 
 auto enp1s0
-iface enp1s0 inet dhcp
+iface enp1s0 inet manual
+
+auto br0
+iface br0 inet dhcp
+    use bridge
+    bridge-ports enp1s0
