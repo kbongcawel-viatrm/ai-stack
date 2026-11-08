@@ -28,6 +28,26 @@ on:
         required: false
         type: string
 
+  workflow_call:
+    inputs:
+      layer_packages:
+        type: boolean
+        required: false
+        default: true
+      suricata_test_target_ip:
+        type: string
+        required: true
+      container_smoke_image:
+        type: string
+        required: false
+        default: docker.io/library/nginx:alpine
+      enable_aide_timer:
+        type: boolean
+        required: false
+        default: false
+      aide_baseline_approval_reason:
+        type: string
+        required: false
 permissions:
   contents: read
 
@@ -44,7 +64,7 @@ jobs:
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   provision:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
     runs-on: [self-hosted, linux, home-server]
     environment: fcos-production
     defaults:
