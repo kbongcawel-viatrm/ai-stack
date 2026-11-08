@@ -1,15 +1,14 @@
 #!ipxe
 dhcp
-set base http://192.168.1.2/boot/alpine/current
+set base ${PXE_HTTP_BASE_URL}/boot/alpine/current
 menu Diskless Home Server
-item alpine Alpine Linux diskless host
+item alpine Alpine Linux diskless host (default)
 item shell iPXE shell
 choose --default alpine --timeout 5000 target || exit
 goto ${target}
 :alpine
-kernel ${base}/vmlinuz-lts
+kernel ${base}/vmlinuz-lts initrd=initramfs-lts modules=loop,squashfs ip=dhcp alpine_repo=https://dl-cdn.alpinelinux.org/alpine/v3.24/main,https://dl-cdn.alpinelinux.org/alpine/v3.24/community modloop=${base}/modloop-lts quiet
 initrd ${base}/initramfs-lts
-# Kernel/initramfs arguments depend on the actual Alpine diskless image.
 boot
 :shell
 shell
