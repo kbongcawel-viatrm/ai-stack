@@ -592,7 +592,7 @@ systemd:
         NoNewPrivileges=true
 
     - name: clamav-freshclam-daily.timer
-      enabled: true
+      enabled: false
       contents: |
         [Unit]
         Description=Daily ClamAV signature update
