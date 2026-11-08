@@ -9,15 +9,15 @@ permissions:
 
 jobs:
   push-event-noop:
-    if: github.event_name == 'push'
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     steps:
       - name: Keep manual deployment workflow idle on repository pushes
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   compatibility:
-    if: github.event_name == 'workflow_dispatch'
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, linux, home-server]
     environment: kasm-poc
     defaults:
