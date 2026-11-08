@@ -20,7 +20,7 @@ on:
       container_smoke_image:
         description: Image already approved and pulled on FCOS using podwhitelist
         required: true
-        default: "docker.io/library/nginx:alpine"
+        default: "docker.io/library/alpine:3.24.4"
         type: string
 
 permissions:
@@ -70,6 +70,7 @@ jobs:
           SURICATA_TEST_TARGET_IP: ${{ inputs.suricata_test_target_ip }}
           CONTAINER_SMOKE_IMAGE: ${{ inputs.container_smoke_image }}
           ENABLE_AIDE_TIMER: ${{ inputs.enable_aide_timer }}
+          LAYER_PACKAGES: ${{ inputs.layer_packages }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -89,7 +90,8 @@ jobs:
           }
           inventory = {"all": {"children": {"fcos": {"hosts": {"fcos-security": host}}}}}
           variables = {
-              "enable_aide_timer": os.environ["ENABLE_AIDE_TIMER"].lower() == "true",
+              "aide_enable_daily_timer": os.environ["ENABLE_AIDE_TIMER"].lower() == "true",
+              "layer_packages": os.environ.get("LAYER_PACKAGES", "true").lower() == "true",
               "container_smoke_image": os.environ["CONTAINER_SMOKE_IMAGE"]
           }
           with open(os.path.join(os.environ["RUNNER_TEMP"], "fcos-inventory.json"), "w") as f:
@@ -98,23 +100,13 @@ jobs:
               json.dump(variables, f, indent=2)
           PY
 
-      - name: Layer FCOS packages and reboot if required
-        if: ${{ inputs.layer_packages }}
+      - name: Provision FCOS services, rootless Podman and Compose smoke test
         env:
           ANSIBLE_HOST_KEY_CHECKING: "True"
         run: |
           set -Eeuo pipefail
           export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/layer-fcos-packages.yml \
-            --private-key "$HOME/.ssh/fcos" --diff
-
-      - name: Configure Firewalld, Suricata NFQUEUE, rootless Podman and daily scan timers
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "True"
-        run: |
-          set -Eeuo pipefail
-          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/configure-security.yml \
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/provision-services.yml \
             --private-key "$HOME/.ssh/fcos" \
             --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
 
@@ -125,16 +117,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/suricata-ips-validation.yml \
+          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/validate-suricata.yml \
             --private-key "$HOME/.ssh/fcos" \
             --extra-vars "suricata_test_target_ip=$SURICATA_TEST_TARGET_IP" --diff
 
-      - name: Validate rootless Podman Compose lifecycle
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "True"
-        run: |
-          set -Eeuo pipefail
-          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/podman-compose-poc.yml \
-            --private-key "$HOME/.ssh/fcos" \
-            --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
