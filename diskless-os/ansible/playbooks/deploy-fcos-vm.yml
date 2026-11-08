@@ -112,6 +112,17 @@
         group: root
         mode: "0600"
 
+    - name: Check whether an orphaned overlay disk exists
+      ansible.builtin.stat:
+        path: "{{ fcos_image_dir }}/{{ fcos_vm_name }}.qcow2"
+      register: existing_overlay
+
+    - name: Refuse to reuse an orphaned overlay disk
+      ansible.builtin.assert:
+        that:
+          - not existing_overlay.stat.exists
+        fail_msg: "Overlay disk already exists without a matching domain. Inspect and recover it manually."
+
     - name: Create persistent overlay disk
       ansible.builtin.command:
         argv:
