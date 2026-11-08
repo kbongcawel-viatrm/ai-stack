@@ -31,6 +31,18 @@
   vars:
     fcos_user: core
   tasks:
+    - name: Read guest OS identity
+      ansible.builtin.command:
+        argv: [cat, /etc/os-release]
+      register: fcos_os_release
+      changed_when: false
+
+    - name: Require actual Fedora CoreOS guest
+      ansible.builtin.assert:
+        that:
+          - 'VARIANT="CoreOS"' in fcos_os_release.stdout
+        fail_msg: "The FCOS inventory resolved to a non-CoreOS host."
+
     - name: Verify expected FCOS guest address
       ansible.builtin.assert:
         that:
