@@ -1,27 +1,29 @@
 # FCOS Service Configuration
 
-Butane/Ignition writes the first-boot configuration and systemd units. Ansible layers the required RPMs, reboots into the package deployment, enables rootless Podman, updates Suricata rules, activates gated services and validates traffic.
+Butane/Ignition writes the first-boot configuration, security policy, scan scripts and systemd units. Ansible layers required RPMs, reboots into the new deployment, updates Suricata rules, validates traffic and tests rootless Compose.
 
 ## Services
 
-- **Firewalld:** public zone bound to enp1s0; inbound target DROP; SSH accepted only from 192.168.1.0/24. Host-originated IPv4 egress uses HOST -> ANY, defaults to DROP and permits HTTP, HTTPS, DNS and NTP only from FCOS address 192.168.1.20.
-- **Suricata:** NFQUEUE queue 0 on host INPUT/OUTPUT for enp1s0; HOME_NET 192.168.1.0/24. Sources are refreshed with suricata-update update-sources, free Emerging Threats Open (et/open) is enabled, rules are updated and suricata -T runs before suricata-nfq.service is enabled.
+- **Firewalld:** public zone bound to the configured FCOS NIC (default `enp1s0`); inbound target DROP; SSH accepted only from the configured trusted LAN (default `192.168.1.0/24`). Host-originated IPv4 egress uses `HOST -> ANY`, defaults to DROP and permits HTTP, HTTPS, DNS and NTP only from the explicit FCOS LAN address (default `192.168.1.20`).
+- **Suricata:** NFQUEUE queue 0 on host INPUT/OUTPUT for `enp1s0`; HOME_NET `192.168.1.0/24`. The override preserves package defaults and sets NFQ mode to accept. Rules are updated with `suricata-update update-sources`, ET Open (`et/open`) is enabled, rules are built and `suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml` must pass before the service starts.
 - **AIDE:** daily check at 04:00; timer remains disabled until a trusted baseline is initialized and reviewed.
-- **ClamAV:** freshclam update at 01:40 and read-only scan at 02:00. The initial scan scope is /var/home/core; no automatic deletion or quarantine.
+- **ClamAV:** freshclam signature update at 01:30 and read-only scan at 02:00. The scan covers `/etc`, `/usr`, `/opt` and `/var/home`, excluding pseudo-filesystems and container storage. No automatic deletion or quarantine.
 - **Lynis:** daily system audit at 03:00.
-- **Rootless Podman:** user socket under /run/user/<UID>/podman/podman.sock, linger for core, CONTAINER_HOST export, docker and docker-compose aliases, plus executable wrappers.
+- **Logrotate:** daily rotation with 30 retained compressed logs for ClamAV, Lynis and AIDE.
+- **Rootless Podman:** user socket under `/run/user/1000/podman/podman.sock`, linger for `core`, `CONTAINER_HOST` and `DOCKER_HOST` exports, and interactive `docker`/`docker-compose` aliases. Rootful system Podman and Docker sockets are masked.
 
 ## Package prerequisites
 
-The FCOS deployment must contain firewalld, nftables, suricata, aide, clamav, clamav-freshclam, lynis and podman-compose. Fedora's suricata package supplies suricata-update. Podman is expected from the FCOS base image. Butane does not install RPM packages; the Ansible provisioning playbook layers missing packages and reboots before activating the services.
+The Ansible package-layering playbook installs `firewalld`, `nftables`, `suricata`, `aide`, `clamav`, `clamav-freshclam`, `lynis`, `podman-compose` and `logrotate` using rpm-ostree. Fedora's Suricata package supplies the `suricata-update` command. Podman and its user socket are expected from the FCOS base image. Butane does not install RPM packages.
 
 ## Operational details
 
-- FCOS address 192.168.1.20 must be static or DHCP-reserved. The Firewalld egress policy is source-bound to this address.
-- The interface name enp1s0 must match the FCOS guest NIC.
-- NFQUEUE hooks use queue-bypass deliberately (fail-open). Firewalld remains active if Suricata stops, but IPS inspection is then unavailable.
-- This configuration inspects traffic to/from FCOS, not general LAN transit traffic.
-- IDS/IPS proof requires a separate LAN HTTP test endpoint and the validate-suricata Ansible playbook.
-- Kasm is not enabled by this Compose/runtime setup. Docker CLI and Compose compatibility are necessary but insufficient proof for Kasm; run the isolated Kasm POC before any production Kasm deployment.
+- FCOS address defaults to `192.168.1.20/24` with gateway/DNS `192.168.1.1`; reserve it in DHCP or adjust the Butane workflow inputs.
+- The guest NIC name defaults to `enp1s0` and must match the FCOS VM's actual interface.
+- NFQUEUE hooks use `bypass` deliberately (fail-open). Firewalld remains active if Suricata stops, but IPS inspection is unavailable; monitor Suricata service health.
+- The configuration inspects traffic to/from FCOS, not general LAN transit traffic.
+- Active IDS/IPS proof requires a controlled HTTP endpoint on the trusted LAN, TCP/80. The Ansible validation playbook injects temporary alert/drop rules, verifies EVE events and restores production rules.
+- The Compose smoke test requires the exact image to be preapproved and pulled in FCOS rootless storage using the existing `podwhitelist` helper. The workflow refuses to pull images or change registry policy.
+- Kasm is not installed by this workflow. The isolated Kasm POC checks genuine Docker Engine and Docker Compose v2 requirements and fails closed when the endpoint identifies as Podman.
 
-See [Butane configuration](../butane/README.md), [Ansible operations](../ansible/README.md) and [architecture](../docs/architecture.md).
+See [Ansible operations](../ansible/README.md) and [architecture](../docs/architecture.md).
