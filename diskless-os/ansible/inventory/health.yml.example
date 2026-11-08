@@ -1,0 +1,25 @@
+---
+all:
+  children:
+    alpine:
+      hosts:
+        alpine-hypervisor:
+          ansible_host: 192.168.1.10
+          ansible_user: root
+    fcos:
+      hosts:
+        fcos-security:
+          ansible_host: 192.168.1.20
+          ansible_user: core
+    kasm:
+      hosts:
+        ubuntu-kasm:
+          ansible_host: 192.168.1.30
+          ansible_user: ubuntu
+  vars:
+    ansible_python_interpreter: auto_silent
+    alpine_required_services: [networking, sshd]
+    fcos_required_services: [firewalld.service, suricata.service, clamav-freshclam.service]
+    fcos_required_timers: [clamav-scan.timer, lynis-audit.timer]
+    kasm_health_url: https://192.168.1.30/
+    kasm_validate_tls: false
