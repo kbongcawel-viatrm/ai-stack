@@ -115,6 +115,13 @@ jobs:
           done
           ansible-lint --profile basic playbooks/
 
+      - name: Validate GitHub Actions workflow semantics
+        run: |
+          set -Eeuo pipefail
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          actionlint -color .github/workflows/*.yml
+
       - name: Parse repository YAML
         run: |
           python3 - <<'PY'
