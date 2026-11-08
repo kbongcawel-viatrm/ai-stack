@@ -27,6 +27,7 @@ sed -i -e "s/^auto enp1s0$/auto $HOST_NIC/" -e "s/^iface enp1s0 inet dhcp$/iface
 # OpenRC runlevel links are part of the overlay so SSH and libvirt survive
 # every diskless boot without relying on manual rc-update commands.
 ln -sfn /etc/init.d/networking "$root/etc/runlevels/boot/networking"
+ln -sfn /etc/init.d/modules "$root/etc/runlevels/boot/modules"
 ln -sfn /etc/init.d/sshd "$root/etc/runlevels/default/sshd"
 ln -sfn /etc/init.d/libvirtd "$root/etc/runlevels/default/libvirtd"
 
