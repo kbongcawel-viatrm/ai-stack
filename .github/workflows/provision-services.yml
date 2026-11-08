@@ -3,6 +3,30 @@ on:
     branches: ["**"]
     paths: [".github/workflows/provision-services.yml"]
   workflow_dispatch:
+    inputs:
+      layer_packages:
+        description: Layer required FCOS packages and reboot if the deployment changes
+        required: true
+        default: true
+        type: boolean
+      suricata_test_target_ip:
+        description: Controlled LAN HTTP server IP (TCP/80) used for active IDS/IPS validation
+        required: true
+        type: string
+      container_smoke_image:
+        description: Exact image already approved and pulled into FCOS rootless storage with podwhitelist
+        required: true
+        default: docker.io/library/nginx:alpine
+        type: string
+      enable_aide_timer:
+        description: Enable daily AIDE check only after baseline initialization and review
+        required: true
+        default: false
+        type: boolean
+      aide_baseline_approval_reason:
+        description: Required when enabling AIDE timer; describe baseline review/approval
+        required: false
+        type: string
 
 permissions:
   contents: read
