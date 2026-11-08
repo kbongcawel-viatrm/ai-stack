@@ -33,6 +33,7 @@
           - fcos_network_bridge | length > 0
           - fcos_image_dir is defined
           - fcos_image_dir.startswith('/')
+          - host_os != "alpine" or fcos_image_dir == (fcos_storage_mountpoint ~ "/libvirt/images")
         fail_msg: "Supply a supported host_os, pinned FCOS QCOW2 URL/SHA256, Ignition file and bridge."
 
     - name: Require persistent storage mount on Alpine diskless hosts
