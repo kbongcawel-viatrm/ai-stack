@@ -60,6 +60,7 @@ jobs:
           output = Path(sys.argv[2])
           files = config.get("storage", {}).get("files", [])
           nft_path = output / "suricata-nfq.nft"
+          bootstrap_nft_path = output / "fcos-bootstrap.nft"
           for entry in files:
               path = entry["path"]
               body = entry.get("contents", {}).get("inline", "")
@@ -67,6 +68,8 @@ jobs:
                   ET.fromstring(body)
               if path == "/etc/nftables/suricata-nfq.nft":
                   nft_path.write_text(body)
+              if path == "/etc/nftables/fcos-bootstrap.nft":
+                  bootstrap_nft_path.write_text(body)
               if path == "/etc/suricata/fcos-overrides.yaml":
                   override = yaml.safe_load(body)
                   assert override["nfq"]["mode"] == "accept"
@@ -93,6 +96,7 @@ jobs:
           for script in "$RUNNER_TEMP"/fcos-services-preflight "$RUNNER_TEMP"/suricata-prepare "$RUNNER_TEMP"/clamav-daily-scan "$RUNNER_TEMP"/lynis-daily-audit "$RUNNER_TEMP"/aide-daily-check "$RUNNER_TEMP"/suricata-rule-refresh; do
             bash -n "$script"
           done
+          sudo nft -c -f "$RUNNER_TEMP/fcos-bootstrap.nft"
           sudo nft -c -f "$RUNNER_TEMP/suricata-nfq.nft"
 
       - name: Validate shell scripts
