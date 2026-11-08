@@ -1,0 +1,125 @@
+---
+- name: Active Suricata IDS and IPS validation
+  hosts: fcos
+  become: true
+  gather_facts: false
+  vars:
+    suricata_test_target_ip: ""
+    suricata_test_url: "http://{{ suricata_test_target_ip }}/"
+    suricata_rules_file: /var/lib/suricata/rules/suricata.rules
+    suricata_test_rules_backup: /var/lib/suricata/rules/suricata.rules.pre-validation
+    suricata_test_eve: /var/log/suricata/eve.json
+  tasks:
+    - name: Require a controlled HTTP endpoint on the trusted LAN
+      ansible.builtin.assert:
+        that:
+          - suricata_test_target_ip | length > 0
+          - suricata_test_target_ip is match('^192\\.168\\.1\\.[0-9]{1,3}$')
+        fail_msg: "Set suricata_test_target_ip to a controlled LAN HTTP server on TCP/80."
+
+    - name: Verify endpoint responds before testing
+      ansible.builtin.uri:
+        url: "{{ suricata_test_url }}"
+        method: GET
+        status_code: 200
+        timeout: 5
+
+    - name: Back up generated Suricata rules
+      ansible.builtin.copy:
+        src: "{{ suricata_rules_file }}"
+        dest: "{{ suricata_test_rules_backup }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0640"
+
+    - name: Run IDS and IPS tests and always restore production rules
+      block:
+        - name: Append temporary IDS alert signature
+          ansible.builtin.lineinfile:
+            path: "{{ suricata_rules_file }}"
+            line: 'alert tcp any any -> {{ suricata_test_target_ip }} 80 (msg:"FCOS IDS validation"; flow:to_server; sid:99000001; rev:1;)'
+            insertafter: EOF
+
+        - name: Validate IDS test signature
+          ansible.builtin.command:
+            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml, --include, /etc/suricata/fcos-overrides.yaml]
+          changed_when: false
+
+        - name: Restart Suricata with IDS signature
+          ansible.builtin.systemd_service:
+            name: suricata.service
+            state: restarted
+
+        - name: Generate controlled IDS HTTP request
+          ansible.builtin.uri:
+            url: "{{ suricata_test_url }}"
+            method: GET
+            status_code: 200
+            timeout: 5
+
+        - name: Wait for IDS alert in EVE
+          ansible.builtin.wait_for:
+            path: "{{ suricata_test_eve }}"
+            search_regex: '"signature_id":99000001'
+            timeout: 15
+
+        - name: Replace temporary rules with IPS drop signature
+          ansible.builtin.copy:
+            dest: "{{ suricata_rules_file }}"
+            content: |
+              drop tcp any any -> {{ suricata_test_target_ip }} 80 (msg:"FCOS IPS validation"; flow:to_server; sid:99000002; rev:1;)
+            owner: root
+            group: root
+            mode: "0640"
+
+        - name: Validate IPS test signature
+          ansible.builtin.command:
+            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml, --include, /etc/suricata/fcos-overrides.yaml]
+          changed_when: false
+
+        - name: Restart Suricata with IPS signature
+          ansible.builtin.systemd_service:
+            name: suricata.service
+            state: restarted
+
+        - name: Generate HTTP request that IPS must drop
+          ansible.builtin.uri:
+            url: "{{ suricata_test_url }}"
+            method: GET
+            status_code: 200
+            timeout: 5
+          register: ips_request
+          failed_when: false
+
+        - name: Assert IPS blocked the request
+          ansible.builtin.assert:
+            that:
+              - ips_request.status is not defined or ips_request.status != 200
+            fail_msg: "IPS test request reached the HTTP endpoint; the drop signature did not block it."
+
+        - name: Wait for IPS drop event in EVE
+          ansible.builtin.wait_for:
+            path: "{{ suricata_test_eve }}"
+            search_regex: '"signature_id":99000002'
+            timeout: 15
+
+      always:
+        - name: Restore original generated rules
+          ansible.builtin.copy:
+            src: "{{ suricata_test_rules_backup }}"
+            dest: "{{ suricata_rules_file }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0640"
+
+        - name: Validate restored production configuration
+          ansible.builtin.command:
+            argv: [suricata, -T, -c, /etc/suricata/suricata.yaml, --include, /etc/suricata/fcos-overrides.yaml]
+          changed_when: false
+
+        - name: Restart Suricata with production rules
+          ansible.builtin.systemd_service:
+            name: suricata.service
+            state: restarted
