@@ -1,0 +1,16 @@
+alpine-base
+bash
+curl
+e2fsprogs
+iproute2
+libvirt-client
+libvirt-daemon
+libvirt-daemon-openrc
+libvirt-qemu
+nftables
+openssh
+python3
+qemu-img
+qemu-system-x86_64
+sudo
+virt-install
