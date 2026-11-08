@@ -486,6 +486,19 @@ systemd:
         Type=oneshot
         ExecStart=/usr/local/sbin/fcos-services-preflight
         RemainAfterExit=yes
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        UMask=0077
+        TimeoutStartSec=5m
 
         [Install]
         WantedBy=multi-user.target
@@ -505,6 +518,19 @@ systemd:
         ExecStart=/usr/sbin/nft -f /etc/nftables/suricata-nfq.nft
         ExecStop=-/usr/sbin/nft delete table inet suricata_nfq
         RemainAfterExit=yes
+        CapabilityBoundingSet=CAP_NET_ADMIN
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_NETLINK
+        UMask=0077
 
         [Install]
         WantedBy=multi-user.target
@@ -523,6 +549,20 @@ systemd:
         Type=oneshot
         ExecStart=/usr/local/sbin/suricata-prepare
         RemainAfterExit=yes
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/suricata /var/log/suricata /run
+        UMask=0027
+        TimeoutStartSec=15m
 
     # This replaces the package's passive/AF_PACKET unit with explicit NFQUEUE.
     # The service starts only after rule preparation and nftables queue setup.
@@ -555,6 +595,11 @@ systemd:
         ProtectControlGroups=true
         RestrictSUIDSGID=true
         LockPersonality=true
+        ProtectClock=true
+        RestrictRealtime=true
+        SystemCallArchitectures=native
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+        UMask=0027
         ReadWritePaths=/var/log/suricata /var/lib/suricata /run
         LimitNOFILE=65535
 
@@ -572,6 +617,20 @@ systemd:
         [Service]
         Type=oneshot
         ExecStart=/usr/local/sbin/suricata-rule-refresh
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/suricata /var/log/suricata /run
+        UMask=0027
+        TimeoutStartSec=15m
 
     - name: suricata-rule-refresh.timer
       enabled: true
@@ -604,6 +663,17 @@ systemd:
         ProtectSystem=full
         ProtectHome=read-only
         NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/lib/clamav /var/log/clamav
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        TimeoutStartSec=600
 
     - name: clamav-freshclam-daily.timer
       enabled: false
@@ -639,6 +709,17 @@ systemd:
         ProtectSystem=full
         ProtectHome=read-only
         NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/log/clamav
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        TimeoutStartSec=6h
 
     - name: clamav-scan.timer
       enabled: true
@@ -672,6 +753,17 @@ systemd:
         ProtectSystem=full
         ProtectHome=read-only
         NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/log/lynis
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        TimeoutStartSec=30m
 
     - name: lynis-audit.timer
       enabled: true
@@ -706,6 +798,17 @@ systemd:
         ProtectSystem=full
         ProtectHome=read-only
         NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/lib/aide /var/log/aide
+        RestrictAddressFamilies=AF_UNIX
+        TimeoutStartSec=4h
 
     # Deliberately disabled until an administrator initializes and reviews
     # the trusted AIDE database. Never auto-initialize/rebaseline in a timer.
