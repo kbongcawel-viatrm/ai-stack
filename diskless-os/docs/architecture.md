@@ -34,18 +34,11 @@ FCOS is provisioned from a pinned QCOW2 image and Ignition configuration. Butane
 
 Butane does not install RPM packages. The FCOS image must include Firewalld, nftables, Suricata with NFQUEUE support, suricata-update, AIDE, ClamAV, Lynis, Podman and podman-compose. A separate package-image or rpm-ostree layering/reboot stage must complete before these units are relied on. Do not assume packages installed in a Toolbox exist in FCOS.
 
-Rootless Podman is configured for the `core` user. The user socket is `/run/user/1000/podman/podman.sock`; linger keeps the user manager available. The Docker-compatible environment exports both `CONTAINER_HOST` and `DOCKER_HOST`, and provides interactive aliases. The rootful system-level Podman and Docker services/sockets are masked. The aliases/API socket do not prove Kasm compatibility.
+Rootless Podman is configured for the `core` user. The user socket is `/run/user/1000/podman/podman.sock`; linger keeps the user manager available. The Docker-compatible environment exports both `CONTAINER_HOST` and `DOCKER_HOST`, and provides interactive `docker`/`docker-compose` aliases. The rootful system-level Podman and Docker services/sockets are masked. The aliases/API socket do not prove Kasm compatibility.
 
 ## Kasm compatibility gate
 
-Kasm's documented requirements specify Docker Engine and Docker Compose versions. Fedora CoreOS is not explicitly named in the supported operating-system list. Rootless Podman is not an officially declared replacement for Docker Engine. The POC must validate:
-1. Docker CLI version output and daemon/API behavior.
-2. Docker Compose command behavior and version.
-3. Kasm installer preflight and service creation.
-4. Container networking, volumes, capabilities and systemd lifecycle.
-5. HTTPS login and at least one workspace launch/stop cycle.
-
-The POC must fail closed when prerequisites are not met. Do not run the production installer automatically as part of normal provisioning.
+Kasm's documented requirements specify Docker Engine and Docker Compose versions. Fedora CoreOS is not explicitly named as a validated host OS, and rootless Podman is not an officially declared replacement for Docker Engine. The current isolated POC checks Docker CLI/server identity, server version, Docker Compose v2 availability/version and rootless engine identity. It fails closed when the endpoint identifies as Podman or the required Compose v2 plugin is absent. It does not install Kasm. Only if this gate passes should an operator run the pinned Kasm installer on the isolated test VM and validate services, volumes, networking, HTTPS and a workspace launch/stop cycle.
 
 ## Suricata traffic scope
 
