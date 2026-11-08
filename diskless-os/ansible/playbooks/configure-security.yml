@@ -7,6 +7,17 @@
     podman_socket: unix:///run/user/1000/podman/podman.sock
     aide_enable_daily_timer: false
   tasks:
+    - name: Read guest OS identity
+      ansible.builtin.command:
+        argv: [cat, /etc/os-release]
+      register: fcos_os_release
+      changed_when: false
+
+    - name: Refuse to configure a non-CoreOS host
+      ansible.builtin.assert:
+        that:
+          - 'VARIANT="CoreOS"' in fcos_os_release.stdout
+        fail_msg: "Target is not Fedora CoreOS. Check the fcos inventory host and SSH destination."
     - name: Require FCOS and expected LAN identity
       ansible.builtin.assert:
         that:
