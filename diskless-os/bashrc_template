@@ -1,0 +1,455 @@
+# .bashrc
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+    . /etc/bashrc
+fi
+
+# User specific environment
+if ! [[ "$PATH" =~ "$HOME/.local/bin:$HOME/bin:" ]]; then
+    PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+fi
+export PATH
+
+# Uncomment the following line if you don't like systemctl's auto-paging feature:
+# export SYSTEMD_PAGER=
+
+# User specific aliases and functions
+if [ -d ~/.bashrc.d ]; then
+    for rc in ~/.bashrc.d/*; do
+        if [ -f "$rc" ]; then
+            . "$rc"
+        fi
+    done
+fi
+unset rc
+
+# Start 
+#############################
+# Shell hardening ###########
+#############################
+
+# Default visual and editor
+export EDITOR=/usr/bin/vim
+export VISUAL=/usr/bin/vim
+
+# Ensure newly created files/folders are completely private to the owner
+umask 077 2>/dev/null
+
+# PATH hardening
+# Keep only absolute PATH entries. This removes:
+# - Empty entries (which can mean the current working directory)
+# - "." and other relative directory entries
+# Explicit execution using ./program remains possible.
+PATH="$(printf '%s' "$PATH" | awk -v RS=: '
+    /^\// {
+        if (n++) printf ":"
+        printf "%s", $0
+    }
+')"
+export PATH
+
+# Validate that PATH contains only absolute, non-empty entries.
+if printf '%s' "$PATH" | awk -v RS=: '
+    length($0) == 0 || $0 !~ /^\// { bad = 1 }
+    END { exit (bad || NR == 0) }
+'; then
+    echo "PASS: PATH contains only absolute directory entries"
+else
+    echo "FAIL: PATH contains an empty or relative entry"
+fi
+
+# Prevents the shell and its children from creating memory core dumps on crash
+ulimit -c 0
+
+# ignorespace: Hidden from history if command starts with a space
+# ignoredups: Do not record sequential duplicate commands
+export HISTCONTROL=ignoreboth
+
+# Erase specific high-risk command names entirely from being recorded
+export HISTIGNORE="passwd:run0*:sudo*:*api_key*:*token*:*secret*:run0edit:workspace*:kses*:shazam*"
+
+# Force immediate history append instead of overwriting on shell exit
+shopt -s histappend 2>/dev/null
+export PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
+
+# Automatically log out of the shell session after 10 minutes of inactivity (600 seconds)
+# If not yet set to readonly else set it.
+if [[ "${TMOUT@a}" != *r* ]]; then
+    export TMOUT=600
+    readonly -f TMOUT 2>/dev/null
+fi
+# Harden critical execution aliases natively
+alias run0='run0 -i' # -q adds a silent flag
+alias rm='rm -rf'
+alias ls='ls -alt'
+alias ps='ps -aux'
+alias run0ctl='run0 systemctl'
+alias run0ctlrestart='run0 systemctl restart'
+alias run0ctlstart='run0 systemctl start'
+alias run0ctlstatus='run0 systemctl status'
+alias run0ctlenable='run0 systemctl enable --now'
+alias run0ctlstop='run0 systemctl stop'
+alias run0journal='run0 journalctl -u'
+
+# Mark aliases or sensitive protective paths as read-only to block runtime tampering
+readonly -f run0 2>/dev/null
+readonly -f sudo 2>/dev/null
+
+#############################
+### start of functions  ####
+############################
+
+# Display file contents directly in the terminal
+tcat() {
+    if [[ ! -w /dev/tty ]]; then
+        printf 'Error: No writable terminal available.\n' >&2
+        return 1
+    fi
+
+    command cat -- "$@" > /dev/tty
+}
+
+# terminal output hardening
+_terminal_msg() {
+    local status="$1"
+    shift
+
+    local color
+    case "$status" in
+        success) color='1;32' ;;  # Bold, default Green
+        error)   color='1;31' ;;  # Bold, default Red
+        warning) color='1;33' ;;  # Bold, default Yellow
+        normal)  color='1'  ;;  # Bold, default foreground color
+        *)       color='0'  ;;  # Default/reset
+esac 
+
+    printf '\033[%sm%s\033[0m\n' "$color" "$*" | tcat
+}
+
+shazam() {
+  # Runs the target utility inside the systemd execution framework
+  # --empower dynamically elevates or assigns capabilities
+  # --property=LogLevelMax=0 silences systemd-level log generation for this fork
+  run0 --empower && _terminal_msg warning "With great power comes with great responsibility"
+}
+
+# workspace navigator
+workspace() {
+    local target_dir="$HOME/workspace"
+    local -a folders=()
+    local item choice selected_folder
+    local choice_num i
+
+    # 1. Verify the workspace directory exists
+    if [[ ! -d "$target_dir" ]]; then
+        printf 'Error: Directory %s does not exist.\n' "$target_dir" >&2
+        return 1
+    fi
+
+    # 2. Collect subdirectories, preserving spaces in names
+    for item in "$target_dir"/*; do
+        [[ -d "$item" ]] || continue
+        folders+=("${item##*/}")
+    done
+
+    # 3. Handle an empty workspace
+    if (( ${#folders[@]} == 0 )); then
+        printf 'No subfolders found in %s.\n' "$target_dir"
+        return 0
+    fi
+
+    # 4. Display the numbered list
+    printf 'Which folder do you want to enter?\n'
+    for i in "${!folders[@]}"; do
+        printf '%d. %s\n' "$((i + 1))" "${folders[$i]}"
+    done
+
+    # 5. Read the selection
+    read -r -p 'Enter number: ' choice || return 1
+
+    # 6. Validate the selection
+    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+        printf 'Error: Enter a valid number.\n' >&2
+        return 1
+    fi
+
+    choice_num=$((10#$choice))
+
+    if (( choice_num < 1 || choice_num > ${#folders[@]} )); then
+        printf 'Error: Selection out of range.\n' >&2
+        return 1
+    fi
+
+    # 7. Change the current shell's directory
+    selected_folder="${folders[$((choice_num - 1))]}"
+
+    if ! cd -- "$target_dir/$selected_folder"; then
+        printf 'Error: Could not enter directory.\n' >&2
+        return 1
+    fi
+
+    printf 'Moved to: %s\n' "$PWD"
+
+}
+
+# manage nodejs, npm, and nvm
+workspacenode(){
+echo
+_terminal_msg normal '🚀 Downloading latest NVM.'
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/HEAD/install.sh | bash
+nvm install --lts > /dev/tty
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+echo
+_terminal_msg success '✅ Finished downloading'
+echo
+_terminal_msg normal '📦 Rebuilding workspace.'
+npm rebuild > /dev/tty
+_terminal_msg success '✅ Finished rebuilding'
+echo 
+_terminal_msg normal  '⚙️  Fetching versions...'
+echo
+_terminal_msg normal 🟢'nvm:'$(nvm -v)
+_terminal_msg normal 🟢'node:'$(node -v)
+_terminal_msg normal 🟢'npm:'$(npm -v)
+echo
+}
+
+# Back up user dotfiles for Fedora Secureblue workspace recovery
+workspacesync() {
+    local SRC=$HOME
+    local DEST=$HOME/workspace/dotfiles-backup
+
+    load_progress() {
+        # Get the height of your current terminal window
+        #height=$(tput lines)
+        width=$(tput cols)
+        
+	_terminal_msg_normal " Transfering ...🚀 "
+        for ((i=0; i<height-2; i++)); do
+           # \r resets to start of line; %${i}s prints 'i' spaces; then the package
+	   printf "\r%${i}s📦" ""
+    
+           # Pause for 0.15 seconds (increase for slower, decrease for faster)
+           sleep 0.15
+	done
+
+	# Reset the cursor
+	tput cnorm
+        echo ""
+      }
+
+    if [ ! -d "$DEST" ]; then
+       _terminal_msg error " Destination path doesn't exist ⛔ "
+    else
+       _terminal_msg normal " Destination path exists, copying files...📦 "
+       load_progress
+       # 2. Copy the explicit files and directory structures
+       cp ~/.gitconfig "$DEST" || return 1
+       cp ~/.bashrc "$DEST" || return 1
+       cp ~/.bash_profile "$DEST" || return 1
+
+       # 3. Safely copy structures (retaining nested directories)
+       cp -r ~/.cline "$DEST" || return 1
+       cp -r ~/.config/containers "$DEST" || return 1
+
+       # 4. Copy your local workspace code and workspace specifications
+       mkdir -p "$DEST/Documents"
+       cp -r ~/Documents/Cline "$DEST/Documents" || return 1
+       cp -r ~/workspace "$DEST" || return 1
+
+       # 5. Backup your Toolbx containers dynamically into the staging folder
+       # (This creates a clean tar file instead of breaking permissions)
+       if command -v podman >/dev/null 2>&1 && command -v toolbox >/dev/null 2>&1; then
+           podman export $(toolbox list | awk 'NR>1 {print $2}') -o "$DEST/toolbox_backup.tar" || return 1
+       fi
+
+       _terminal_msg success " Done copying files. Bye ☕ "
+    fi
+
+}
+
+# Dedicated SSH agent for the home-security key
+workspaceagent() {
+    local key="$HOME/.ssh/home-security"
+    local agent_output
+
+    if ! declare -F tcat >/dev/null ||
+       ! command -v ssh-agent >/dev/null 2>&1 ||
+       ! command -v ssh-add >/dev/null 2>&1; then
+        return 1
+    fi
+
+    if [[ ! -f "$key" || ! -r "$key" ]]; then
+        _terminal_msg error "🔴 ERROR: SSH key missing or unreadable."
+        return 1
+    fi
+
+    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] &&
+       kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
+        _terminal_msg success "🚀 Home-security SSH agent is already running."
+        return 0
+    fi
+
+    # Preserve the current SSH agent environment.
+    HOME_SECURITY_PREV_SOCK="${SSH_AUTH_SOCK-}"
+    HOME_SECURITY_PREV_PID="${SSH_AGENT_PID-}"
+    HOME_SECURITY_PREV_SOCK_SET=${SSH_AUTH_SOCK+x}
+    HOME_SECURITY_PREV_PID_SET=${SSH_AGENT_PID+x}
+
+    # Start a dedicated agent without printing its environment.
+    if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
+        _terminal_msg error "🔴 ERROR: Could not start ssh-agent."
+        return 1
+    fi
+
+    eval "$agent_output" >/dev/null 2>&1
+
+    HOME_SECURITY_SSH_AGENT_PID="$SSH_AGENT_PID"
+    HOME_SECURITY_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
+
+    # Load the key for 15 minutes; show ssh-add output on the terminal.
+    if ! ssh-add -t 900 "$key" > /dev/tty 2>&1; then
+	workspacekill
+        _terminal_msg error "🔴 ERROR: Could not load the SSH key."
+        return 1
+    fi
+
+    # Clean up this dedicated agent when the shell exits.
+    trap 'workspacekill' EXIT
+
+    _terminal_msg success \
+        "🚀 Home-security session started (PID $HOME_SECURITY_SSH_AGENT_PID)."
+    _terminal_msg normal "🔑 Key lifetime: 15 minutes."
+
+}
+
+# Kill all ssh-agent processes owned by the current user.
+# Terminate all ssh-agent processes owned by the current user.
+workspacekill() {
+_terminal_msg red '🚨 Terminating all sessions.'
+run0 pkill -f 'ssh-agent'
+_terminal_msg normal '👁️ Post termination checks'
+echo
+run0 ps -aux | grep 'ssh-agent'
+echo
+_terminal_msg normal "🐧 Termination signals sent. Processes may take time to exit."
+}
+
+# google sync
+workspacesgsync() {
+    local PROJECT_ID="home-security-511714"
+    local BUCKET="gs://home-security-bucket"
+    local SOURCE_DIR="$HOME/workspace"
+    local DESTINATION="$BUCKET/workspace"
+    local LOADER_PID=""
+    local had_job_control=0
+    local exit_code=0
+    local gcloud_log
+
+    # Validate required commands.
+    for cmd in gcloud tput sleep mktemp; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            _terminal_msg error "Required command not found: $cmd ⚠️ "
+            return 1
+        fi
+    done
+
+    # Validate source directory.
+    if [[ ! -d "$SOURCE_DIR" ]]; then
+        _terminal_msg error "Source directory does not exist: $SOURCE_DIR ⚠️ "
+        return 1
+    fi
+
+    # Create temporary error log.
+    gcloud_log=$(mktemp "${TMPDIR:-/tmp}/gcloud-sync.XXXXXX") || {
+        _terminal_msg error "Could not create temporary log. ⚠️"
+        return 1
+    }
+
+    # Animated loader.
+    load_progress() {
+        local width i
+
+        width=$(tput cols 2>/dev/null) || width=40
+        (( width > 4 )) || width=40
+
+        printf '\033[?25l' >/dev/tty 2>/dev/null || :
+
+        while :; do
+            for ((i=0; i<width-3; i++)); do
+                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
+                sleep 0.05
+            done
+
+            for ((i=width-3; i>=0; i--)); do
+                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
+                sleep 0.05
+            done
+        done
+    }
+
+    # Stop loader and restore cursor.
+    stop_loader() {
+        if [[ -n "$LOADER_PID" ]]; then
+            kill "$LOADER_PID" 2>/dev/null || :
+            wait "$LOADER_PID" 2>/dev/null || :
+            LOADER_PID=""
+        fi
+
+        printf '\r\033[K\033[?25h' >/dev/tty 2>/dev/null || :
+    }
+
+    _terminal_msg normal "Checking source directory 📂"
+    _terminal_msg normal "Source: $SOURCE_DIR"
+    _terminal_msg normal "Destination: $DESTINATION"
+    _terminal_msg normal "Project: $PROJECT_ID"
+
+    # Suppress background-job notifications while loader runs.
+    case "$-" in
+        *m*) had_job_control=1; set +m ;;
+    esac
+
+    # Start animated loader.
+    load_progress >/dev/null 2>&1 &
+    LOADER_PID=$!
+
+    # Execute GCloud synchronization.
+    if CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:gcloud)" \
+        gcloud storage rsync "$SOURCE_DIR" "$DESTINATION" \
+            --recursive \
+            --quiet \
+            --project="$PROJECT_ID" \
+            >/dev/null 2>"$gcloud_log"; then
+
+        exit_code=0
+    else
+        exit_code=$?
+    fi
+
+    # Always stop loader after GCloud returns.
+    stop_loader
+
+    # Restore original job-control setting.
+    if (( had_job_control )); then
+        set -m
+    fi
+
+    # Display final result.
+    if (( exit_code == 0 )); then
+        rm -f -- "$gcloud_log"
+        _terminal_msg success "Google Cloud Storage synchronization completed! 🚀"
+        return 0
+    else
+        _terminal_msg error \
+            "Google Cloud Storage synchronization failed (exit code: $exit_code). ⚠️ "
+
+        _terminal_msg warning "GCloud error details: ⚠️ "
+        tcat "$gcloud_log"
+
+        _terminal_msg normal "Error log: $gcloud_log ⚠️"
+        return "$exit_code"
+    fi
+}
+#EOF customization
