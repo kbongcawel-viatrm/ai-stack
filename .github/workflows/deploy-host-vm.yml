@@ -3,6 +3,130 @@ on:
     branches: ["**"]
     paths: [".github/workflows/deploy-host-vm.yml"]
   workflow_dispatch:
+    inputs:
+      host_os:
+        description: Existing hypervisor operating system
+        required: true
+        default: alpine
+        type: choice
+        options: [alpine, secureblue, arch, ubuntu]
+      fcos_vm_name:
+        description: Libvirt domain name for the FCOS VM
+        required: true
+        default: fcos-kasm-poc
+        type: string
+      fcos_qcow2_url:
+        description: Pinned Fedora CoreOS QCOW2 URL
+        required: true
+        type: string
+      fcos_qcow2_sha256:
+        description: SHA256 checksum for the QCOW2 image
+        required: true
+        type: string
+      fcos_lan_ip:
+        description: Static FCOS guest IP address
+        required: true
+        type: string
+      fcos_lan_cidr:
+        description: Guest LAN CIDR
+        required: true
+        default: 192.168.1.0/24
+        type: string
+      fcos_gateway:
+        description: LAN default gateway
+        required: true
+        default: 192.168.1.1
+        type: string
+      fcos_interface:
+        description: Guest network interface
+        required: true
+        default: enp1s0
+        type: string
+      network_bridge:
+        description: Existing hypervisor bridge
+        required: true
+        default: br0
+        type: string
+      vm_memory_mb:
+        description: FCOS VM memory in MiB
+        required: true
+        default: 2048
+        type: number
+      vm_vcpus:
+        description: FCOS VM vCPU count
+        required: true
+        default: 2
+        type: number
+      vm_disk_gb:
+        description: FCOS VM overlay disk size in GiB
+        required: true
+        default: 40
+        type: number
+      vm_storage_path:
+        description: Persistent local VM image directory
+        required: true
+        default: /mnt/nvme/libvirt/images
+        type: string
+      storage_mountpoint:
+        description: Persistent local storage mountpoint
+        required: true
+        default: /mnt/nvme
+        type: string
+  workflow_call:
+    inputs:
+      host_os:
+        type: string
+        required: false
+        default: alpine
+      fcos_vm_name:
+        type: string
+        required: false
+        default: fcos-kasm-poc
+      fcos_qcow2_url:
+        type: string
+        required: true
+      fcos_qcow2_sha256:
+        type: string
+        required: true
+      fcos_lan_ip:
+        type: string
+        required: true
+      fcos_lan_cidr:
+        type: string
+        required: false
+        default: 192.168.1.0/24
+      fcos_gateway:
+        type: string
+        required: false
+        default: 192.168.1.1
+      fcos_interface:
+        type: string
+        required: false
+        default: enp1s0
+      network_bridge:
+        type: string
+        required: false
+        default: br0
+      vm_memory_mb:
+        type: number
+        required: false
+        default: 2048
+      vm_vcpus:
+        type: number
+        required: false
+        default: 2
+      vm_disk_gb:
+        type: number
+        required: false
+        default: 40
+      vm_storage_path:
+        type: string
+        required: false
+        default: /mnt/nvme/libvirt/images
+      storage_mountpoint:
+        type: string
+        required: false
+        default: /mnt/nvme
 
 permissions:
   contents: read
@@ -20,7 +144,7 @@ jobs:
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
     runs-on: [self-hosted, linux, home-server]
     environment: host-vm-production
     defaults:
@@ -86,6 +210,7 @@ jobs:
           HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
           HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
           HOST_OS: ${{ inputs.host_os }}
+          FCOS_VM_NAME: ${{ inputs.fcos_vm_name }}
           FCOS_QCOW2_URL: ${{ inputs.fcos_qcow2_url }}
           FCOS_QCOW2_SHA256: ${{ inputs.fcos_qcow2_sha256 }}
           FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
@@ -120,6 +245,7 @@ jobs:
               raise SystemExit("For Alpine diskless, vm_storage_path must be beneath storage_mountpoint and match the Host OS workflow apkovl configuration.")
           vars_data = {
               "host_os": host_os,
+              "fcos_vm_name": os.environ.get("FCOS_VM_NAME") or "fcos-kasm-poc",
               "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
               "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"],
               "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
