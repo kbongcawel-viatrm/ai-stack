@@ -515,6 +515,8 @@ systemd:
 
         [Service]
         Type=oneshot
+        ConditionPathIsExecutable=/usr/sbin/nft
+        ExecStartPre=/usr/sbin/nft -c -f /etc/nftables/fcos-bootstrap.nft
         ExecStartPre=-/usr/sbin/nft delete table inet fcos_bootstrap
         ExecStart=/usr/sbin/nft -f /etc/nftables/fcos-bootstrap.nft
         ExecStop=-/usr/sbin/nft delete table inet fcos_bootstrap
