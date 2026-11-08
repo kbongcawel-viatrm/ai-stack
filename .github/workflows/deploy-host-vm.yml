@@ -169,7 +169,8 @@ jobs:
           inventory = {
               "all": {"children": {"hypervisors": {"hosts": {"hypervisor": {
                   "ansible_host": os.environ["HYPERVISOR_HOST"],
-                  "ansible_user": os.environ["HYPERVISOR_USER"]
+                  "ansible_user": os.environ["HYPERVISOR_USER"],
+              "ansible_become": os.environ["HYPERVISOR_USER"] != "root"
               }}}}}
           }
           with open(os.path.join(os.environ["RUNNER_TEMP"], "inventory.json"), "w") as f:
@@ -181,9 +182,9 @@ jobs:
       - name: Deploy FCOS VM (does not run Deploy Host OS)
         env:
           ANSIBLE_HOST_KEY_CHECKING: "True"
-          ANSIBLE_SSH_ARGS: "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
         run: |
           set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
           ansible-playbook -i "$RUNNER_TEMP/inventory.json" playbooks/deploy-fcos-vm.yml \
             --extra-vars "@$RUNNER_TEMP/deploy-vars.json" \
             --private-key "$HOME/.ssh/hypervisor" --diff
