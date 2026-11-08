@@ -52,6 +52,11 @@ on:
         required: true
         default: "2"
         type: string
+      vm_storage_path:
+        description: Persistent directory for FCOS qcow2 disks and libvirt XML (must be mounted on diskless Alpine)
+        required: true
+        default: "/mnt/nvme/libvirt/images"
+        type: string
       vm_disk_gb:
         description: FCOS guest overlay disk size (GB)
         required: true
@@ -142,13 +147,14 @@ jobs:
           FCOS_VM_MEMORY_MB: ${{ inputs.vm_memory_mb }}
           FCOS_VM_VCPUS: ${{ inputs.vm_vcpus }}
           FCOS_VM_DISK_GB: ${{ inputs.vm_disk_gb }}
+          FCOS_IMAGE_DIR: ${{ inputs.vm_storage_path }}
           LIBVIRT_QEMU_USER: ${{ vars.LIBVIRT_QEMU_USER }}
           LIBVIRT_QEMU_GROUP: ${{ vars.LIBVIRT_QEMU_GROUP }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
           import json, os, re
-          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE"]
+          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE", "FCOS_IMAGE_DIR"]
           missing = [name for name in required if not os.environ.get(name)]
           if missing:
               raise SystemExit("Missing values: " + ", ".join(missing))
@@ -166,6 +172,7 @@ jobs:
               "fcos_vm_memory_mb": int(os.environ["FCOS_VM_MEMORY_MB"]),
               "fcos_vm_vcpus": int(os.environ["FCOS_VM_VCPUS"]),
               "fcos_vm_disk_gb": int(os.environ["FCOS_VM_DISK_GB"]),
+              "fcos_image_dir": os.environ["FCOS_IMAGE_DIR"],
               "fcos_qemu_user": os.environ.get("LIBVIRT_QEMU_USER") or ("libvirt-qemu" if os.environ["HOST_OS"] == "ubuntu" else "qemu"),
               "fcos_qemu_group": os.environ.get("LIBVIRT_QEMU_GROUP") or ("kvm" if os.environ["HOST_OS"] == "ubuntu" else "qemu"),
               "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign")
