@@ -73,43 +73,60 @@
       failed_when: false
       changed_when: false
 
-    - name: Start Compose POC stack through rootless Podman
-      ansible.builtin.command:
-        argv:
-          - podman-compose
-          - -f
-          - "{{ compose_poc_dir }}/compose.yaml"
-          - up
-          - -d
-      environment:
-        CONTAINER_HOST: "{{ podman_socket }}"
-        DOCKER_HOST: "{{ podman_socket }}"
-        XDG_RUNTIME_DIR: /run/user/1000
-      register: compose_up
-      changed_when: true
+    - name: Exercise Compose HTTP lifecycle and always clean up
+      block:
+          - name: Start Compose POC stack through rootless Podman
+        ansible.builtin.command:
+          argv:
+            - podman-compose
+            - -f
+            - "{{ compose_poc_dir }}/compose.yaml"
+            - up
+            - -d
+        environment:
+          CONTAINER_HOST: "{{ podman_socket }}"
+          DOCKER_HOST: "{{ podman_socket }}"
+          XDG_RUNTIME_DIR: /run/user/1000
+        register: compose_up
+        changed_when: true
 
-    - name: Verify HTTP endpoint published to loopback
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ compose_poc_port }}/"
-        status_code: 200
-        timeout: 5
-      register: compose_http
-      retries: 20
-      delay: 3
-      until: compose_http.status | default(0) == 200
+          - name: Verify HTTP endpoint published to loopback
+        ansible.builtin.uri:
+          url: "http://127.0.0.1:{{ compose_poc_port }}/"
+          status_code: 200
+          timeout: 5
+        register: compose_http
+        retries: 20
+        delay: 3
+        until: compose_http.status | default(0) == 200
 
-    - name: Remove Compose POC stack
-      ansible.builtin.command:
-        argv:
-          - podman-compose
-          - -f
-          - "{{ compose_poc_dir }}/compose.yaml"
-          - down
-      environment:
-        CONTAINER_HOST: "{{ podman_socket }}"
-        DOCKER_HOST: "{{ podman_socket }}"
-        XDG_RUNTIME_DIR: /run/user/1000
-      changed_when: true
+          - name: Remove Compose POC stack
+        ansible.builtin.command:
+          argv:
+            - podman-compose
+            - -f
+            - "{{ compose_poc_dir }}/compose.yaml"
+            - down
+        environment:
+          CONTAINER_HOST: "{{ podman_socket }}"
+          DOCKER_HOST: "{{ podman_socket }}"
+          XDG_RUNTIME_DIR: /run/user/1000
+        changed_when: true
+
+      always:
+        - name: Remove Compose POC stack even after a failed assertion
+          ansible.builtin.command:
+            argv:
+              - podman-compose
+              - -f
+              - "{{ compose_poc_dir }}/compose.yaml"
+              - down
+          environment:
+            CONTAINER_HOST: "{{ podman_socket }}"
+            DOCKER_HOST: "{{ podman_socket }}"
+            XDG_RUNTIME_DIR: /run/user/1000
+          failed_when: false
+          changed_when: true
 
     - name: Report rootless Compose result
       ansible.builtin.debug:
