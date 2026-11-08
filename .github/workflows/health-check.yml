@@ -3,6 +3,7 @@ on:
     branches: ["**"]
     paths: [".github/workflows/health-check.yml"]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -20,7 +21,7 @@ jobs:
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   health:
-    if: ${{ github.event_name == 'workflow_dispatch' }} || github.event_name == 'schedule'
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'workflow_call' }}
     runs-on: [self-hosted, linux, home-server]
     environment: fcos-production
     defaults:
