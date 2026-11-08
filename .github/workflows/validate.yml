@@ -95,11 +95,29 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import yaml
+
+          class UniqueKeyLoader(yaml.SafeLoader):
+              pass
+
+          def construct_unique_mapping(loader, node, deep=False):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=deep)
+                  if key in mapping:
+                      raise ValueError(f"Duplicate YAML key: {key!r}")
+                  mapping[key] = loader.construct_object(value_node, deep=deep)
+              return mapping
+
+          UniqueKeyLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+              construct_unique_mapping,
+          )
+
           files = list(Path("diskless-os").rglob("*.yml")) + list(Path("diskless-os").rglob("*.yaml"))
           files += list(Path(".github/workflows").glob("*.yml")) + list(Path(".github/workflows").glob("*.yaml"))
           for path in files:
-              yaml.safe_load(path.read_text())
-          print(f"Parsed {len(files)} YAML files")
+              yaml.load(path.read_text(), Loader=UniqueKeyLoader)
+          print(f"Parsed {len(files)} YAML files with duplicate-key detection")
           PY
 
       - name: Validate iPXE entrypoint
