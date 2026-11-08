@@ -1,4 +1,4 @@
-name: FCOS and Hypervisor Health Check
+name: Hypervisor and FCOS Health Check
 
 on:
   workflow_dispatch:
@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: infrastructure-health-check
+  cancel-in-progress: false
+
 jobs:
   health:
     runs-on: [self-hosted, linux, home-server]
@@ -16,78 +20,74 @@ jobs:
       run:
         working-directory: diskless-os/ansible
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Ansible in an isolated environment
-        shell: bash
+      - name: Install Ansible
         run: |
           set -Eeuo pipefail
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
 
-      - name: Configure SSH access
-        shell: bash
+      - name: Configure pinned SSH trust
         env:
-          HYPERVISOR_SSH_PRIVATE_KEY: \${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
-          FCOS_SSH_PRIVATE_KEY: \${{ secrets.FCOS_SSH_PRIVATE_KEY }}
-          HEALTH_KNOWN_HOSTS: \${{ secrets.HEALTH_KNOWN_HOSTS }}
+          HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
+          FCOS_SSH_PRIVATE_KEY: ${{ secrets.FCOS_SSH_PRIVATE_KEY }}
+          HEALTH_KNOWN_HOSTS: ${{ secrets.HEALTH_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
+          for value in "$HYPERVISOR_SSH_PRIVATE_KEY" "$FCOS_SSH_PRIVATE_KEY" "$HEALTH_KNOWN_HOSTS"; do test -n "$value"; done
           install -d -m 0700 "$HOME/.ssh"
           printf '%s\n' "$HYPERVISOR_SSH_PRIVATE_KEY" > "$HOME/.ssh/hypervisor"
           printf '%s\n' "$FCOS_SSH_PRIVATE_KEY" > "$HOME/.ssh/fcos"
-          chmod 0600 "$HOME/.ssh/hypervisor" "$HOME/.ssh/fcos"
           printf '%s\n' "$HEALTH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 0600 "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/hypervisor" "$HOME/.ssh/fcos" "$HOME/.ssh/known_hosts"
 
-      - name: Build health inventory
-        shell: bash
+      - name: Build target inventory
         env:
-          HYPERVISOR_HOST: \${{ vars.HYPERVISOR_HOST }}
-          HYPERVISOR_USER: \${{ vars.HYPERVISOR_USER }}
-          FCOS_VM_IP: \${{ vars.FCOS_VM_IP }}
-          FCOS_SSH_USER: \${{ vars.FCOS_SSH_USER }}
+          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HOST_OS: ${{ vars.HOST_OS }}
+          FCOS_VM_IP: ${{ vars.FCOS_VM_IP }}
+          FCOS_SSH_USER: ${{ vars.FCOS_SSH_USER }}
+          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
+          FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
+          FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
           import json, os
-          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_VM_IP"]
-          missing = [x for x in required if not os.environ.get(x)]
+          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_VM_IP", "FCOS_LAN_IP", "FCOS_LAN_CIDR"]
+          missing = [name for name in required if not os.environ.get(name)]
           if missing:
-              raise SystemExit("Missing repository variables: " + ", ".join(missing))
+              raise SystemExit("Missing GitHub variables: " + ", ".join(missing))
           inventory = {
-              "all": {
-                  "children": {
-                      "hypervisors": {
-                          "hosts": {
-                              "hypervisor": {
-                                  "ansible_host": os.environ["HYPERVISOR_HOST"],
-                                  "ansible_user": os.environ["HYPERVISOR_USER"],
-                                  "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/hypervisor"),
-                                  "fcos_vm_name": "fcos-security"
-                              }
-                          }
-                      },
-                      "fcos": {
-                          "hosts": {
-                              "fcos-security": {
-                                  "ansible_host": os.environ["FCOS_VM_IP"],
-                                  "ansible_user": os.environ.get("FCOS_SSH_USER") or "core",
-                                  "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/fcos"),
-                                  "fcos_user": os.environ.get("FCOS_SSH_USER") or "core"
-                              }
-                          }
-                      }
-                  }
-              }
+              "all": {"children": {
+                  "hypervisors": {"hosts": {"hypervisor": {
+                      "ansible_host": os.environ["HYPERVISOR_HOST"],
+                      "ansible_user": os.environ["HYPERVISOR_USER"],
+                      "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/hypervisor"),
+                      "host_os": os.environ.get("HOST_OS") or "alpine",
+                      "fcos_vm_name": "fcos-security"
+                  }}},
+                  "fcos": {"hosts": {"fcos-security": {
+                      "ansible_host": os.environ["FCOS_VM_IP"],
+                      "ansible_user": os.environ.get("FCOS_SSH_USER") or "core",
+                      "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/fcos"),
+                      "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
+                      "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
+                      "fcos_interface": os.environ.get("FCOS_INTERFACE") or "enp1s0"
+                  }}}
+              }}
           }
-          with open("inventory/health.yml", "w", encoding="utf-8") as f:
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "health-inventory.json"), "w") as f:
               json.dump(inventory, f, indent=2)
           PY
 
       - name: Run hypervisor and FCOS health checks
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+          ANSIBLE_SSH_ARGS: "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
         run: |
           set -Eeuo pipefail
-          ansible-playbook -i inventory/health.yml playbooks/health-check.yml --diff
+          ansible-playbook -i "$RUNNER_TEMP/health-inventory.json" playbooks/health-check.yml --diff
