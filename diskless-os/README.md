@@ -55,6 +55,6 @@ If no storage UUID is supplied, Alpine still boots, but Deploy Host VM rejects t
 
 ## Resource constraint
 
-The physical host has 8 GB RAM and an Intel i3-10320. FCOS plus Kasm services and a workspace may exceed available memory. Start with one isolated test workspace only after compatibility passes, and measure memory, swap and storage I/O.
+The physical host has 8 GB RAM and an Intel i3-10320. Kasm currently documents 4 GB RAM/2 CPU cores as its minimum host requirement, while its default workspace is configured for 2768 MB RAM and 2 CPU cores. That leaves insufficient headroom for Alpine, FCOS, Kasm services and a default workspace on this 8 GB host. Treat the current Kasm POC as an API/version compatibility test only. Do not attempt a default workspace lifecycle test until the host has more memory or a deliberately reduced custom workspace profile has been validated.
 
 See architecture, deployment plan, PXE automation, Alpine host and Ansible operations documentation.
