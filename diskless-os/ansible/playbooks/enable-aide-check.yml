@@ -1,0 +1,43 @@
+---
+- name: Enable daily AIDE checks only after explicit baseline approval
+  hosts: fcos
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require explicit baseline approval
+      ansible.builtin.assert:
+        that:
+          - aide_baseline_approved | default(false) | bool
+          - aide_baseline_approval_reason is defined
+          - aide_baseline_approval_reason | length > 10
+        fail_msg: >-
+          Set aide_baseline_approved=true and provide aide_baseline_approval_reason
+          only after reviewing the trusted AIDE baseline.
+
+    - name: Verify compressed baseline exists
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.gz
+      register: aide_db_gz
+
+    - name: Verify uncompressed baseline exists
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db
+      register: aide_db
+
+    - name: Require an initialized baseline
+      ansible.builtin.assert:
+        that:
+          - aide_db_gz.stat.exists or aide_db.stat.exists
+        fail_msg: "AIDE baseline is missing. Run initialize-aide.yml first."
+
+    - name: Run a final AIDE check before enabling the timer
+      ansible.builtin.command:
+        argv: [aide, --check, --config, /etc/aide.conf]
+      changed_when: false
+
+    - name: Enable daily AIDE integrity checks
+      ansible.builtin.systemd:
+        name: aide-check.timer
+        enabled: true
+        state: started
+        daemon_reload: true
