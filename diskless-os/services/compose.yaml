@@ -1,0 +1,9 @@
+services:
+  rootless-compose-smoke:
+    image: docker.io/library/alpine:3.24.4
+    container_name: fcos-rootless-compose-smoke
+    command:
+      - sh
+      - -c
+      - "printf 'rootless Podman Compose smoke test passed\\n'; sleep 90"
+    restart: "no"
