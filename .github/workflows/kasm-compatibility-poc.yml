@@ -1,13 +1,8 @@
-name: Kasm Rootless Podman Compatibility POC
-
 on:
+  push:
+    branches: ["**"]
+    paths: [".github/workflows/kasm-compatibility-poc.yml"]
   workflow_dispatch:
-    inputs:
-      confirm_isolated_test_vm:
-        description: Confirm target is an isolated FCOS test VM, not the production guest
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
