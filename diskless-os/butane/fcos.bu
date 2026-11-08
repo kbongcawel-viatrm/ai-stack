@@ -4,7 +4,27 @@ metadata:
   name: fcos-security
   labels:
     role: security
+    workload: kasm-poc
 storage:
+  directories:
+    - path: /etc/suricata
+      mode: 0755
+    - path: /etc/nftables
+      mode: 0755
+    - path: /etc/firewalld/zones
+      mode: 0755
+    - path: /etc/firewalld/policies
+      mode: 0755
+    - path: /usr/local/libexec/fcos
+      mode: 0755
+    - path: /var/log/aide
+      mode: 0750
+    - path: /var/log/clamav
+      mode: 0750
+    - path: /var/log/lynis
+      mode: 0750
+    - path: /var/log/suricata
+      mode: 0750
   files:
     - path: /etc/ssh/sshd_config.d/00-local-security.conf
       mode: 0600
@@ -18,13 +38,506 @@ storage:
           ChallengeResponseAuthentication no
           PermitEmptyPasswords no
           PermitRootLogin prohibit-password
+          AllowAgentForwarding no
+          X11Forwarding no
+          AllowTcpForwarding no
+          GatewayPorts no
+          PermitTunnel no
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+          MaxAuthTries 3
+          LoginGraceTime 30
     - path: /etc/motd.d/managed-by-ansible
       mode: 0644
       overwrite: true
       contents:
         inline: |
-          FCOS security VM - provisioned by Ignition and Ansible.
+          FCOS security VM - provisioned by Butane/Ignition and Ansible.
+    - path: /etc/profile.d/90-rootless-podman.sh
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          # Rootless Podman Docker API compatibility for interactive Bash shells.
+          if [ -n "$BASH_VERSION" ]; then
+            export CONTAINER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+            alias docker='podman --remote --url "$CONTAINER_HOST"'
+            alias docker-compose='podman-compose'
+          fi
+    - path: /usr/local/bin/docker
+      mode: 0755
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -euo pipefail
+          export CONTAINER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+          exec /usr/bin/podman --remote --url "$CONTAINER_HOST" "$@"
+    - path: /usr/local/bin/docker-compose
+      mode: 0755
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -euo pipefail
+          export CONTAINER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+          exec /usr/bin/podman-compose "$@"
+    - path: /etc/firewalld/zones/public.xml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          <?xml version="1.0" encoding="utf-8"?>
+          <zone target="DROP">
+            <short>FCOS restricted LAN</short>
+            <description>Default-deny inbound. SSH is allowed only from the trusted LAN.</description>
+            <interface name="enp1s0"/>
+            <rule family="ipv4">
+              <source address="192.168.1.0/24"/>
+              <service name="ssh"/>
+              <accept/>
+            </rule>
+          </zone>
+    - path: /etc/firewalld/policies/fcos-egress.xml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          <?xml version="1.0" encoding="utf-8"?>
+          <policy target="DROP" priority="-100">
+            <short>FCOS explicit host egress</short>
+            <description>Only FCOS LAN IP 192.168.1.20 may initiate HTTP, HTTPS, DNS and NTP.</description>
+            <ingress-zone name="HOST"/>
+            <egress-zone name="ANY"/>
+            <rule family="ipv4">
+              <source address="192.168.1.20"/>
+              <service name="http"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="192.168.1.20"/>
+              <service name="https"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="192.168.1.20"/>
+              <service name="dns"/>
+              <accept/>
+            </rule>
+            <rule family="ipv4">
+              <source address="192.168.1.20"/>
+              <service name="ntp"/>
+              <accept/>
+            </rule>
+          </policy>
+    - path: /etc/suricata/suricata.yaml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          %YAML 1.1
+          ---
+          vars:
+            address-groups:
+              HOME_NET: "[192.168.1.0/24]"
+              EXTERNAL_NET: "!$HOME_NET"
+              HTTP_SERVERS: "$HOME_NET"
+              SMTP_SERVERS: "$HOME_NET"
+              SQL_SERVERS: "$HOME_NET"
+              DNS_SERVERS: "$HOME_NET"
+              TELNET_SERVERS: "$HOME_NET"
+              AIM_SERVERS: "$EXTERNAL_NET"
+              DNP3_SERVER: "$HOME_NET"
+              DNP3_CLIENT: "$HOME_NET"
+              MODBUS_CLIENT: "$HOME_NET"
+              MODBUS_SERVER: "$HOME_NET"
+              ENIP_CLIENT: "$HOME_NET"
+              ENIP_SERVER: "$HOME_NET"
+            port-groups:
+              HTTP_PORTS: "80"
+              SHELLCODE_PORTS: "!80"
+              ORACLE_PORTS: 1521
+              SSH_PORTS: 22
+              DNP3_PORTS: 20000
+              MODBUS_PORTS: 502
+              FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+              FTP_PORTS: 21
+              GENEVE_PORTS: 6081
+              VXLAN_PORTS: 4789
+              TEREDO_PORTS: 3544
+          default-rule-path: /var/lib/suricata/rules
+          default-log-dir: /var/log/suricata
+          rule-files:
+            - suricata.rules
+            - local.rules
+          classification-file: /etc/suricata/classification.config
+          reference-config-file: /etc/suricata/reference.config
+          stats:
+            enabled: yes
+            interval: 60
+          outputs:
+            - eve-log:
+                enabled: yes
+                filetype: regular
+                filename: eve.json
+                types:
+                  - alert:
+                      tagged-packets: yes
+                  - anomaly:
+                      enabled: yes
+                  - dns:
+                      enabled: yes
+                  - http:
+                      enabled: yes
+                  - tls:
+                      enabled: yes
+                  - flow
+                  - stats:
+                      totals: yes
+                      threads: no
+                      deltas: no
+            - fast:
+                enabled: yes
+                filename: fast.log
+                append: yes
+          logging:
+            default-log-level: notice
+            outputs:
+              - console:
+                  enabled: no
+              - file:
+                  enabled: yes
+                  level: info
+                  filename: /var/log/suricata/suricata.log
+          nfq:
+            mode: accept
+          runmode: workers
+          defrag:
+            memcap: 32mb
+            hash-size: 65536
+            trackers: 65535
+            max-frags: 65535
+            prealloc: yes
+            timeout: 60
+          stream:
+            memcap: 64mb
+            checksum-validation: yes
+            inline: auto
+            reassembly:
+              memcap: 64mb
+              depth: 1mb
+              toserver-chunk-size: 2560
+              toclient-chunk-size: 2560
+              randomize-chunk-size: yes
+          app-layer:
+            protocols:
+              http:
+                enabled: yes
+              tls:
+                enabled: yes
+              dns:
+                tcp:
+                  enabled: yes
+                udp:
+                  enabled: yes
+              ssh:
+                enabled: yes
+              smtp:
+                enabled: yes
+              ftp:
+                enabled: yes
+              smb:
+                enabled: yes
+              modbus:
+                enabled: yes
+              dnp3:
+                enabled: yes
+              ike:
+                enabled: yes
+              krb5:
+                enabled: yes
+              nfs:
+                enabled: yes
+              rdp:
+                enabled: yes
+              snmp:
+                enabled: yes
+              tftp:
+                enabled: yes
+              sip:
+                enabled: yes
+              dhcp:
+                enabled: yes
+    - path: /etc/nftables/suricata-nfq.nft
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          table inet suricata_nfq {
+            chain input {
+              type filter hook input priority -150; policy accept;
+              iifname "enp1s0" queue num 0 bypass
+            }
+            chain output {
+              type filter hook output priority -150; policy accept;
+              oifname "enp1s0" queue num 0 bypass
+            }
+          }
+    - path: /usr/local/libexec/fcos/suricata-update.sh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          PATH=/usr/sbin:/usr/bin:/sbin:/bin
+          rules_dir=/var/lib/suricata/rules
+          backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
+          had_rules=0
+          install -d -m 0750 "$rules_dir"
+          if [[ -d "$rules_dir" ]] && compgen -G "$rules_dir/*" >/dev/null; then
+            cp -a "$rules_dir" "$backup_dir"
+            had_rules=1
+          fi
+          rollback() {
+            rc=$?
+            if (( rc != 0 )); then
+              rm -rf -- "$rules_dir"
+              if (( had_rules == 1 )) && [[ -d "$backup_dir" ]]; then
+                mv -- "$backup_dir" "$rules_dir"
+              fi
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+          suricata-update update-sources
+          suricata-update enable-source et/open
+          suricata-update
+          suricata -T -c /etc/suricata/suricata.yaml
+          trap - EXIT
+          if systemctl is-active --quiet suricata-nfq.service; then
+            systemctl restart suricata-nfq.service
+          fi
+          find /var/lib/suricata -maxdepth 1 -type d -name 'rules.rollback.*' -mtime +7 -exec rm -rf -- {} +
+    - path: /usr/local/libexec/fcos/clamav-daily.sh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          install -d -m 0750 /var/log/clamav
+          exec 9>/run/lock/clamav-daily.lock
+          flock -n 9 || exit 0
+          log="/var/log/clamav/daily-$(date +%F).log"
+          clamscan --recursive --infected --log="$log" /var/home/core
+    - path: /usr/local/libexec/fcos/lynis-daily.sh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          install -d -m 0750 /var/log/lynis
+          log="/var/log/lynis/daily-$(date +%F).log"
+          lynis audit system --quiet --no-colors --log-file "$log"
+    - path: /usr/local/libexec/fcos/aide-daily.sh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          #!/usr/bin/bash
+          set -Eeuo pipefail
+          install -d -m 0750 /var/log/aide
+          if [[ ! -s /var/lib/aide/aide.db.gz && ! -s /var/lib/aide/aide.db ]]; then
+            echo "AIDE baseline missing; initialize and review it before enabling aide-check.timer." >&2
+            exit 2
+          fi
+          log="/var/log/aide/daily-$(date +%F).log"
+          aide --check --config /etc/aide.conf >"$log" 2>&1
+    - path: /etc/systemd/system/fcos-nfq-rules.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Install Suricata NFQUEUE packet hooks
+          Wants=network-online.target firewalld.service
+          After=network-online.target firewalld.service
+          Before=suricata-nfq.service
+          ConditionPathExists=/etc/nftables/suricata-nfq.nft
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/sbin/nft -f /etc/nftables/suricata-nfq.nft
+          ExecReload=/usr/sbin/nft -f /etc/nftables/suricata-nfq.nft
+          ExecStop=-/usr/sbin/nft delete table inet suricata_nfq
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+    - path: /etc/systemd/system/suricata-nfq.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Suricata NFQUEUE IPS on enp1s0
+          Wants=network-online.target fcos-nfq-rules.service
+          Requires=fcos-nfq-rules.service
+          After=network-online.target firewalld.service fcos-nfq-rules.service
+          ConditionPathExists=/var/lib/suricata/rules/suricata.rules
+          [Service]
+          Type=simple
+          ExecStartPre=/usr/bin/suricata -T -c /etc/suricata/suricata.yaml
+          ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml -q 0 --pidfile /run/suricata-nfq.pid
+          Restart=on-failure
+          RestartSec=5s
+          LimitNOFILE=65536
+          AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+          CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_DAC_OVERRIDE CAP_CHOWN CAP_SETUID CAP_SETGID
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=read-only
+          ReadWritePaths=/var/log/suricata /var/lib/suricata /run
+          [Install]
+          WantedBy=multi-user.target
+    - path: /etc/systemd/system/suricata-update.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Update Suricata sources and validate rules
+          Wants=network-online.target
+          After=network-online.target
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/fcos/suricata-update.sh
+    - path: /etc/systemd/system/suricata-update.timer
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Daily Suricata rules update
+          [Timer]
+          OnCalendar=*-*-* 01:30:00
+          RandomizedDelaySec=15m
+          Persistent=true
+          Unit=suricata-update.service
+          [Install]
+          WantedBy=timers.target
+    - path: /etc/systemd/system/clamav-scan.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Daily read-only ClamAV scan of the FCOS core home
+          ConditionPathIsExecutable=/usr/bin/clamscan
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/fcos/clamav-daily.sh
+          Nice=10
+          IOSchedulingClass=best-effort
+          IOSchedulingPriority=7
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=read-only
+          ReadWritePaths=/var/log/clamav /run/lock
+    - path: /etc/systemd/system/clamav-scan.timer
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Run ClamAV scan daily
+          [Timer]
+          OnCalendar=*-*-* 02:00:00
+          RandomizedDelaySec=30m
+          Persistent=true
+          Unit=clamav-scan.service
+          [Install]
+          WantedBy=timers.target
+    - path: /etc/systemd/system/lynis-audit.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Daily Lynis system audit
+          ConditionPathIsExecutable=/usr/bin/lynis
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/fcos/lynis-daily.sh
+          Nice=10
+          IOSchedulingClass=best-effort
+          IOSchedulingPriority=7
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ReadWritePaths=/var/log/lynis /var/log /run
+    - path: /etc/systemd/system/lynis-audit.timer
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Run Lynis audit daily
+          [Timer]
+          OnCalendar=*-*-* 03:00:00
+          RandomizedDelaySec=30m
+          Persistent=true
+          Unit=lynis-audit.service
+          [Install]
+          WantedBy=timers.target
+    - path: /etc/systemd/system/aide-check.service
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Daily AIDE integrity check
+          ConditionPathIsExecutable=/usr/sbin/aide
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/libexec/fcos/aide-daily.sh
+          Nice=10
+          IOSchedulingClass=best-effort
+          IOSchedulingPriority=7
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ReadWritePaths=/var/log/aide
+    - path: /etc/systemd/system/aide-check.timer
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Unit]
+          Description=Run AIDE integrity check daily after baseline approval
+          [Timer]
+          OnCalendar=*-*-* 04:00:00
+          RandomizedDelaySec=30m
+          Persistent=true
+          Unit=aide-check.service
+          [Install]
+          WantedBy=timers.target
 systemd:
   units:
     - name: sshd.service
       enabled: true
+    - name: firewalld.service
+      enabled: true
+    - name: fcos-nfq-rules.service
+      enabled: true
+    - name: suricata-nfq.service
+      enabled: false
+    - name: suricata-update.timer
+      enabled: false
+    - name: clamav-scan.timer
+      enabled: true
+    - name: lynis-audit.timer
+      enabled: true
+    - name: aide-check.timer
+      enabled: false
