@@ -1,5 +1,6 @@
 alpine-base
 bash
+bridge
 curl
 e2fsprogs
 iproute2
