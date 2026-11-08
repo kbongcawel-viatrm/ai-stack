@@ -227,6 +227,23 @@ storage:
             }
           }
 
+    - path: /etc/logrotate.d/fcos-security-scans
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          /var/log/clamav/*.log /var/log/lynis/*.log /var/log/aide/*.log {
+              daily
+              rotate 30
+              missingok
+              notifempty
+              compress
+              delaycompress
+              dateext
+              create 0640 root root
+              sharedscripts
+          }
+
     - path: /etc/sysctl.d/90-fcos-security.conf
       mode: 0644
       overwrite: true
@@ -439,6 +456,9 @@ systemd:
       enabled: true
 
     - name: firewalld.service
+      enabled: true
+
+    - name: logrotate.timer
       enabled: true
 
     - name: fcos-services-preflight.service
@@ -713,4 +733,6 @@ systemd:
     - name: podman.service
       mask: true
     - name: docker.service
+      mask: true
+    - name: docker.socket
       mask: true
