@@ -22,7 +22,7 @@ chmod 0600 "$root/root/.ssh/authorized_keys"
 ssh-keygen -lf "$root/root/.ssh/authorized_keys" >/dev/null
 
 install -d -m 0755 "$root/etc/network" "$root/etc/runlevels/boot" "$root/etc/runlevels/default"
-sed -i -e "s/^auto enp1s0$/auto $HOST_NIC/" -e "s/^iface enp1s0 inet dhcp$/iface $HOST_NIC inet dhcp/" "$root/etc/network/interfaces"
+sed -i -e "s/^auto enp1s0$/auto $HOST_NIC/" -e "s/^iface enp1s0 inet manual$/iface $HOST_NIC inet manual/" -e "s/^    bridge-ports enp1s0$/    bridge-ports $HOST_NIC/" "$root/etc/network/interfaces"
 
 # OpenRC runlevel links are part of the overlay so SSH and libvirt survive
 # every diskless boot without relying on manual rc-update commands.
