@@ -36,10 +36,10 @@ ln -sfn /etc/init.d/sshd "$root/etc/runlevels/default/sshd"
 ln -sfn /etc/init.d/libvirtd "$root/etc/runlevels/default/libvirtd"
 
 if [[ -n "$STORAGE_UUID" ]]; then
-  [[ "$STORAGE_UUID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "Invalid ALPINE_STORAGE_UUID" >&2; exit 1; }
+  [[ "$STORAGE_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || { echo "Invalid ALPINE_STORAGE_UUID" >&2; exit 1; }
   [[ "$STORAGE_MOUNTPOINT" =~ ^/[A-Za-z0-9._/-]+$ && "$STORAGE_MOUNTPOINT" != "/" ]] || { echo "Invalid ALPINE_STORAGE_MOUNTPOINT" >&2; exit 1; }
-  [[ "$VM_STORAGE_PATH" == "$STORAGE_MOUNTPOINT/"* && "$VM_STORAGE_PATH" != *"/../"* ]] || { echo "ALPINE_VM_STORAGE_PATH must be beneath ALPINE_STORAGE_MOUNTPOINT" >&2; exit 1; }
-  [[ "$STORAGE_FSTYPE" =~ ^[a-zA-Z0-9]+$ ]] || { echo "Invalid ALPINE_STORAGE_FSTYPE" >&2; exit 1; }
+  [[ "$VM_STORAGE_PATH" =~ ^/[A-Za-z0-9._/-]+$ && "$VM_STORAGE_PATH" == "$STORAGE_MOUNTPOINT/"* && "$VM_STORAGE_PATH" != *"/../"* ]] || { echo "ALPINE_VM_STORAGE_PATH must be a simple path beneath ALPINE_STORAGE_MOUNTPOINT" >&2; exit 1; }
+  [[ "$STORAGE_FSTYPE" == "ext4" ]] || { echo "Only ext4 persistent storage is supported by this apkovl" >&2; exit 1; }
   install -d -m 0755 "$root$STORAGE_MOUNTPOINT" "$root/etc/conf.d"
   printf 'UUID=%s %s %s defaults,noatime 0 2\n' "$STORAGE_UUID" "$STORAGE_MOUNTPOINT" "$STORAGE_FSTYPE" >> "$root/etc/fstab"
   cat > "$root/etc/conf.d/libvirt-vms" <<EOF
