@@ -12,6 +12,12 @@
           Set aide_initialize_baseline=true only after FCOS provisioning is
           complete, trusted, and reviewed. This playbook never runs automatically.
 
+    - name: Keep AIDE timer disabled during baseline initialization
+      ansible.builtin.systemd_service:
+        name: aide-check.timer
+        enabled: false
+        state: stopped
+
     - name: Check whether a compressed baseline already exists
       ansible.builtin.stat:
         path: /var/lib/aide/aide.db.gz
