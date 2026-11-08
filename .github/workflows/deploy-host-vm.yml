@@ -176,10 +176,13 @@ jobs:
           if not re.fullmatch(r"[0-9a-fA-F]{64}", os.environ["FCOS_QCOW2_SHA256"]):
               raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
           host_os = os.environ["HOST_OS"]
-          expected_alpine_dir = os.path.join(os.environ["FCOS_STORAGE_MOUNTPOINT"], "libvirt/images")
-          image_dir = os.environ.get("FCOS_IMAGE_DIR") or (expected_alpine_dir if host_os == "alpine" else "/var/lib/libvirt/images")
-          if host_os == "alpine" and image_dir != expected_alpine_dir:
-              raise SystemExit("For Alpine diskless, vm_storage_path must equal storage_mountpoint/libvirt/images so OpenRC restores the same domain directory.")
+          storage_mountpoint = os.path.normpath(os.environ["FCOS_STORAGE_MOUNTPOINT"])
+          default_alpine_dir = os.path.join(storage_mountpoint, "libvirt/images")
+          image_dir = os.path.normpath(os.environ.get("FCOS_IMAGE_DIR") or (default_alpine_dir if host_os == "alpine" else "/var/lib/libvirt/images"))
+          if not os.path.isabs(image_dir):
+              raise SystemExit("FCOS_IMAGE_DIR must be an absolute path")
+          if host_os == "alpine" and os.path.commonpath([storage_mountpoint, image_dir]) != storage_mountpoint:
+              raise SystemExit("For Alpine diskless, vm_storage_path must be beneath storage_mountpoint and match the Host OS workflow apkovl configuration.")
           vars_data = {
               "host_os": host_os,
               "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
