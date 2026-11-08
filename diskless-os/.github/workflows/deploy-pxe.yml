@@ -1,0 +1,40 @@
+name: Validate and publish PXE assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to PXE storage (disabled until Alpine image builder and storage transport are implemented)
+        type: boolean
+        required: true
+        default: false
+  push:
+    branches: [main]
+    paths: ["diskless-os/pxe/**", "diskless-os/alpine/**", "diskless-os/butane/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: [self-hosted, linux, home-server]
+    environment: pxe-production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source
+        run: |
+          set -Eeuo pipefail
+          sh -n diskless-os/alpine/scripts/validate-host.sh
+          grep -q '^#!ipxe' diskless-os/pxe/boot/menu.ipxe
+          test -s diskless-os/pxe/dnsmasq/pxe.conf.example
+      - name: Validate Butane
+        run: |
+          BUTANE_VERSION="0.23.0"
+          curl -fsSL -o "$RUNNER_TEMP/butane" "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
+          chmod +x "$RUNNER_TEMP/butane"
+          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" diskless-os/butane/fcos.bu
+      - name: Block premature publishing
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: |
+          echo "No Alpine image build or PXE storage publisher has been configured; refusing to publish incomplete boot assets."
+          exit 1
