@@ -24,6 +24,7 @@ The orchestrator passes these values to reusable workflows, so define them as **
 | `FCOS_QCOW2_URL` | Pinned Fedora CoreOS QCOW2 URL |
 | `FCOS_QCOW2_SHA256` | SHA256 checksum for that exact image |
 | `KASM_POC_FCOS_IP` | Static IP reserved for the isolated FCOS test VM |
+| `KASM_POC_SSH_USER` | SSH account on the test VM; normally `core` |
 | `FCOS_LAN_CIDR` | Guest LAN CIDR, e.g. `192.168.1.0/24` |
 | `FCOS_GATEWAY` | Guest LAN gateway |
 | `FCOS_INTERFACE` | FCOS guest NIC, e.g. `enp1s0` |
@@ -43,7 +44,7 @@ The deployment defaults to a 2 GiB, 2-vCPU, 40 GiB test VM. This is a conservati
 Keep the existing GitHub environments and configure their values:
 
 - **`host-vm-production`**: `HYPERVISOR_HOST`, `HYPERVISOR_USER`, optional `LIBVIRT_QEMU_USER` and `LIBVIRT_QEMU_GROUP`; secrets `HYPERVISOR_SSH_PRIVATE_KEY`, `HYPERVISOR_KNOWN_HOSTS`, and `FCOS_SSH_PUBLIC_KEY`.
-- **`kasm-poc`**: `KASM_POC_SSH_USER` (normally `core`); secrets `KASM_POC_SSH_PRIVATE_KEY` and `KASM_POC_KNOWN_HOSTS`.
+- **Repository variable and `kasm-poc` environment**: `KASM_POC_SSH_USER` (normally `core`); secrets `KASM_POC_SSH_PRIVATE_KEY` and `KASM_POC_KNOWN_HOSTS`.
 - **`fcos-production`**: `HYPERVISOR_HOST`, `HYPERVISOR_USER`, `FCOS_LAN_CIDR`, `FCOS_INTERFACE`, and any existing FCOS variables; secrets `FCOS_SSH_PRIVATE_KEY`, `FCOS_KNOWN_HOSTS`, `HYPERVISOR_SSH_PRIVATE_KEY`, and `HEALTH_KNOWN_HOSTS`.
 - **`pxe-production`**: secrets `PXE_SSH_PRIVATE_KEY`, `PXE_KNOWN_HOSTS`, `PXE_HOST`, `PXE_USER`, and `PXE_HTTP_ROOT`.
 - **Repository secret**: `ALPINE_SSH_PUBLIC_KEY`, used to build the Alpine host overlay.
