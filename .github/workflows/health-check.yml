@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   health:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: [self-hosted, linux, home-server]
     environment: fcos-production
     defaults:
