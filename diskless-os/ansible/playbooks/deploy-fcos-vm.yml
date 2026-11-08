@@ -107,7 +107,13 @@
 
     - name: Resolve filesystem backing the FCOS VM storage path
       ansible.builtin.command:
-        argv: [findmnt, -n, -o, TARGET,FSTYPE, --target, "{{ fcos_image_dir }}"]
+        argv:
+          - findmnt
+          - -n
+          - -o
+          - TARGET,FSTYPE
+          - --target
+          - "{{ fcos_image_dir }}"
       register: fcos_storage_mount
       changed_when: false
 
