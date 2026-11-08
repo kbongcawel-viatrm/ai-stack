@@ -375,82 +375,118 @@ workspacesync() {
 
 # install AI assistants
 workspaceai() {
-    # Animated loader.
-    load_progress() {
-        local width i
+    local loader_pid=""
+    local had_job_control=0
+    local log_file
+    log_file=$(mktemp "${TMPDIR:-/tmp}/workspaceai.XXXXXX.log")
 
-        width=$(tput cols 2>/dev/null) || width=40
-        (( width > 4 )) || width=40
+    # Query terminal width before backgrounding (when /dev/tty is attached)
+    local term_width
+    term_width=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+    [[ "$term_width" =~ ^[0-9]+$ ]] && (( term_width > 6 )) || term_width=40
 
-        printf '\033[?25l' >/dev/tty 2>/dev/null || :
+    # Animated loader
+    _load_progress() {
+        local max=$(( term_width - 4 ))
+        local i
+        printf '\033[?25l' >/dev/tty 2>/dev/null || return 0
 
         while :; do
-            for ((i=0; i<width-3; i++)); do
-                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
+            for ((i=0; i<=max; i++)); do
+                printf '\r\033[K%*s📦' "$i" "" >/dev/tty 2>/dev/null || exit 0
                 sleep 0.05
             done
-
-            for ((i=width-3; i>=0; i--)); do
-                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
+            for ((i=max; i>=0; i--)); do
+                printf '\r\033[K%*s📦' "$i" "" >/dev/tty 2>/dev/null || exit 0
                 sleep 0.05
             done
         done
     }
 
-    # Stop loader and restore cursor.
-    stop_loader() {
-        if [[ -n "$LOADER_PID" ]]; then
-            kill "$LOADER_PID" 2>/dev/null || :
-            wait "$LOADER_PID" 2>/dev/null || :
-            LOADER_PID=""
+    # Guaranteed cleanup on normal return, error, or Ctrl+C
+    _cleanup_workspaceai() {
+        if [[ -n "$loader_pid" ]]; then
+            kill "$loader_pid" 2>/dev/null || :
+            wait "$loader_pid" 2>/dev/null || :
+            loader_pid=""
         fi
-
         printf '\r\033[K\033[?25h' >/dev/tty 2>/dev/null || :
+        (( had_job_control )) && set -m
+        rm -f "$log_file"
+        trap - RETURN INT TERM
     }
 
-    _terminal_msg normal "Checking source directory 📂"
-    _terminal_msg normal "Source: $SOURCE_DIR"
-    _terminal_msg normal "Destination: $DESTINATION"
-    _terminal_msg normal "Project: $PROJECT_ID"
+    # Helper to print status cleanly without colliding with the loader line
+    _step_msg() {
+        printf '\r\033[K' >/dev/tty 2>/dev/null || :
+        _terminal_msg normal "$1"
+    }
 
-    # Suppress background-job notifications while loader runs.
+    # Helper to run noisy commands silently while loader animates; dumps log on failure
+    _run_step() {
+        local desc="$1"
+        shift
+        _step_msg "$desc"
+        if ! "$@" >>"$log_file" 2>&1; then
+            _cleanup_workspaceai
+            _terminal_msg error "Failed: $desc (see output below)"
+            cat "$log_file" >&2
+            return 1
+        fi
+    }
+
+    trap _cleanup_workspaceai RETURN INT TERM
+
     case "$-" in
         *m*) had_job_control=1; set +m ;;
     esac
 
-    # Start animated loader.
-    load_progress >/dev/null 2>&1 &
-    LOADER_PID=$!
+    # Start loader only if attached to an interactive terminal
+    if [[ -w /dev/tty ]]; then
+        _load_progress >/dev/null 2>&1 &
+        loader_pid=$!
+    fi
 
-     _terminal_msg normal "Installing nvm, node, npm"
-    workspacenode || return 1
-
-    _terminal_msg normal "Exporting deps"
+    # 1. Load existing NVM and PATH first so checks can detect installed binaries
+    _step_msg "Exporting deps"
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-    # Ensure ~/.local/bin is in PATH for the Devin CLI
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
         *) export PATH="$HOME/.local/bin:$PATH" ;;
     esac
 
-    _terminal_msg normal "Installing cline cli"
-    npm i -g cline || return 1
-
-    _terminal_msg normal "Installing devin cli"
-    curl -fsSL https://cli.devin.ai/install.sh | bash || return 1
-
-    # Always stop loader after GCloud returns.
-    stop_loader
-
-    # Restore original job-control setting.
-    if (( had_job_control )); then
-        set -m
+    # 2. Check & install nvm, node, npm
+    if command -v nvm >/dev/null 2>&1 && command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+        _step_msg "nvm, node, and npm already installed — skipping"
+    else
+        _run_step "Installing nvm, node, npm" workspacenode || return 1
+        # Re-source nvm in case workspacenode just installed it
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
     fi
 
+    # 3. Check & install cline CLI
+    if command -v cline >/dev/null 2>&1; then
+        _step_msg "cline cli already installed — skipping"
+    else
+        _run_step "Installing cline cli" npm install -g cline --no-progress || return 1
+    fi
+
+    # 4. Check & install devin CLI
+    if command -v devin >/dev/null 2>&1 || [ -x "$HOME/.local/bin/devin" ]; then
+        _step_msg "devin cli already installed — skipping"
+    else
+        _run_step "Installing devin cli" bash -c 'curl -fsSL https://devin.ai | bash' || return 1
+    fi
+
+    _cleanup_workspaceai
+    _terminal_msg normal "Workspace AI setup complete ✅"
 }
+
+
 
 # Dedicated SSH agent for the home-security key
 workspaceagent() {
@@ -516,6 +552,12 @@ echo
 run0 ps -aux | grep 'ssh-agent'
 echo
 _terminal_msg normal "🐧 Termination signals sent. Processes may take time to exit."
+}
+
+# install gcloud cli
+workspacegcloud(){
+curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir="$HOME"
+_terminal_msg success "gcloud cli is installed."
 }
 
 # google sync
