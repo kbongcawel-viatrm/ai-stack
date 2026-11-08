@@ -83,6 +83,7 @@
       ansible.builtin.command:
         argv: [systemctl, is-active, "{{ item }}"]
       loop:
+        - clamav-freshclam-daily.timer
         - clamav-scan.timer
         - lynis-audit.timer
         - suricata-rule-refresh.timer
