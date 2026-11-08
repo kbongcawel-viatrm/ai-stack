@@ -27,6 +27,10 @@ storage:
       mode: 0750
     - path: /etc/nftables
       mode: 0750
+    - path: /etc/systemd/user/sockets.target.wants
+      mode: 0755
+    - path: /etc/suricata
+      mode: 0750
     - path: /etc/sysctl.d
       mode: 0755
     - path: /etc/profile.d
@@ -151,6 +155,20 @@ storage:
             </rule>
           </policy>
 
+    # Suricata 8 override is passed with --include so package defaults remain
+    # intact. Ansible validates this file against the installed Suricata build.
+    - path: /etc/suricata/fcos-overrides.yaml
+      mode: 0640
+      overwrite: true
+      contents:
+        inline: |
+          vars:
+            address-groups:
+              HOME_NET: "[192.168.1.0/24]"
+              EXTERNAL_NET: "!$HOME_NET"
+          nfq:
+            mode: accept
+
     # The rules inspect host traffic entering/leaving enp1s0. Queue bypass is
     # intentionally fail-open if Suricata is down, to avoid losing management
     # connectivity; monitoring must alert if the NFQUEUE service is inactive.
@@ -260,7 +278,7 @@ storage:
           suricata-update update-sources
           suricata-update enable-source et/open
           suricata-update
-          suricata -T -c /etc/suricata/suricata.yaml
+          suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
 
     - path: /usr/local/sbin/clamav-daily-scan
       mode: 0750
@@ -280,7 +298,7 @@ storage:
             --exclude-dir='^/run(/|$)' \
             --exclude-dir='^/var/lib/containers(/|$)' \
             --exclude-dir='^/var/home/[^/]+/\.local/share/containers(/|$)' \
-            /etc /usr/local /var/home
+            /etc /usr /opt /var/home
 
     - path: /usr/local/sbin/lynis-daily-audit
       mode: 0750
@@ -318,7 +336,7 @@ storage:
           suricata-update update-sources
           suricata-update enable-source et/open
           suricata-update
-          suricata -T -c /etc/suricata/suricata.yaml
+          suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
           if systemctl is-active --quiet suricata.service; then
             systemctl restart suricata.service
           fi
@@ -402,7 +420,7 @@ systemd:
 
         [Service]
         Type=simple
-        ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml -q 0
+        ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml -q 0
         Restart=on-failure
         RestartSec=5
         User=root
@@ -489,6 +507,7 @@ systemd:
         [Unit]
         Description=Daily read-only ClamAV scan
         ConditionFileIsExecutable=/usr/bin/clamscan
+        Requires=clamav-freshclam-daily.service
         After=clamav-freshclam-daily.service
 
         [Service]
