@@ -10,7 +10,7 @@
     fcos_vm_disk_gb: 75
     fcos_network_bridge: br0
     fcos_image_dir: /var/lib/libvirt/images
-    fcos_ignition_remote_path: /var/lib/libvirt/ignition/fcos-security.ign
+    fcos_ignition_remote_path: /var/lib/libvirt/images/fcos-security.ign
     fcos_lan_ip: 192.168.1.20
     fcos_qemu_user: qemu
     fcos_qemu_group: qemu
@@ -156,6 +156,11 @@
         owner: "{{ fcos_qemu_user }}"
         group: "{{ fcos_qemu_group }}"
         mode: "0660"
+
+    - name: Restore SELinux label on new overlay disk when using Secureblue
+      ansible.builtin.command: "restorecon -F {{ fcos_image_dir }}/{{ fcos_vm_name }}.qcow2"
+      when: host_os == "secureblue"
+      changed_when: true
 
     - name: Define and start FCOS VM with Ignition fw_cfg
       ansible.builtin.command:
