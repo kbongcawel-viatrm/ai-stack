@@ -316,7 +316,6 @@
         enabled: true
         state: started
       loop:
-        - clamav-freshclam-daily.timer
         - clamav-scan.timer
         - lynis-audit.timer
 
