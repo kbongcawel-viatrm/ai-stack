@@ -1,5 +1,5 @@
 #!/sbin/openrc-run
-# shellcheck disable=SC2154
+# shellcheck disable=SC2034,SC2154
 
 description="Restore persistent libvirt domains from the Alpine diskless data volume"
 
@@ -12,7 +12,6 @@ depend() {
 }
 
 start() {
-  local xml domain state
   ebegin "Restoring persistent libvirt domains"
 
   if ! grep -qsE "[[:space:]]$LIBVIRT_STORAGE_MOUNTPOINT[[:space:]]" /proc/mounts; then
