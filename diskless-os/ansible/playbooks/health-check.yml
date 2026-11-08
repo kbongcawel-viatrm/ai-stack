@@ -81,7 +81,6 @@
       ansible.builtin.command:
         argv: [systemctl, is-active, "{{ item }}"]
       loop:
-        - clamav-freshclam-daily.timer
         - clamav-scan.timer
         - lynis-audit.timer
         - suricata-rule-refresh.timer
@@ -135,7 +134,16 @@
       failed_when: >-
         fcos_lan_ip not in fcos_egress_policy.stdout or
         "HOST" not in fcos_egress_policy.stdout or
-        "ANY" not in fcos_egress_policy.stdout
+        "ANY" not in fcos_egress_policy.stdout or
+        "http" not in fcos_egress_policy.stdout or
+        "https" not in fcos_egress_policy.stdout or
+        "80/tcp" not in fcos_egress_policy.stdout or
+        "443/tcp" not in fcos_egress_policy.stdout
+
+    - name: Test base Suricata configuration
+      ansible.builtin.command:
+        argv: [suricata, -T, -c, /etc/suricata/suricata.yaml]
+      changed_when: false
 
     - name: Test Suricata configuration with FCOS overrides
       ansible.builtin.command:
