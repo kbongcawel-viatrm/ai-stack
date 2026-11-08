@@ -79,6 +79,7 @@ jobs:
           set -Eeuo pipefail
           find diskless-os -type f -name '*.sh' -print0 | xargs -0 -r bash -n
           find diskless-os -type f -name '*.sh' -print0 | xargs -0 -r shellcheck
+          shellcheck -s sh diskless-os/alpine/apkovl/etc/init.d/libvirt-vms
 
       - name: Validate Ansible playbook syntax and lint
         working-directory: diskless-os/ansible
