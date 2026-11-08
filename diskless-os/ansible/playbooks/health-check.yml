@@ -27,7 +27,6 @@
   become: true
   gather_facts: true
   vars:
-    fcos_lan_ip: 192.168.1.20
     podman_socket: unix:///run/user/1000/podman/podman.sock
   tasks:
     - name: Verify expected FCOS address
