@@ -97,7 +97,7 @@
       ansible.builtin.command: firewall-cmd --info-policy fcos-egress
       register: fcos_egress_policy
       changed_when: false
-      failed_when: "'192.168.1.20' in fcos_egress_policy.stdout"
+      failed_when: "'192.168.1.20' not in fcos_egress_policy.stdout"
 
     - name: Enable NFQUEUE nftables hooks with queue-bypass
       ansible.builtin.systemd:
