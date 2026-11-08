@@ -31,21 +31,20 @@ Alpine Linux is the PXE-booted physical hypervisor host. Fedora CoreOS (FCOS) ru
            |                    |                     |
          Deploy              Health               Services 
            |                    |                     |              
-       +------------------------+---------------------------+
-       |                        |                           |              
-      Alpine               Fedora CoreOS VM                 |
-      Diskless                Security                      |    
-         |                      |                           |
-         +----------------------+---------------------------+                                     
-      OpenRC                  Suricata                Podman / Docker                 
-      Networking              Firewalld               Kasm Services                              
-      SSH                     ClamAV                        |                                   
-                              Aide                          + 
-                              Lynis                         |       
-                                         +---------------------------------+
-                                         |                                 |                                     
-                                    Workspace-1                       Workspace-N
-                                   Firefox Browser       ...         
+       +------------------------+-------------------------+
+       |                      |                           |              
+     Alpine OS               FCOS                         |
+       |                      |                           |
+       +----------------------+---------------------------+                                     
+      OpenRC                  Suricata                    Podman / Docker                 
+      Networking              Firewalld                   Kasm Services                              
+      SSH                     ClamAV                            |                                   
+                              Aide                              + 
+                              Lynis                             |       
+                                               +---------------------------------+
+                                               |                                 |                                     
+                                          Workspace-1                       Workspace-N
+                                         Firefox Browser       ...         
 ```
 ## Deployment order
 1. Configure DHCP/PXE (router boot options or one dedicated DHCP/PXE service; never run competing DHCP servers).
