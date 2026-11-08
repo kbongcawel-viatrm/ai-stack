@@ -729,11 +729,13 @@ git config --global gpg.program "$(command -v gpg)"
 _terminal_msg success "Done generating SSH and GPG keys!🔑🚀"
 sleep 2
 
-terminal_msg warning "🔑 SSH public key : (Proceed to add in GH)"
+_terminal_msg warning "  🔑 SSH public key : (Proceed to add in GH)"
 cat "${ssh_key_path}.pub"
 sleep 2
 
-terminal_msg warning"🔑 GPG public key: (Proceed to add in GH)"
+_print_line bold "1;32" 35
+
+_terminal_msg warning"  🔑 GPG public key: (Proceed to add in GH)"
 gpg --armor --export "$gpg_key_id"
 sleep 2
 
