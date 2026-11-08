@@ -1,71 +1,63 @@
 # Diskless Home Infrastructure
 
-Alpine Linux is the PXE-booted physical hypervisor host. Fedora CoreOS (FCOS) runs security services. A dedicated Ubuntu Server VM runs Kasm Workspaces. GitHub Actions coordinates validation, deployment and health checks using the self-hosted runner labelled `home-server`.
+Alpine Linux is the default physical host and boots disklessly through iPXE. Fedora CoreOS (FCOS) is the default guest VM and hosts rootless Podman, Docker-compatible CLI tooling, security services and the Kasm compatibility proof of concept.
 
-## Components
-- **Alpine:** diskless host, OpenRC, KVM/QEMU/libvirt; LBU persists required host state.
-- **FCOS VM:** Suricata, Firewalld, AIDE, ClamAV and Lynis.
-- **Ubuntu Server VM:** Kasm Workspaces on a dedicated supported Ubuntu Server host with Docker Engine.
-- **TP-Link Archer AX55:** intended SMB storage. SMB is not itself a DHCP/PXE/TFTP service; verify firmware capabilities or deploy PXE services separately.
-- **CI/CD:** GitHub Actions on `home-server`, using protected secrets/environments.
+The host-VM workflow is deliberately independent of the host-OS workflow. The hypervisor may be Alpine (default), Fedora Secureblue, Arch Linux or Ubuntu, provided KVM/QEMU/libvirt are already installed and reachable. This permits a manual install, USB boot or another boot medium without changing the VM deployment pipeline.
 
-## Layout
-- `docs/`: architecture, deployment plan, PXE automation and runbook.
-- `pxe/`: dnsmasq example and iPXE menu.
-- `alpine/`: host notes and validation script.
-- `butane/`: FCOS Butane source.
-- `ansible/`: inventory examples and operations guide.
-- `services/`: service configuration notes.
-- `.github/workflows/`: validation, health and gated PXE workflow.
+## Architecture
 
-## Deployment and Configuration management
-```bash
-                          GitHub Actions
-                                |
-                            Runner deploys
-                                |
-                                + 
-                              Ansible            
-           +--------------------+---------------------+
-           |                    |                     |
-         Deploy               Health              Provision 
-           |                    |                     |              
-       +------------------------+-------------------------+
-       |                        |                         |              
-     Alpine OS                FCOS                        |
-       |                        |                         |
-       +------------------------+---------------------------+          
-       |                        |
-      OpenRC                 Services ---------------------- Podman
-                                |                              |
-                           Suricata                            + (docker.socket)
-      Networking           Firewalld                     Kasm Workspaces                              
-      SSH                  ClamAV                              |                                   
-                           Aide                                + 
-                           Lynis                               |       
-                           SSH               +---------------------------------+
-                           ...               |                                 |                                     
-                                          Workspace-1                       Workspace-N
-                                         Firefox Browser       ...         
-```
+- **Host OS (default Alpine diskless):** PXE/iPXE boot, OpenRC, KVM/QEMU/libvirt and durable VM storage. Alpine LBU persists required configuration.
+- **Alternative hypervisors:** Fedora Secureblue, Arch Linux or Ubuntu. These are supported as deployment targets only when virtualization prerequisites are prepared separately.
+- **FCOS VM:** rootless Podman, Podman API socket, Docker-compatible CLI wrapper, Firewalld, Suricata, AIDE, ClamAV and Lynis.
+- **Kasm:** compatibility POC inside FCOS. Production install is gated until Kasm's Docker/Compose requirements and rootless Podman behavior pass an end-to-end test.
+- **Storage:** VM disks and persistent application data live on durable storage. NAS/SMB is storage only unless it separately provides DHCP/PXE/TFTP/HTTP.
+- **CI/CD:** root-level GitHub Actions workflows use a protected self-hosted runner and Ansible.
+
+## Deployment workflows
+
+| Workflow | Scope | Independent prerequisite |
+|---|---|---|
+| Deploy Host OS | Build, verify and publish Alpine netboot assets and iPXE menu | PXE HTTP/TFTP publisher and router/firmware PXE configuration |
+| Deploy Host VM | Provision FCOS VM on an existing hypervisor | Existing host OS with KVM/QEMU/libvirt and bridge/storage ready |
+| Provision Services/Containers | Configure FCOS rootless Podman, firewall, Suricata, AIDE, ClamAV, Lynis and Compose smoke stack | Reachable FCOS VM and SSH credentials |
+| Health Check | Run Ansible checks against configured host and FCOS targets | Reachable targets and known_hosts |
+
+The host VM workflow does not invoke or require Deploy Host OS. Alpine is the default, not a hard dependency.
+
 ## Deployment order
-1. Configure DHCP/PXE (router boot options or one dedicated DHCP/PXE service; never run competing DHCP servers).
-2. Build/publish Alpine kernel/initramfs/rootfs and iPXE menu.
-3. PXE boot Alpine; persist required settings with LBU.
-4. Provision FCOS and Ubuntu VMs on durable storage.
-5. Apply FCOS Butane/Ignition at first boot.
-6. Apply Ansible for FCOS services, SSH/firewall, daily scans and health checks.
-7. Install Kasm on the dedicated Ubuntu Server VM.
-8. Verify network visibility, service health and application endpoints.
 
-## Security boundaries
-- FCOS SSH only from `192.168.1.0/24`; public-key authentication only; root remote login by key.
-- Keep console access before changing SSH, networking or firewall rules.
-- Butane generates Ignition for FCOS; it is not an Ubuntu/Kasm provisioning mechanism.
-- Do not run Kasm server inside Toolbox; Toolbox is for development tools.
-- Suricata sees only traffic delivered to its interface. NFQUEUE IPS needs explicit queue rules and NFQUEUE mode; passive capture is different.
-- AIDE needs a trusted baseline reviewed and protected off-host before enabling its daily timer.
-- FCOS Ansible is configuration-only; required packages must already be in the FCOS image.
+1. Prepare PXE services and router/firmware boot settings.
+2. Run **Deploy Host OS** to publish a pinned Alpine netboot release; PXE boot the host.
+3. Alternatively, manually install Alpine, Secureblue, Arch or Ubuntu and prepare KVM/QEMU/libvirt.
+4. Run **Deploy Host VM** to create the FCOS guest on the prepared hypervisor.
+5. Run **Provision Services/Containers** to configure FCOS.
+6. Run the **Health Check** workflow.
+7. Run the Kasm POC gate. Do not install production Kasm until the installer, API, Compose, services and workspace lifecycle pass.
 
-Read [PXE automation](docs/pxe-automation.md) and [deployment plan](docs/deployment-plan.md).
+## Network defaults
 
+- LAN: `192.168.1.0/24`
+- FCOS VM example: `192.168.1.20`
+- Alpine host example: `192.168.1.10`
+- FCOS capture/management NIC: `enp1s0`
+- FCOS SSH: public-key only, allowed from the LAN CIDR.
+- Firewalld inbound: default DROP with a restricted LAN SSH exception.
+- Firewalld host egress: explicit source address and HTTP/HTTPS; DNS/NTP are included for basic operation. Additional egress ports must be explicitly declared.
+
+Change the example IPs in Ansible inventory before deployment. The egress policy requires the FCOS LAN host address as an explicit variable.
+
+## Resource constraint
+
+The physical host has 8 GB RAM and an Intel i3-10320. FCOS plus Kasm services and a workspace may exceed available memory. Start with no more than one test workspace, measure memory/swap/IO, and do not assume Kasm's documented minimums are sufficient for this host.
+
+## Repository layout
+
+- `.github/workflows/`: executable GitHub Actions workflows (must be at repository root).
+- `diskless-os/ansible/`: inventories, playbooks and roles.
+- `diskless-os/alpine/`: diskless host notes and validation.
+- `diskless-os/pxe/`: iPXE and dnsmasq configuration.
+- `diskless-os/butane/`: FCOS Ignition source.
+- `diskless-os/services/`: service and container configuration.
+- `diskless-os/docs/`: architecture, deployment plan and runbooks.
+
+See [architecture](docs/architecture.md), [deployment plan](docs/deployment-plan.md), [PXE automation](docs/pxe-automation.md) and [Ansible operations](ansible/README.md).
