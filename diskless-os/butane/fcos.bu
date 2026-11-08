@@ -329,12 +329,31 @@ storage:
       contents:
         inline: ""
 
+    - path: /var/home/core/.bashrc
+      mode: 0644
+      overwrite: true
+      user:
+        name: core
+      group:
+        name: core
+      contents:
+        inline: |
+          # Preserve Fedora's system-wide interactive Bash configuration.
+          if [ -r /etc/bashrc ]; then
+            . /etc/bashrc
+          fi
+          # Load the rootless Podman/Docker-compatible client environment.
+          if [ -r /etc/profile.d/podman-remote.sh ]; then
+            . /etc/profile.d/podman-remote.sh
+          fi
+
     - path: /etc/profile.d/podman-remote.sh
       mode: 0644
       overwrite: true
       contents:
         inline: |
           # Rootless Podman API socket for the FCOS core user.
+          export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
           export CONTAINER_HOST="unix:///run/user/1000/podman/podman.sock"
           export DOCKER_HOST="$CONTAINER_HOST"
           if [ -n "${BASH_VERSION:-}" ] && [[ $- == *i* ]]; then
