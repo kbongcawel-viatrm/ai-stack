@@ -78,7 +78,7 @@
         state: directory
         owner: root
         group: root
-        mode: "0750"
+        mode: "0755"
       loop:
         - "{{ fcos_image_dir }}"
         - "{{ fcos_image_dir }}/base"
@@ -90,8 +90,8 @@
         dest: "{{ fcos_image_dir }}/base/fcos-base.qcow2"
         checksum: "sha256:{{ fcos_qcow2_sha256 }}"
         owner: root
-        group: qemu
-        mode: "0640"
+        group: root
+        mode: "0644"
         timeout: 600
 
     - name: Verify downloaded image format
@@ -110,7 +110,16 @@
         dest: "{{ fcos_ignition_remote_path }}"
         owner: root
         group: root
-        mode: "0600"
+        mode: "0644"
+
+    - name: Restore SELinux labels where SELinux is available
+      ansible.builtin.shell: |
+        if command -v restorecon >/dev/null 2>&1; then
+          restorecon -Rv "{{ fcos_image_dir }}" /var/lib/libvirt/ignition
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: true
 
     - name: Check whether an orphaned overlay disk exists
       ansible.builtin.stat:
