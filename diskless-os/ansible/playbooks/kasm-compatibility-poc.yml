@@ -4,10 +4,19 @@
   become: false
   gather_facts: false
   vars:
-    podman_socket: unix:///run/user/1000/podman/podman.sock
     kasm_min_docker_version: "28.5.2"
     kasm_min_compose_version: "2.40.2"
   tasks:
+    - name: Detect the SSH account UID
+      ansible.builtin.command: id -u
+      register: podman_user_uid
+      changed_when: false
+
+    - name: Derive the rootless Podman socket path
+      ansible.builtin.set_fact:
+        podman_socket: "unix:///run/user/{{ podman_user_uid.stdout }}/podman/podman.sock"
+        podman_runtime_dir: "/run/user/{{ podman_user_uid.stdout }}"
+
     - name: Ensure rootless user socket is active
       ansible.builtin.systemd_service:
         name: podman.socket
@@ -15,7 +24,7 @@
         enabled: true
         state: started
       environment:
-        XDG_RUNTIME_DIR: /run/user/1000
+        XDG_RUNTIME_DIR: "{{ podman_runtime_dir }}"
 
     - name: Capture Docker CLI and server output through the alias
       ansible.builtin.command: >-

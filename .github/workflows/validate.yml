@@ -2,7 +2,7 @@ name: Validate diskless infrastructure
 
 on:
   pull_request:
-    paths: [".github/workflows/**", "diskless-os/**"]
+    paths: [".github/workflows/**", ".github/actionlint.yaml", "diskless-os/**"]
   push:
     branches: [main]
     paths: [".github/workflows/**", "diskless-os/**"]
@@ -114,6 +114,14 @@ jobs:
             ansible-playbook -i localhost, --syntax-check "$playbook"
           done
           ansible-lint --profile basic playbooks/
+
+      - name: Validate GitHub Actions workflow semantics
+        # Runner labels are defined in .github/actionlint.yaml.
+        run: |
+          set -Eeuo pipefail
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o "$RUNNER_TEMP/download-actionlint"
+          bash "$RUNNER_TEMP/download-actionlint" 1.7.12 "$RUNNER_TEMP"
+          "$RUNNER_TEMP/actionlint" -color -config-file .github/actionlint.yaml -shellcheck="" .github/workflows/*.yml
 
       - name: Parse repository YAML
         run: |

@@ -3,6 +3,34 @@ on:
     branches: ["**"]
     paths: [".github/workflows/health-check.yml"]
   workflow_dispatch:
+    inputs:
+      fcos_vm_ip:
+        description: FCOS target IP; defaults to FCOS_VM_IP variable
+        required: false
+        type: string
+      fcos_vm_name:
+        description: FCOS libvirt domain name
+        required: false
+        default: fcos-security
+        type: string
+      fcos_ssh_user:
+        description: FCOS SSH user; defaults to FCOS_SSH_USER variable
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      fcos_vm_ip:
+        type: string
+        required: false
+        default: ""
+      fcos_vm_name:
+        type: string
+        required: false
+        default: fcos-security
+      fcos_ssh_user:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -20,7 +48,7 @@ jobs:
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
 
   health:
-    if: ${{ github.event_name == 'workflow_dispatch' }} || github.event_name == 'schedule'
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'workflow_call' }}
     runs-on: [self-hosted, linux, home-server]
     environment: fcos-production
     defaults:
@@ -55,9 +83,10 @@ jobs:
           HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
           HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
           HOST_OS: ${{ vars.HOST_OS }}
-          FCOS_VM_IP: ${{ vars.FCOS_VM_IP }}
-          FCOS_SSH_USER: ${{ vars.FCOS_SSH_USER }}
-          FCOS_LAN_IP: ${{ vars.FCOS_LAN_IP }}
+          FCOS_VM_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_VM_IP }}
+          FCOS_VM_NAME: ${{ inputs.fcos_vm_name || 'fcos-security' }}
+          FCOS_SSH_USER: ${{ inputs.fcos_ssh_user || vars.FCOS_SSH_USER }}
+          FCOS_LAN_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_LAN_IP }}
           FCOS_LAN_CIDR: ${{ vars.FCOS_LAN_CIDR }}
           FCOS_INTERFACE: ${{ vars.FCOS_INTERFACE }}
           AIDE_ENABLE_DAILY_TIMER: ${{ vars.AIDE_ENABLE_DAILY_TIMER }}
@@ -77,7 +106,7 @@ jobs:
                       "ansible_become": os.environ["HYPERVISOR_USER"] != "root",
                       "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/hypervisor"),
                       "host_os": os.environ.get("HOST_OS") or "alpine",
-                      "fcos_vm_name": "fcos-security"
+                      "fcos_vm_name": os.environ.get("FCOS_VM_NAME") or "fcos-security"
                   }}},
                   "fcos": {"hosts": {"fcos-security": {
                       "ansible_host": os.environ["FCOS_VM_IP"],

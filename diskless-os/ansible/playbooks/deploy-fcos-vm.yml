@@ -4,7 +4,7 @@
   become: true
   gather_facts: true
   vars:
-    fcos_vm_name: fcos-security
+    fcos_vm_name: fcos-kasm-poc
     fcos_vm_memory_mb: 4096
     fcos_vm_vcpus: 2
     fcos_vm_disk_gb: 75
