@@ -6,6 +6,10 @@ APKVOL_ROOT="${APKVOL_ROOT:-$SCRIPT_DIR/../apkovl}"
 OUTPUT="${1:-$PWD/host.apkovl.tar.gz}"
 SSH_PUBLIC_KEY="${ALPINE_SSH_PUBLIC_KEY:?Set ALPINE_SSH_PUBLIC_KEY to a public key}"
 HOST_NIC="${ALPINE_HOST_NIC:-enp1s0}"
+STORAGE_UUID="${ALPINE_STORAGE_UUID:-}"
+STORAGE_MOUNTPOINT="${ALPINE_STORAGE_MOUNTPOINT:-/mnt/nvme}"
+VM_STORAGE_PATH="${ALPINE_VM_STORAGE_PATH:-$STORAGE_MOUNTPOINT/libvirt/images}"
+STORAGE_FSTYPE="${ALPINE_STORAGE_FSTYPE:-ext4}"
 
 [[ -d "$APKVOL_ROOT" ]] || { echo "Missing apkovl source: $APKVOL_ROOT" >&2; exit 1; }
 [[ "$HOST_NIC" =~ ^[a-zA-Z0-9_.:-]+$ ]] || { echo "Invalid interface name: $HOST_NIC" >&2; exit 1; }
@@ -30,6 +34,24 @@ ln -sfn /etc/init.d/networking "$root/etc/runlevels/boot/networking"
 ln -sfn /etc/init.d/modules "$root/etc/runlevels/boot/modules"
 ln -sfn /etc/init.d/sshd "$root/etc/runlevels/default/sshd"
 ln -sfn /etc/init.d/libvirtd "$root/etc/runlevels/default/libvirtd"
+
+if [[ -n "$STORAGE_UUID" ]]; then
+  [[ "$STORAGE_UUID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo "Invalid ALPINE_STORAGE_UUID" >&2; exit 1; }
+  [[ "$STORAGE_MOUNTPOINT" =~ ^/[A-Za-z0-9._/-]+$ && "$STORAGE_MOUNTPOINT" != "/" ]] || { echo "Invalid ALPINE_STORAGE_MOUNTPOINT" >&2; exit 1; }
+  [[ "$VM_STORAGE_PATH" == "$STORAGE_MOUNTPOINT/"* && "$VM_STORAGE_PATH" != *"/../"* ]] || { echo "ALPINE_VM_STORAGE_PATH must be beneath ALPINE_STORAGE_MOUNTPOINT" >&2; exit 1; }
+  [[ "$STORAGE_FSTYPE" =~ ^[a-zA-Z0-9]+$ ]] || { echo "Invalid ALPINE_STORAGE_FSTYPE" >&2; exit 1; }
+  install -d -m 0755 "$root$STORAGE_MOUNTPOINT" "$root/etc/conf.d"
+  printf 'UUID=%s %s %s defaults,noatime 0 2\n' "$STORAGE_UUID" "$STORAGE_MOUNTPOINT" "$STORAGE_FSTYPE" >> "$root/etc/fstab"
+  cat > "$root/etc/conf.d/libvirt-vms" <<EOF
+LIBVIRT_STORAGE_MOUNTPOINT="$STORAGE_MOUNTPOINT"
+LIBVIRT_DOMAIN_DIR="$VM_STORAGE_PATH/domains"
+EOF
+  chmod 0644 "$root/etc/conf.d/libvirt-vms"
+  ln -sfn /etc/init.d/localmount "$root/etc/runlevels/boot/localmount"
+  ln -sfn /etc/init.d/libvirt-vms "$root/etc/runlevels/default/libvirt-vms"
+else
+  rm -f "$root/etc/init.d/libvirt-vms" "$root/etc/conf.d/libvirt-vms" "$root/etc/runlevels/default/libvirt-vms"
+fi
 
 chmod 0600 "$root/etc/ssh/sshd_config"
 chmod 0644 "$root/etc/ssh/sshd_config.d/00-local-security.conf"
