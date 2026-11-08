@@ -1,0 +1,172 @@
+---
+- name: Provision Fedora CoreOS VM on an existing hypervisor
+  hosts: hypervisors
+  become: true
+  gather_facts: true
+  vars:
+    fcos_vm_name: fcos-security
+    fcos_vm_memory_mb: 4096
+    fcos_vm_vcpus: 2
+    fcos_vm_disk_gb: 75
+    fcos_network_bridge: br0
+    fcos_image_dir: /var/lib/libvirt/images
+    fcos_ignition_remote_path: /var/lib/libvirt/ignition/fcos-security.ign
+    fcos_lan_ip: 192.168.1.20
+    supported_host_os:
+      - alpine
+      - secureblue
+      - arch
+      - ubuntu
+  tasks:
+    - name: Validate host OS selection and required deployment inputs
+      ansible.builtin.assert:
+        that:
+          - host_os in supported_host_os
+          - fcos_qcow2_url is defined
+          - fcos_qcow2_sha256 is defined
+          - fcos_qcow2_sha256 is match('^[a-fA-F0-9]{64}$')
+          - fcos_ignition_local_path is defined
+          - fcos_network_bridge | length > 0
+        fail_msg: "Supply a supported host_os, pinned FCOS QCOW2 URL/SHA256, Ignition file and bridge."
+
+    - name: Verify hypervisor tooling
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        for binary in virsh virt-install qemu-img; do
+          command -v "$binary" >/dev/null || {
+            echo "Missing hypervisor tool: $binary" >&2
+            exit 1
+          }
+        done
+        virsh -c qemu:///system uri
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify KVM device
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: kvm_device
+
+    - name: Require KVM device
+      ansible.builtin.assert:
+        that:
+          - kvm_device.stat.exists
+        fail_msg: "KVM is unavailable. Prepare the selected host OS and enable virtualization first."
+
+    - name: Verify requested bridge exists
+      ansible.builtin.command: "ip link show dev {{ fcos_network_bridge }}"
+      changed_when: false
+
+    - name: Check whether the FCOS domain already exists
+      ansible.builtin.command: "virsh -c qemu:///system dominfo {{ fcos_vm_name }}"
+      register: existing_domain
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse to overwrite an existing VM
+      ansible.builtin.assert:
+        that:
+          - existing_domain.rc != 0
+        fail_msg: >-
+          VM {{ fcos_vm_name }} already exists. This playbook never destroys or
+          overwrites an existing domain; perform an explicit backup/recovery plan first.
+
+    - name: Create image and Ignition directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - "{{ fcos_image_dir }}"
+        - "{{ fcos_image_dir }}/base"
+        - /var/lib/libvirt/ignition
+
+    - name: Download pinned FCOS base QCOW2
+      ansible.builtin.get_url:
+        url: "{{ fcos_qcow2_url }}"
+        dest: "{{ fcos_image_dir }}/base/fcos-base.qcow2"
+        checksum: "sha256:{{ fcos_qcow2_sha256 }}"
+        owner: root
+        group: qemu
+        mode: "0640"
+        timeout: 600
+
+    - name: Verify downloaded image format
+      ansible.builtin.command: "qemu-img info --output=json {{ fcos_image_dir }}/base/fcos-base.qcow2"
+      register: base_image_info
+      changed_when: false
+
+    - name: Assert downloaded image is QCOW2
+      ansible.builtin.assert:
+        that:
+          - (base_image_info.stdout | from_json).format == "qcow2"
+
+    - name: Install rendered Ignition configuration on hypervisor
+      ansible.builtin.copy:
+        src: "{{ fcos_ignition_local_path }}"
+        dest: "{{ fcos_ignition_remote_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Create persistent overlay disk
+      ansible.builtin.command:
+        argv:
+          - qemu-img
+          - create
+          - -f
+          - qcow2
+          - -F
+          - qcow2
+          - -b
+          - "{{ fcos_image_dir }}/base/fcos-base.qcow2"
+          - "{{ fcos_image_dir }}/{{ fcos_vm_name }}.qcow2"
+          - "{{ fcos_vm_disk_gb }}G"
+      args:
+        creates: "{{ fcos_image_dir }}/{{ fcos_vm_name }}.qcow2"
+
+    - name: Define and start FCOS VM with Ignition fw_cfg
+      ansible.builtin.command:
+        argv:
+          - virt-install
+          - --connect
+          - qemu:///system
+          - --name
+          - "{{ fcos_vm_name }}"
+          - --memory
+          - "{{ fcos_vm_memory_mb | string }}"
+          - --vcpus
+          - "{{ fcos_vm_vcpus | string }}"
+          - --cpu
+          - host-passthrough
+          - --import
+          - --disk
+          - "path={{ fcos_image_dir }}/{{ fcos_vm_name }}.qcow2,format=qcow2,bus=virtio"
+          - --network
+          - "bridge={{ fcos_network_bridge }},model=virtio"
+          - --graphics
+          - none
+          - --noautoconsole
+          - --autostart
+          - --qemu-commandline
+          - "-fw_cfg name=opt/com.coreos/config,file={{ fcos_ignition_remote_path }}"
+      register: virt_install
+      changed_when: true
+
+    - name: Wait for FCOS SSH to become reachable
+      ansible.builtin.wait_for:
+        host: "{{ fcos_lan_ip }}"
+        port: 22
+        delay: 15
+        sleep: 10
+        timeout: 900
+
+    - name: Report VM provisioning result
+      ansible.builtin.debug:
+        msg:
+          - "FCOS VM {{ fcos_vm_name }} is reachable at {{ fcos_lan_ip }}."
+          - "Hypervisor OS selected: {{ host_os }}."
+          - "Host OS deployment was not invoked; this workflow is independent."
