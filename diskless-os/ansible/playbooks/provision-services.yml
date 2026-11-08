@@ -1,0 +1,231 @@
+---
+- name: Provision FCOS system services and rootless container runtime
+  hosts: fcos
+  become: true
+  gather_facts: true
+
+  vars:
+    fcos_user: core
+    fcos_layered_packages:
+      - firewalld
+      - nftables
+      - suricata
+      - aide
+      - clamav
+      - clamav-freshclam
+      - lynis
+      - podman-compose
+    fcos_lan_ip: 192.168.1.20
+    fcos_lan_cidr: 192.168.1.0/24
+    suricata_interface: enp1s0
+    aide_enable_daily_timer: false
+    suricata_enable_update_timer: true
+
+  tasks:
+    - name: Require the expected FCOS host and service network
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == "Fedora"
+          - ansible_facts.os_family == "RedHat"
+          - fcos_lan_ip == "192.168.1.20"
+          - fcos_lan_cidr == "192.168.1.0/24"
+          - suricata_interface == "enp1s0"
+        fail_msg: >-
+          This Butane profile is pinned to FCOS, enp1s0, LAN 192.168.1.0/24
+          and FCOS address 192.168.1.20. Update Butane and inventory together
+          before changing these values.
+
+    - name: Check layered package presence
+      ansible.builtin.command:
+        argv:
+          - rpm
+          - -q
+          - "{{ item }}"
+      loop: "{{ fcos_layered_packages }}"
+      register: fcos_package_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Calculate packages missing from the active deployment
+      ansible.builtin.set_fact:
+        fcos_missing_packages: >-
+          {{
+            fcos_package_checks.results
+            | selectattr('rc', 'ne', 0)
+            | map(attribute='item')
+            | list
+          }}
+
+    - name: Layer required FCOS packages
+      ansible.builtin.command:
+        argv: "{{ ['rpm-ostree', 'install'] + fcos_missing_packages }}"
+      when: fcos_missing_packages | length > 0
+      register: fcos_layer_result
+      changed_when: true
+
+    - name: Reboot into the package deployment
+      ansible.builtin.reboot:
+        reboot_timeout: 1200
+        connect_timeout: 10
+        post_reboot_delay: 20
+      when: fcos_missing_packages | length > 0
+
+    - name: Reload systemd unit definitions
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Ensure Firewalld and the public default zone are active
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - firewalld.service
+        - fcos-firewalld-default-zone.service
+
+    - name: Reload Firewalld configuration from Butane
+      ansible.builtin.command: firewall-cmd --reload
+      changed_when: true
+
+    - name: Verify the protected NIC is assigned to the public zone
+      ansible.builtin.command: firewall-cmd --get-zone-of-interface={{ suricata_interface }}
+      register: fcos_firewalld_zone
+      changed_when: false
+      failed_when: fcos_firewalld_zone.stdout != "public"
+
+    - name: Verify the explicit egress policy exists
+      ansible.builtin.command: firewall-cmd --info-policy fcos-egress
+      register: fcos_egress_policy
+      changed_when: false
+      failed_when: "'192.168.1.20' in fcos_egress_policy.stdout"
+
+    - name: Enable NFQUEUE nftables hooks with queue-bypass
+      ansible.builtin.systemd:
+        name: fcos-nfq-rules.service
+        enabled: true
+        state: restarted
+
+    - name: Enable the rootless Podman user socket and linger
+      ansible.builtin.systemd:
+        name: fcos-podman-rootless-init.service
+        enabled: true
+        state: started
+
+    - name: Resolve the rootless user's UID
+      ansible.builtin.command:
+        argv:
+          - id
+          - -u
+          - "{{ fcos_user }}"
+      register: fcos_user_uid
+      changed_when: false
+
+    - name: Verify rootless Podman API is reachable
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --remote
+          - --url
+          - "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+          - info
+          - --format
+          - json
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+      register: fcos_podman_info
+      changed_when: false
+
+    - name: Assert the Podman engine is rootless
+      ansible.builtin.assert:
+        that:
+          - (fcos_podman_info.stdout | from_json).host.security.rootless | bool
+        fail_msg: "Podman API did not report rootless=true. Refusing container deployment."
+
+    - name: Validate Docker-compatible CLI wrapper
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command: /usr/local/bin/docker version
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+      changed_when: false
+
+    - name: Validate podman-compose
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command: /usr/bin/podman-compose version
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_user_uid.stdout }}"
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_user_uid.stdout }}/podman/podman.sock"
+      changed_when: false
+
+    - name: Update Suricata sources, enable ET Open and validate the ruleset
+      ansible.builtin.command: /usr/local/libexec/fcos/suricata-update.sh
+      register: fcos_suricata_update
+      changed_when: true
+
+    - name: Explicitly test the Suricata configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/suricata
+          - -T
+          - -c
+          - /etc/suricata/suricata.yaml
+      changed_when: false
+
+    - name: Enable and start Suricata NFQUEUE IPS after successful validation
+      ansible.builtin.systemd:
+        name: suricata-nfq.service
+        enabled: true
+        state: restarted
+
+    - name: Enable daily ClamAV and Lynis timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - clamav-update.timer
+        - clamav-scan.timer
+        - lynis-audit.timer
+
+    - name: Enable daily Suricata rule updates
+      ansible.builtin.systemd:
+        name: suricata-update.timer
+        enabled: true
+        state: started
+      when: suricata_enable_update_timer | bool
+
+    - name: Check whether an AIDE baseline exists
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db.gz
+      register: fcos_aide_baseline_gz
+
+    - name: Check uncompressed AIDE baseline
+      ansible.builtin.stat:
+        path: /var/lib/aide/aide.db
+      register: fcos_aide_baseline
+
+    - name: Require an approved AIDE baseline before enabling its timer
+      ansible.builtin.assert:
+        that:
+          - fcos_aide_baseline_gz.stat.exists or fcos_aide_baseline.stat.exists
+        fail_msg: >-
+          AIDE baseline is absent. Initialize it through the explicit
+          initialize-aide playbook, review it, then rerun with
+          aide_enable_daily_timer=true.
+      when: aide_enable_daily_timer | bool
+
+    - name: Enable daily AIDE integrity checks only after baseline approval
+      ansible.builtin.systemd:
+        name: aide-check.timer
+        enabled: true
+        state: started
+      when: aide_enable_daily_timer | bool
+
+    - name: Keep AIDE timer disabled until explicitly approved
+      ansible.builtin.systemd:
+        name: aide-check.timer
+        enabled: false
+        state: stopped
+      when: not (aide_enable_daily_timer | bool)
