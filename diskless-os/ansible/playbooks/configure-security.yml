@@ -5,7 +5,7 @@
   gather_facts: true
   vars:
     podman_socket: unix:///run/user/1000/podman/podman.sock
-    enable_aide_timer: false
+    aide_enable_daily_timer: false
   tasks:
     - name: Require FCOS and expected LAN identity
       ansible.builtin.assert:
@@ -141,9 +141,13 @@
       register: nfq_rules
       changed_when: false
 
-    - name: Verify Suricata service is active
-      ansible.builtin.command: systemctl is-active suricata.service
-      changed_when: false
+    - name: Gather system service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert Suricata service is active
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['suricata.service'].state == 'running'
 
     - name: Enable daily ClamAV, Lynis and weekly Suricata timers
       ansible.builtin.systemd_service:
@@ -160,20 +164,20 @@
       ansible.builtin.stat:
         path: /var/lib/aide/aide.db.gz
       register: aide_database
-      when: enable_aide_timer | bool
+      when: aide_enable_daily_timer | bool
 
     - name: Assert AIDE baseline exists before enabling daily checks
       ansible.builtin.assert:
         that:
           - aide_database.stat.exists
         fail_msg: "Initialize and review the AIDE baseline manually before enabling aide-check.timer."
-      when: enable_aide_timer | bool
+      when: aide_enable_daily_timer | bool
 
     - name: Enable AIDE daily timer only after explicit approval and baseline
       ansible.builtin.systemd_service:
         name: aide-check.timer
-        enabled: "{{ enable_aide_timer | bool }}"
-        state: "{{ 'started' if enable_aide_timer | bool else 'stopped' }}"
+        enabled: "{{ aide_enable_daily_timer | bool }}"
+        state: "{{ 'started' if aide_enable_daily_timer | bool else 'stopped' }}"
 
     - name: Verify rootless Podman linger is enabled
       ansible.builtin.command: loginctl show-user core -p Linger
@@ -185,12 +189,15 @@
         that:
           - "'Linger=yes' in linger_state.stdout"
 
-    - name: Verify rootless Podman user socket
+    - name: Ensure rootless Podman user socket is enabled and active
       become: false
-      ansible.builtin.command: systemctl --user is-active podman.socket
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        scope: user
+        enabled: true
+        state: started
       environment:
         XDG_RUNTIME_DIR: /run/user/1000
-      changed_when: false
 
     - name: Query rootless Podman API
       become: false
