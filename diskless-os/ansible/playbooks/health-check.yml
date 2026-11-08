@@ -1,0 +1,103 @@
+---
+- name: Validate hypervisor prerequisites
+  hosts: hypervisors
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check libvirt daemon
+      ansible.builtin.command: virsh uri
+      changed_when: false
+
+    - name: Check KVM device
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: kvm_device
+
+    - name: Require KVM access
+      ansible.builtin.assert:
+        that:
+          - kvm_device.stat.exists
+
+    - name: Check FCOS domain
+      ansible.builtin.command: virsh dominfo "{{ fcos_vm_name | default('fcos-security') }}"
+      changed_when: false
+
+- name: Validate FCOS services and rootless Podman
+  hosts: fcos
+  become: true
+  gather_facts: false
+  vars:
+    fcos_user: core
+  tasks:
+    - name: Check enabled service state
+      ansible.builtin.command: systemctl is-active "{{ item }}"
+      loop:
+        - firewalld.service
+        - fcos-nfq-rules.service
+        - suricata-nfq.service
+      register: fcos_service_states
+      changed_when: false
+
+    - name: Check daily timers
+      ansible.builtin.command: systemctl is-enabled "{{ item }}"
+      loop:
+        - clamav-update.timer
+        - clamav-scan.timer
+        - lynis-audit.timer
+      register: fcos_timer_states
+      changed_when: false
+
+    - name: Check AIDE timer state
+      ansible.builtin.command: systemctl is-enabled aide-check.timer
+      register: fcos_aide_timer_state
+      changed_when: false
+      failed_when: fcos_aide_timer_state.rc not in [0, 1]
+
+    - name: Check Suricata configuration
+      ansible.builtin.command:
+        argv: [suricata, -T, -c, /etc/suricata/suricata.yaml]
+      changed_when: false
+
+    - name: Check firewall zone
+      ansible.builtin.command: firewall-cmd --get-zone-of-interface=enp1s0
+      register: fcos_zone
+      changed_when: false
+      failed_when: fcos_zone.stdout != "public"
+
+    - name: Resolve FCOS user UID
+      ansible.builtin.command: id -u "{{ fcos_user }}"
+      register: fcos_uid
+      changed_when: false
+
+    - name: Verify rootless Podman API
+      become_user: "{{ fcos_user }}"
+      ansible.builtin.command:
+        argv:
+          - podman
+          - --remote
+          - --url
+          - "unix:///run/user/{{ fcos_uid.stdout }}/podman/podman.sock"
+          - info
+          - --format
+          - json
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ fcos_uid.stdout }}"
+        CONTAINER_HOST: "unix:///run/user/{{ fcos_uid.stdout }}/podman/podman.sock"
+      register: fcos_info
+      changed_when: false
+
+    - name: Assert rootless mode
+      ansible.builtin.assert:
+        that:
+          - (fcos_info.stdout | from_json).host.security.rootless | bool
+
+    - name: Check SSH policy
+      ansible.builtin.command: sshd -T
+      register: sshd_effective
+      changed_when: false
+
+    - name: Assert password SSH is disabled
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in sshd_effective.stdout"
+          - "'kbdinteractiveauthentication no' in sshd_effective.stdout"
