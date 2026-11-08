@@ -40,7 +40,7 @@
     - name: Require actual Fedora CoreOS guest
       ansible.builtin.assert:
         that:
-          - 'VARIANT="CoreOS"' in fcos_os_release.stdout
+          - fcos_os_release.stdout is search('VARIANT="CoreOS"')
         fail_msg: "The FCOS inventory resolved to a non-CoreOS host."
 
     - name: Verify expected FCOS guest address
