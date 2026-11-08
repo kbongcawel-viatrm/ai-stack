@@ -73,7 +73,7 @@ storage:
 
     # Static guest address must match the egress policy and DHCP reservation.
     # Change this keyfile if the router gateway, subnet or FCOS address differs.
-    - path: /etc/NetworkManager/system-connections/enp1s0.nmconnection
+    - path: /etc/NetworkManager/system-connections/${FCOS_INTERFACE}.nmconnection
       mode: 0600
       overwrite: true
       contents:
@@ -81,7 +81,7 @@ storage:
           [connection]
           id=enp1s0
           type=ethernet
-          interface-name=enp1s0
+          interface-name=${FCOS_INTERFACE}
           autoconnect=true
           autoconnect-priority=100
 
@@ -89,8 +89,8 @@ storage:
 
           [ipv4]
           method=manual
-          address1=192.168.1.20/24,192.168.1.1
-          dns=192.168.1.1;
+          address1=${FCOS_LAN_IP}/24,${FCOS_GATEWAY}
+          dns=${FCOS_GATEWAY};
           ignore-auto-dns=true
 
           [ipv6]
@@ -103,8 +103,8 @@ storage:
         inline: |
           Fedora CoreOS security VM
           Provisioned with Butane/Ignition and Ansible.
-          Host firewall: default DROP; SSH restricted to 192.168.1.0/24.
-          Suricata: NFQUEUE on enp1s0; HOME_NET 192.168.1.0/24.
+          Host firewall: default DROP; SSH restricted to ${FCOS_LAN_CIDR}.
+          Suricata: NFQUEUE on ${FCOS_INTERFACE}; HOME_NET ${FCOS_LAN_CIDR}.
 
     # FCOS host ingress: deny by default; SSH is the only inbound exception.
     - path: /etc/firewalld/firewalld.conf
@@ -128,9 +128,9 @@ storage:
           <zone target="DROP">
             <short>FCOS restricted LAN interface</short>
             <description>Default-deny inbound policy. SSH is permitted only from the trusted LAN.</description>
-            <interface name="enp1s0"/>
+            <interface name="${FCOS_INTERFACE}"/>
             <rule family="ipv4">
-              <source address="192.168.1.0/24"/>
+              <source address="${FCOS_LAN_CIDR}"/>
               <service name="ssh"/>
               <accept/>
             </rule>
@@ -147,11 +147,11 @@ storage:
           <?xml version="1.0" encoding="utf-8"?>
           <policy target="DROP" priority="-100">
             <short>FCOS explicit host egress</short>
-            <description>Allow only declared IPv4 egress from 192.168.1.20.</description>
+            <description>Allow only declared IPv4 egress from ${FCOS_LAN_IP}.</description>
             <ingress-zone name="HOST"/>
             <egress-zone name="ANY"/>
             <rule family="ipv4">
-              <source address="192.168.1.20"/>
+              <source address="${FCOS_LAN_IP}"/>
               <service name="http"/>
               <accept/>
             </rule>
@@ -191,7 +191,7 @@ storage:
         inline: |
           vars:
             address-groups:
-              HOME_NET: "[192.168.1.0/24]"
+              HOME_NET: "[${FCOS_LAN_CIDR}]"
               EXTERNAL_NET: "!$HOME_NET"
           nfq:
             mode: accept
@@ -213,11 +213,11 @@ storage:
           table inet suricata_nfq {
             chain input {
               type filter hook input priority 10; policy accept;
-              iifname "enp1s0" queue num 0 bypass
+              iifname "${FCOS_INTERFACE}" queue num 0 bypass
             }
             chain output {
               type filter hook output priority 10; policy accept;
-              oifname "enp1s0" queue num 0 bypass
+              oifname "${FCOS_INTERFACE}" queue num 0 bypass
             }
           }
 
