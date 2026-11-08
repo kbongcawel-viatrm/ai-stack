@@ -69,6 +69,7 @@ jobs:
       - name: Build diskless Alpine apkovl
         shell: bash
         env:
+          ALPINE_VERSION: ${{ inputs.alpine_version }}
           ALPINE_SSH_PUBLIC_KEY: ${{ secrets.ALPINE_SSH_PUBLIC_KEY }}
           ALPINE_HOST_NIC: ${{ inputs.host_nic }}
         run: |
@@ -77,7 +78,6 @@ jobs:
           bash diskless-os/alpine/scripts/build-apkovl.sh "$work/release/host.apkovl.tar.gz"
           tar -tzf "$work/release/host.apkovl.tar.gz" >/dev/null
           printf '%s\n' "$ALPINE_VERSION" > "$work/release/ALPINE_VERSION"
-          (cd "$work/release" && sha256sum vmlinuz-lts initramfs-lts modloop-lts host.apkovl.tar.gz ALPINE_VERSION > manifest.sha256)
 
       - name: Render iPXE menu
         shell: bash
@@ -92,6 +92,7 @@ jobs:
           work="$(cat "$RUNNER_TEMP/alpine-netboot-workdir")"
           envsubst '${PXE_HTTP_BASE_URL}' < diskless-os/pxe/boot/menu.ipxe > "$work/release/menu.ipxe"
           grep -q 'host.apkovl.tar.gz' "$work/release/menu.ipxe"
+          (cd "$work/release" && sha256sum vmlinuz-lts initramfs-lts modloop-lts host.apkovl.tar.gz ALPINE_VERSION menu.ipxe > manifest.sha256)
 
       - name: Upload verified netboot release artifact
         uses: actions/upload-artifact@v4
