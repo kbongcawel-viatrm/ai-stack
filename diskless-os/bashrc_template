@@ -23,10 +23,126 @@ if [ -d ~/.bashrc.d ]; then
 fi
 unset rc
 
-# Start 
+
+
+
 #############################
-# Shell hardening ###########
+# Needed functions ##########
 #############################
+# Alter terminal output
+# Display file contents directly in the terminal
+tcat() {
+    if [[ ! -w /dev/tty ]]; then
+        printf 'Error: No writable terminal available.\n' >&2
+        return 1
+    fi
+
+    command cat -- "$@" > /dev/tty
+}
+
+_terminal_msg() {
+    local status="$1"
+    shift
+
+    local color icon
+    case "$status" in
+        success) color='1;32'; icon='✅ ' ;;  # Bold Green + Check
+        error)   color='1;31'; icon='❌ ' ;;  # Bold Red + Cross
+        warning) color='1;33'; icon='⚠️ ' ;;  # Bold Yellow + Warning
+        normal)  color='1';    icon=''    ;;  # Bold default
+        *)       color='0';    icon=''    ;;  # Reset/Plain
+    esac
+
+    # Check if /dev/tty supports colors (requires >= 8 colors and NO_COLOR unset)
+    local colors=0
+    if [[ -z "${NO_COLOR:-}" ]] && command -v tput >/dev/null 2>&1; then
+        colors=$(tput colors </dev/tty 2>/dev/null || echo 0)
+    fi
+
+    if (( colors >= 8 )); then
+        printf '\033[%sm%s%s\033[0m\n' "$color" "$icon" "$*" | tcat
+    else
+        printf '%s%s\n' "$icon" "$*" | tcat
+    fi
+}
+
+_print_line() {
+    local style="${1:-thin}"
+    local color="${2:-38;5;244}"
+    local width="${3:-50}" # Reduced default width to 50 characters
+    local char
+
+    case "$style" in
+        thin)   char='─' ;;
+        bold)   char='━' ;;
+        double) char='═' ;;
+        dash)   char='┄' ;;
+        dot)    char='·' ;;
+        *)      char="$style" ;;
+    esac
+
+    local line=""
+    printf -v line '%*s' "$width" ''
+    line="${line// /$char}"
+
+    printf '\033[%sm%s\033[0m\n' "$color" "$line" | tcat
+}
+
+##############################################################
+# End of needed functions										      ##
+##############################################################
+
+##############################################################
+## Declaration 															##
+##############################################################
+_terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
+_print_line bold "1;32" 35
+
+##############################################################
+### start of functions P1  											##
+##############################################################
+
+# Syntax check bashrc
+mybashconfigcheck() {
+    if [[ -f "$HOME/.bashrc" ]]; then
+        _terminal_msg normal ".bashrc configuration"
+
+        if bash -n "$HOME/.bashrc"; then
+            _terminal_msg success "Syntax OK! Configuration reloaded! ♻️"
+        else
+            _terminal_msg error "Syntax error found in ~/.bashrc"
+            return 1
+        fi
+    else
+        _terminal_msg error "~/.bashrc does not exist"
+        return 1
+    fi
+echo ""
+
+}
+
+myvalidatepath(){
+  _terminal_msg normal "PATH configuration"
+  sleep 2
+  if printf '%s' "$PATH" | awk -v RS=: '
+      length($0) == 0 || $0 !~ /^\// { bad = 1 }
+      END { exit (bad || NR == 0) }
+      '; then
+  
+      _terminal_msg success "Syntax OK! PATH looks good. 👌"    
+  else
+      _terminal_msg error "FAIL❌: PATH has some issues. Please check. 🙇"
+  fi
+}
+
+##############################################################
+### end of functions P1                                    ###
+##############################################################
+
+
+##############################################################
+# Declarative Shell hardening                               ##
+##############################################################
 
 # Default visual and editor
 export EDITOR=/usr/bin/vim
@@ -49,14 +165,6 @@ PATH="$(printf '%s' "$PATH" | awk -v RS=: '
 export PATH
 
 # Validate that PATH contains only absolute, non-empty entries.
-if printf '%s' "$PATH" | awk -v RS=: '
-    length($0) == 0 || $0 !~ /^\// { bad = 1 }
-    END { exit (bad || NR == 0) }
-'; then
-    echo "PASS: PATH contains only absolute directory entries"
-else
-    echo "FAIL: PATH contains an empty or relative entry"
-fi
 
 # Prevents the shell and its children from creating memory core dumps on crash
 ulimit -c 0
@@ -95,36 +203,13 @@ alias run0journal='run0 journalctl -u'
 readonly -f run0 2>/dev/null
 readonly -f sudo 2>/dev/null
 
-#############################
-### start of functions  ####
-############################
+##############################################################
+## End of declared configuration                            ##
+##############################################################
 
-# Display file contents directly in the terminal
-tcat() {
-    if [[ ! -w /dev/tty ]]; then
-        printf 'Error: No writable terminal available.\n' >&2
-        return 1
-    fi
-
-    command cat -- "$@" > /dev/tty
-}
-
-# terminal output hardening
-_terminal_msg() {
-    local status="$1"
-    shift
-
-    local color
-    case "$status" in
-        success) color='1;32' ;;  # Bold, default Green
-        error)   color='1;31' ;;  # Bold, default Red
-        warning) color='1;33' ;;  # Bold, default Yellow
-        normal)  color='1'  ;;  # Bold, default foreground color
-        *)       color='0'  ;;  # Default/reset
-esac 
-
-    printf '\033[%sm%s\033[0m\n' "$color" "$*" | tcat
-}
+##############################################################
+### start of functions P2  											##
+##############################################################
 
 shazam() {
   # Runs the target utility inside the systemd execution framework
@@ -202,11 +287,11 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 echo
-_terminal_msg success '✅ Finished downloading'
+_terminal_msg success '🚀 Finished downloading'
 echo
 _terminal_msg normal '📦 Rebuilding workspace.'
 npm rebuild > /dev/tty
-_terminal_msg success '✅ Finished rebuilding'
+_terminal_msg success '🚀 Finished rebuilding'
 echo 
 _terminal_msg normal  '⚙️  Fetching versions...'
 echo
@@ -326,7 +411,6 @@ workspaceagent() {
 }
 
 # Kill all ssh-agent processes owned by the current user.
-# Terminate all ssh-agent processes owned by the current user.
 workspacekill() {
 _terminal_msg red '🚨 Terminating all sessions.'
 run0 pkill -f 'ssh-agent'
@@ -452,4 +536,274 @@ workspacesgsync() {
         return "$exit_code"
     fi
 }
-#EOF customization
+# Generate SSH and GPG keys for Github
+workspacegenkeys(){
+# --- 1. Gather User Details ---
+read -rp "Enter your GitHub Name: " git_name
+read -rp "Enter your GitHub Email: " git_email
+read -rsp "Enter a passphrase for your keys (Do not leave blank): ⚠️" key_passphrase
+echo ""
+
+ssh_key_name=$(hostname)
+ssh_key_path="$HOME/.ssh/$ssh_key_name"
+
+# --- 2. Generate SSH Key (Ed25519) ---
+_terminal_msg normal "[*] Generating Ed25519 SSH key...🚀"
+mkdir -p -m 700 "$HOME/.ssh"
+
+if [[ -f "$ssh_key_path" ]]; then
+    _terminal_msg warning "[!] $ssh_key_path already exists ⚠️. Skipping SSH key generation."
+else
+    ssh-keygen -t ed25519 -C "$git_email" -f "$ssh_key_path" -N "$key_passphrase"
+    chmod 600 "$ssh_key_path"
+    chmod 644 "${ssh_key_path}.pub"
+fi
+
+# --- 3. Generate GPG Key (RSA 4096) ---
+echo "[*] Generating 4096-bit RSA GPG key...🚀"
+gpg --batch --generate-key <<EOF
+%echo Generating GitHub GPG key
+Key-Type: RSA
+Key-Length: 4096
+Subkey-Type: RSA
+Subkey-Length: 4096
+Name-Real: $git_name
+Name-Email: $git_email
+Expire-Date: 0
+Passphrase: $key_passphrase
+%commit
+%echo Done
+EOF
+
+# Extract the newly created GPG Key ID (Long format)
+gpg_key_id=$(gpg --list-secret-keys --keyid-format=long "$git_email" | awk '/sec/{print $2}' | cut -d'/' -f2 | tail -n 1)
+
+# --- 4. Configure Global Git Settings ---
+_terminal_msg normal "[*] Configuring Git...🚀"
+git config --global user.name "$git_name"
+git config --global user.email "$git_email"
+git config --global user.signingkey "$gpg_key_id"
+git config --global commit.gpgsign true
+git config --global gpg.program "$(command -v gpg)"
+
+# --- 5. Output Public Keys for GitHub ---
+_terminal_msg success "Done generating SSH and GPG keys!🔑🚀"
+sleep 2
+
+terminal_msg warning "🔑 SSH public key : (Proceed to add in GH)"
+cat "${ssh_key_path}.pub"
+sleep 2
+
+terminal_msg warning"🔑 GPG public key: (Proceed to add in GH)"
+gpg --armor --export "$gpg_key_id"
+sleep 2
+
+_terminal_msg normal "Testing your keys against GH"
+_terminal_msg normal "ssh -T git@github.com"
+}
+
+
+# Convert a Bash string into a valid GVariant string.
+_gvariant_quote() {
+    local value=${1//\\/\\\\}
+    value=${value//\"/\\\"}
+    printf '"%s"' "$value"
+}
+
+# Interactive GNOME Custom Keyboard Shortcuts Manager. Simply add keyboard shortcuts.
+myshortcutkeys() {
+    if ! command -v gsettings >/dev/null 2>&1; then
+        _terminal_msg error "gsettings not found. A compatible GNOME settings schema is required."
+        return 1
+    fi
+
+    local SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
+    local BASE_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
+
+    # List registered shortcuts.
+    _list_shortcuts() {
+        local current_bindings paths path schema_path name cmd binding
+
+        if ! current_bindings=$(gsettings get "$SCHEMA" custom-keybindings 2>/dev/null); then
+            _terminal_msg error "Could not read custom-keybindings. Check that the desktop schema is available."
+            return 1
+        fi
+
+        if [[ "$current_bindings" == "@as []" || "$current_bindings" == "[]" ]]; then
+            _terminal_msg warning "No custom shortcuts are currently loaded."
+            return 0
+        fi
+
+        _terminal_msg normal "Loaded Custom Shortcuts:"
+
+        paths=$(printf '%s\n' "$current_bindings" |
+            tr -d "[]'" |
+            tr ',' '\n' |
+            sed 's/^[[:space:]]*//')
+
+        while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+
+            schema_path="${SCHEMA}.custom-keybinding:${path}"
+
+            name=$(gsettings get "$schema_path" name 2>/dev/null) || name="<unavailable>"
+            cmd=$(gsettings get "$schema_path" command 2>/dev/null) || cmd="<unavailable>"
+            binding=$(gsettings get "$schema_path" binding 2>/dev/null) || binding="<unavailable>"
+
+            printf '  • %-22s | Hotkey: %-18s | Cmd: %s\n' \
+                "$name" "$binding" "$cmd"
+        done <<< "$paths"
+    }
+
+    # Add or update a shortcut.
+    _add_shortcut() {
+        local name cmd binding slug new_path current_bindings updated_bindings
+        local quoted_name quoted_cmd quoted_binding quoted_path schema_path
+
+        read -r -p "Shortcut Name (e.g., Ptyxis New Window): " name || return 1
+        read -r -p "Command to run (e.g., ptyxis --new-window): " cmd || return 1
+        read -r -p "Hotkey (e.g., <Control>1, <Super>t): " binding || return 1
+
+        if [[ -z "$name" || -z "$cmd" || -z "$binding" ]]; then
+            _terminal_msg error "All fields (Name, Command, Hotkey) are required."
+            return 1
+        fi
+
+        slug=$(printf '%s' "$name" |
+            tr '[:upper:]' '[:lower:]' |
+            tr -cs 'a-z0-9' '-' |
+            sed 's/^-//; s/-$//')
+
+        if [[ -z "$slug" ]]; then
+            _terminal_msg error "Shortcut name must contain at least one letter or number."
+            return 1
+        fi
+
+        new_path="${BASE_PATH}/${slug}/"
+        schema_path="${SCHEMA}.custom-keybinding:${new_path}"
+
+        if ! current_bindings=$(gsettings get "$SCHEMA" custom-keybindings 2>/dev/null); then
+            _terminal_msg error "Could not read custom-keybindings."
+            return 1
+        fi
+
+        quoted_name=$(_gvariant_quote "$name")
+        quoted_cmd=$(_gvariant_quote "$cmd")
+        quoted_binding=$(_gvariant_quote "$binding")
+        quoted_path=$(_gvariant_quote "$new_path")
+
+        # Configure the shortcut before registering it.
+        gsettings set "$schema_path" name "$quoted_name" || return 1
+        gsettings set "$schema_path" command "$quoted_cmd" || return 1
+        gsettings set "$schema_path" binding "$quoted_binding" || return 1
+
+        # Register the path only if it does not already exist.
+        if [[ "$current_bindings" != *"$new_path"* ]]; then
+            if [[ "$current_bindings" == "@as []" || "$current_bindings" == "[]" ]]; then
+                updated_bindings="[$quoted_path]"
+            else
+                updated_bindings="${current_bindings%]}, $quoted_path]"
+            fi
+
+            gsettings set "$SCHEMA" custom-keybindings "$updated_bindings" || return 1
+        fi
+
+        _terminal_msg success "Configured shortcut '$name' ($binding) -> '$cmd'"
+    }
+
+    # Interactive menu.
+    while true; do
+        printf '\n'
+        _terminal_msg normal "Custom Keyboard Shortcuts Manager"
+
+        printf '  1) List all loaded shortcuts\n'
+        printf '  2) Add or update a shortcut\n'
+        printf '  3) Exit\n'
+
+        local choice
+        read -r -p "Select an option [1-3]: " choice || break
+
+        case "$choice" in
+            1)
+                _list_shortcuts
+                ;;
+            2)
+                _add_shortcut
+                ;;
+            3)
+                _terminal_msg normal "Exiting shortcut manager."
+                break
+                ;;
+            *)
+                _terminal_msg warning "Invalid selection. Choose 1, 2, or 3."
+                ;;
+        esac
+    done
+}
+
+# Optional one-time Ptyxis shortcut provisioning.
+# Manually execute: setup_ptyxis_shortcut
+setup_ptyxis_shortcut() {
+    if ! command -v gsettings >/dev/null 2>&1; then
+        _terminal_msg error "gsettings not found."
+        return 1
+    fi
+
+    local SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
+    local BASE_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
+    local KEY_NAME="ptyxis-new-window"
+    local NEW_PATH="${BASE_PATH}/${KEY_NAME}/"
+    local schema_path="${SCHEMA}.custom-keybinding:${NEW_PATH}"
+    local current_bindings updated_bindings quoted_path
+
+    if ! current_bindings=$(gsettings get "$SCHEMA" custom-keybindings 2>/dev/null); then
+        _terminal_msg error "Could not read custom-keybindings."
+        return 1
+    fi
+
+    # Configure Ptyxis shortcut.
+    gsettings set "$schema_path" name "$(_gvariant_quote "Ptyxis New Window")" || return 1
+    gsettings set "$schema_path" command "$(_gvariant_quote "ptyxis --new-window")" || return 1
+    gsettings set "$schema_path" binding "$(_gvariant_quote "<Control>1")" || return 1
+
+    # Register only if not already present.
+    if [[ "$current_bindings" != *"$NEW_PATH"* ]]; then
+        quoted_path=$(_gvariant_quote "$NEW_PATH")
+
+        if [[ "$current_bindings" == "@as []" || "$current_bindings" == "[]" ]]; then
+            updated_bindings="[$quoted_path]"
+        else
+            updated_bindings="${current_bindings%]}, $quoted_path]"
+        fi
+
+        gsettings set "$SCHEMA" custom-keybindings "$updated_bindings" || return 1
+    fi
+
+    _terminal_msg success "Ptyxis shortcut configured: Ctrl+1"
+}
+##############################################################
+# End of functions  Pt2                                     ## 
+##############################################################
+
+##############################################################
+# Validate Configuration                                    ## 
+##############################################################
+sleep 2
+_terminal_msg normal "Checklist initialize 📋"
+sleep 3
+echo
+myvalidatepath
+echo
+sleep 2
+mybashconfigcheck
+echo
+sleep 1
+_terminal_msg normal "done with all checks..."
+_terminal_msg success "Enjoy 🎉"
+echo
+_print_line bold "1;32" 35 
+echo
+sleep 1
+##############################################################
+# EOF                                                       ## 
+##############################################################
