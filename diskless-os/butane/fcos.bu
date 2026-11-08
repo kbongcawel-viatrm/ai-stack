@@ -1,12 +1,6 @@
 variant: fcos
 version: 1.6.0
 
-metadata:
-  name: fcos-security
-  labels:
-    role: security
-    project: diskless-home-infrastructure
-
 # FCOS provides the core account. The workflow substitutes this environment
 # variable before Butane transpilation; never commit a real SSH key.
 passwd:
