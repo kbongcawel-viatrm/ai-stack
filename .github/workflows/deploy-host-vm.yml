@@ -42,7 +42,7 @@ on:
       fcos_interface:
         description: Guest network interface
         required: true
-        default: enp1s0
+        default: ens2
         type: string
       network_bridge:
         description: Existing hypervisor bridge
@@ -131,7 +131,7 @@ on:
       fcos_interface:
         type: string
         required: false
-        default: enp1s0
+        default: ens2
       network_bridge:
         type: string
         required: false

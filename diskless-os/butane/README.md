@@ -10,7 +10,7 @@ fcos.bu is the first-boot configuration source for the FCOS guest. The Deploy Ho
 | FCOS_LAN_IP | 10.1.29.201 | Static guest IPv4 address |
 | FCOS_LAN_CIDR | 10.1.29.0/24 | Trusted LAN and Suricata HOME_NET |
 | FCOS_GATEWAY | 10.1.29.2 | Default gateway and DNS |
-| FCOS_INTERFACE | enp1s0 | Guest NIC |
+| FCOS_INTERFACE | ens2 | Guest NIC |
 
 The workflow uses an envsubst variable allowlist. Do not substitute every shell variable in embedded scripts; that would corrupt shell expressions such as BASH_VERSION.
 

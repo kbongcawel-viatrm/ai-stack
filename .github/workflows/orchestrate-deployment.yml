@@ -103,7 +103,7 @@ jobs:
       fcos_lan_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
       fcos_lan_cidr: ${{ vars.FCOS_LAN_CIDR || '10.1.29.0/24' }}
       fcos_gateway: ${{ vars.FCOS_GATEWAY || '10.1.29.2' }}
-      fcos_interface: ${{ vars.FCOS_INTERFACE || 'enp1s0' }}
+      fcos_interface: ${{ vars.FCOS_INTERFACE || 'ens2' }}
       network_bridge: ${{ vars.FCOS_NETWORK_BRIDGE || 'br0' }}
       vm_memory_mb: 2048
       vm_vcpus: 2

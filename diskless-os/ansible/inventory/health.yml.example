@@ -15,7 +15,7 @@ all:
           ansible_user: core
           fcos_lan_ip: 10.1.29.201
           fcos_lan_cidr: 10.1.29.0/24
-          fcos_interface: enp1s0
+          fcos_interface: ens2
           aide_enable_daily_timer: false
   vars:
     ansible_python_interpreter: auto_silent
