@@ -40,7 +40,7 @@ jobs:
 
           ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/fcos-validation-key"
           export FCOS_SSH_PUBLIC_KEY="$(cat "$RUNNER_TEMP/fcos-validation-key.pub")"
-          export FCOS_LAN_IP=10.1.29.100
+          export FCOS_LAN_IP=10.1.29.201
           export FCOS_LAN_CIDR=10.1.29.0/24
           export FCOS_GATEWAY=10.1.29.1
           export FCOS_INTERFACE=enp1s0

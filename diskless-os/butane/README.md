@@ -7,7 +7,7 @@ fcos.bu is the first-boot configuration source for the FCOS guest. The Deploy Ho
 | Variable | Default | Purpose |
 |---|---|---|
 | FCOS_SSH_PUBLIC_KEY | Required | Public key for FCOS core |
-| FCOS_LAN_IP | 10.1.29.100 | Static guest IPv4 address |
+| FCOS_LAN_IP | 10.1.29.201 | Static guest IPv4 address |
 | FCOS_LAN_CIDR | 10.1.29.0/24 | Trusted LAN and Suricata HOME_NET |
 | FCOS_GATEWAY | 10.1.29.1 | Default gateway and DNS |
 | FCOS_INTERFACE | enp1s0 | Guest NIC |
