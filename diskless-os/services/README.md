@@ -18,7 +18,7 @@ The Ansible package-layering playbook installs firewalld, nftables, suricata, ai
 
 ## Operational details
 
-- FCOS address defaults to 10.1.29.201/24 with gateway/DNS 10.1.29.1; reserve it in DHCP or adjust the Butane workflow inputs.
+- FCOS address defaults to 10.1.29.201/24 with gateway/DNS 10.1.29.2; reserve it in DHCP or adjust the Butane workflow inputs.
 - The guest NIC defaults to enp1s0 and must match the FCOS VM's actual interface.
 - NFQUEUE hooks use bypass deliberately (fail-open). Firewalld remains active if Suricata stops, but IPS inspection is unavailable; monitor Suricata service health.
 - The configuration inspects traffic to/from FCOS, not general LAN transit traffic.

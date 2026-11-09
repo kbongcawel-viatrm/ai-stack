@@ -5,7 +5,7 @@
 2026-11-09
 
 - **Linear issue:** not created yet
-- **Status:** in progress; host BIOS virtualization enabled, libvirt daemons enabled, `virsh` access verified as `kim`; `br0` bridge still pending on the Secureblue hypervisor
+- **Status:** in progress; `br0` bridge created and verified on the Secureblue hypervisor (host `10.1.29.100/24`, gateway `10.1.29.2`); host-prep playbook consolidated; ready for `deploy-host-vm` dispatch
 - **Memory source:** Linear is the authoritative record for session progress, decisions, blockers, and handoffs. This file is a concise Git-linked snapshot.
 
 ## 1. Summary
@@ -18,14 +18,18 @@ Fixed and extended the orchestrated FCOS deployment pipeline (`.github/workflows
 - Review all reusable workflows for input/secret/var consistency
 - Support deploying directly onto Secureblue (skip Host OS artifacts stage)
 - Fetch FCOS QCOW2 URL+SHA256 from official Fedora CoreOS stream metadata at deploy time
-- Renumber LAN defaults to `10.1.29.0/24`, guest `10.1.29.201`, gateway `10.1.29.1`
+- Renumber LAN defaults to `10.1.29.0/24`, guest `10.1.29.201`, gateway `10.1.29.2` (actual LAN gateway; `10.1.29.1` does not respond)
 - Support NAS-hosted image over SMB/FTP/FTPS using `NAS_USER`/`NAS_PW` secrets
 
 ## 3. Changes
 
 - `.github/workflows/deploy-host-vm.yml`: stage `diskless-os/butane/fcos.bu` into `$RUNNER_TEMP` before Ignition render; `fcos_qcow2_url`/`fcos_qcow2_sha256` now optional (auto-resolve latest stable `qemu` `qcow2.xz` from `builds.coreos.fedoraproject.org/streams/stable.json`); URL validation accepts `https|smb|ftp|ftps`; passes `fcos_qcow2_uncompressed_sha256`, `fcos_qcow2_compressed`, `fcos_qcow2_smb_username/password` to Ansible.
 - `.github/workflows/health-check.yml`: `HYPERVISOR_HOST`/`HYPERVISOR_USER` switched from `vars.*` to `secrets.*`.
-- `.github/workflows/orchestrate-deployment.yml`: LAN defaults `10.1.29.0/24`/`10.1.29.1`; `vm_storage_path` defaults to `/var/lib/libvirt/images` for non-Alpine `HOST_OS`.
+- `.github/workflows/orchestrate-deployment.yml`: LAN defaults `10.1.29.0/24`/`10.1.29.2`; `vm_storage_path` defaults to `/var/lib/libvirt/images` for non-Alpine `HOST_OS`; new `prepare_host` boolean input passed to `deploy-host-vm`.
+- `.github/workflows/deploy-host-vm.yml`: gateway defaults corrected to `10.1.29.2`; new inputs `prepare_host`, `host_bridge_address` (`10.1.29.100/24`), `host_bridge_slave` (`enp1s0`), `host_bridge_dns`; optional "Prepare hypervisor host" step runs `prepare-hypervisor.yml` before the VM deploy.
+- `diskless-os/ansible/playbooks/prepare-hypervisor.yml` (new): verifies virsh/qemu-img/`/dev/kvm`/libvirt dirs/daemons; on NetworkManager hosts creates/configures the bridge, enslaves the NIC, disables the old connection's autoconnect, cuts over with ~20s verification retries and automatic rollback on failure. Secureblue escalation note: non-root become needs `community.general.run0` + polkit rule, or connect as root.
+- `diskless-os/init-learnings/setup-br0.sh`: manual equivalent of the bridge cutover used to create `br0` on the hypervisor (verified working 2026-11-09).
+- Docs gateway defaults corrected `10.1.29.1` → `10.1.29.2`: `diskless-os/README.md`, `ansible/README.md`, `butane/README.md`, `services/README.md`, `docs/orchestrated-deployment.md`.
 - `.github/workflows/validate.yml`: validation envsubst values updated to `10.1.29.x`.
 - `diskless-os/ansible/playbooks/deploy-fcos-vm.yml`: `fcos_lan_ip` default `10.1.29.201`; xz decompressor ensure/install per host OS; `.xz` download → `unxz` → uncompressed sha256 verify; `smb://`/`ftp://`/`ftps://` download via `smbclient`/`curl` with root-only credential files (`no_log`), sha256 verify, credential cleanup.
 - Docs/examples updated: `diskless-os/README.md`, `ansible/README.md`, `butane/README.md`, `services/README.md`, `services/firewalld/README.md`, `docs/{architecture,deployment-plan,orchestrated-deployment}.md`, `ansible/inventory/{hosts,health}.yml.example`.
@@ -36,7 +40,9 @@ Fixed and extended the orchestrated FCOS deployment pipeline (`.github/workflows
 - `python3 -c yaml.safe_load` on edited workflows/playbook: OK
 - `ansible-playbook --syntax-check playbooks/deploy-fcos-vm.yml`: OK
 - Python stream-resolution snippet run locally: resolves build `44.20261023.3.1`, `qcow2.xz` URL + sha256 + uncompressed-sha256 verified
-- Host read-only verification on Secureblue (2026-11-09): `id -nG` includes `libvirt`; `virsh -c qemu:///system list --all` succeeds with no domains; `virtqemud.service` active/running; `/dev/kvm` present; `qemu-img` 11.1.3; gateway `10.1.29.1` ping OK
+- Host verification on Secureblue (2026-11-09, post-reboot): `id -nG` includes `libvirt`; `virsh -c qemu:///system list --all` succeeds with no domains; `virtqemud.service` active; `/dev/kvm` present; `qemu-img` 11.1.3
+- `br0` created via `diskless-os/init-learnings/setup-br0.sh`: `br0 UP 10.1.29.100/24`, `enp1s0` enslaved (`enp1s0-slave`), default route `via 10.1.29.2 dev br0`, gateway + internet ping OK, `wired-dhcp` deactivated with autoconnect disabled. First attempt failed on a timing race (verify ran before slave port attached); fixed with retry loop + `bridge.stp no`.
+- Second NIC `enp0s20f0u10` intentionally left unplugged; its `wired-dhcp-2` profile remains but inactive.
 - GitHub `validate` workflow expected to run on push (paths cover `.github/workflows/**`, `diskless-os/**`)
 - Not yet run: actual `deploy-host-vm` job against the hypervisor
 
@@ -58,9 +64,10 @@ ip link show br0
 #     "Access denied" on systemd start)
 #   - kim is in `libvirt` group; `virsh -c qemu:///system list --all` works
 #     as kim and currently lists no domains
-#   - br0 NOT yet created. Active NM connections: `wired-dhcp` on enp1s0
-#     10.1.29.100/24 and `wired-dhcp-2` on enp0s20f0u10 10.1.29.200/24,
-#     both manual with gateway/DNS via 10.1.29.1; gateway ping OK
+#   - br0 CREATED 2026-11-09 ~21:21 via init-learnings/setup-br0.sh:
+#     br0 UP 10.1.29.100/24 (manual, gw/dns 10.1.29.2, stp off, ipv6 off),
+#     enp1s0 enslaved via enp1s0-slave; wired-dhcp deactivated + autoconnect no.
+#     enp0s20f0u10 unplugged intentionally; wired-dhcp-2 profile remains inactive.
 #   - /var/lib/libvirt exists on btrfs /var; /var/lib/libvirt/images is
 #     absent until the become-enabled deploy playbook creates it
 ```
@@ -72,10 +79,9 @@ ip link show br0
 ## Next steps / blockers
 
 - ~~Host reboot pending: enable Intel VT-x (+ VT-d optional) in BIOS~~ — done 2026-11-09; `/dev/kvm` verified, `kvm_intel` loaded.
-- Create `br0` on Secureblue (NetworkManager): bridge `br0` with host IP `10.1.29.100/24`, slave `enp1s0`, gateway/DNS from `nmcli -g ipv4.gateway,ipv4.dns con show "wired-dhcp"`. Example:
-  `nmcli con add type bridge con-name br0 ifname br0` → `nmcli con mod br0 ipv4.method manual ipv4.addresses 10.1.29.100/24 ipv4.gateway <GW> ipv4.dns "<DNS>"` → `nmcli con add type bridge-slave con-name enp1s0-slave ifname enp1s0 master br0` → `nmcli con down "wired-dhcp"; nmcli con up br0`. Brief connectivity drop expected; use local console if SSH.
-- Re-verify after reboot and after `br0` creation: `virsh -c qemu:///system list --all` as `kim`, `virtqemud` active, `ip -br addr show br0` shows `10.1.29.100/24`, gateway reachable.
-- Then confirm GitHub repo variables: `HOST_OS=secureblue`, `KASM_POC_FCOS_IP=10.1.29.201`, `FCOS_INTERFACE=enp1s0`, `FCOS_NETWORK_BRIDGE=br0` (last two optional — already defaults).
+- ~~Create `br0` on Secureblue~~ — done 2026-11-09; verified `br0 UP 10.1.29.100/24`, gateway `10.1.29.2` reachable. Consolidated into `prepare-hypervisor.yml` + `setup-br0.sh`.
+- Confirm Ansible become path for Secureblue before dispatch: non-root `HYPERVISOR_USER` needs `community.general.run0` become plugin + polkit rule, or use `HYPERVISOR_USER=root` (`ansible_become` is already skipped for root in the inventory builder).
+- Confirm GitHub repo variables: `HOST_OS=secureblue`, `KASM_POC_FCOS_IP=10.1.29.201`, `FCOS_INTERFACE=enp1s0`, `FCOS_NETWORK_BRIDGE=br0`, `FCOS_GATEWAY=10.1.29.2` (or rely on corrected defaults).
 - Secrets: `NAS_USER`/`NAS_PW` if using NAS image; per-environment secrets per `orchestrated-deployment.md`.
 - `FCOS_QCOW2_URL`/`FCOS_QCOW2_SHA256` optional — set together only to pin (e.g. `ftps://10.1.29.1:21/...` or `smb://10.1.29.1/<share>/images/fcos-qcow.xz`); verify share name in URL (`smb://host/share/path`).
 - `suricata_test_target_ip` required when running `run_provision_services`.

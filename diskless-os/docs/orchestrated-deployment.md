@@ -26,7 +26,7 @@ The orchestrator passes these values to reusable workflows, so define them as **
 | `KASM_POC_FCOS_IP` | Static IP reserved for the isolated FCOS test VM, e.g. `10.1.29.201` |
 | `KASM_POC_SSH_USER` | SSH account on the test VM; normally `core` |
 | `FCOS_LAN_CIDR` | Guest LAN CIDR, e.g. `10.1.29.0/24` |
-| `FCOS_GATEWAY` | Guest LAN gateway, e.g. `10.1.29.1` |
+| `FCOS_GATEWAY` | Guest LAN gateway, e.g. `10.1.29.2` |
 | `FCOS_INTERFACE` | FCOS guest NIC, e.g. `enp1s0` |
 | `FCOS_NETWORK_BRIDGE` | Existing libvirt bridge on the hypervisor |
 | `FCOS_STORAGE_MOUNTPOINT` | Persistent local storage mountpoint (Alpine hosts only; ignored for other host OSes) |

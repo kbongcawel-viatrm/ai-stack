@@ -1,0 +1,12 @@
+kim@home-security:~/workspace/ai-stack/diskless-os/init-learnings$ ./setup-br0.sh
+
+
+[21:21:03] Deactivating current connection 'wired-dhcp' on enp1s0
+Connection 'wired-dhcp' successfully deactivated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/17)
+
+[21:21:06] Activating br0 (brief connectivity drop expected)
+Connection successfully activated (controller waiting for ports) (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/18)
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/19)
+[21:21:12] SUCCESS: br0 is up with 10.1.29.100/24 via 10.1.29.2
+br0              UP             10.1.29.100/24 
+default via 10.1.29.2 dev br0 proto static metric 20425

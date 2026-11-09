@@ -6,6 +6,7 @@ Ansible configures the FCOS guest after its base image has booted and SSH is rea
 
 | Playbook | Purpose |
 |---|---|
+| prepare-hypervisor.yml | Verify KVM/libvirt tooling and storage; on NetworkManager hosts (secureblue/arch/ubuntu) create/configure the host bridge, enslave the NIC, cut over with automatic rollback on failure |
 | deploy-fcos-vm.yml | Provision FCOS on an existing libvirt hypervisor; verifies local persistent storage and refuses existing VM domains or orphaned disks |
 | layer-fcos-packages.yml | Layer Firewalld, nftables, Suricata, AIDE, ClamAV, Lynis, podman-compose and logrotate with rpm-ostree; reboot only when a deployment is staged |
 | configure-security.yml | Validate FCOS identity/NIC, Firewalld, SSH, Suricata NFQUEUE/rules, rootless Podman API and daily timers |
@@ -16,7 +17,7 @@ Ansible configures the FCOS guest after its base image has booted and SSH is rea
 | kasm-compatibility-poc.yml | Check Docker Engine and Docker Compose v2 requirements; fail closed before any Kasm installer if the endpoint is Podman |
 | health-check.yml | Check hypervisor/KVM/VM state, FCOS services/timers, firewall, Suricata, AIDE timer state and rootless Podman |
 
-The Host VM workflow is independent of Deploy Host OS. It requires an existing hypervisor with KVM/QEMU/libvirt, a bridge and a persistent local filesystem. For Alpine diskless, any custom VM storage path must match the Host OS apkovl path so libvirt-vms can restore the same domain directory. For diskless Alpine, the storage path must be on the mounted NVMe volume; the playbook rejects tmpfs/overlay storage. The workflow stores the FCOS base/overlay QCOW2, Ignition and libvirt domain XML under that persistent path. Alpine's optional libvirt-vms OpenRC service restores the XML and starts the VM on reboot.
+The Host VM workflow is independent of Deploy Host OS. It requires an existing hypervisor with KVM/QEMU/libvirt, a bridge and a persistent local filesystem. `prepare-hypervisor.yml` performs the host-side prerequisites (including the NetworkManager bridge cutover on secureblue/arch/ubuntu) and is invoked by `deploy-host-vm.yml` when the `prepare_host` input is enabled; it defaults to off because the cutover briefly drops connectivity. For Alpine diskless, any custom VM storage path must match the Host OS apkovl path so libvirt-vms can restore the same domain directory. For diskless Alpine, the storage path must be on the mounted NVMe volume; the playbook rejects tmpfs/overlay storage. The workflow stores the FCOS base/overlay QCOW2, Ignition and libvirt domain XML under that persistent path. Alpine's optional libvirt-vms OpenRC service restores the XML and starts the VM on reboot.
 
 ## Butane package contract
 
@@ -37,7 +38,7 @@ Podman and the user-level podman.socket are expected from the FCOS base image. D
 The current Butane profile configures:
 
 - Core user's SSH public key; password and keyboard-interactive SSH disabled, forwarding/tunneling disabled.
-- NetworkManager static IPv4 identity on the configured guest NIC (default enp1s0), gateway/DNS default 10.1.29.1.
+- NetworkManager static IPv4 identity on the configured guest NIC (default enp1s0), gateway/DNS default 10.1.29.2.
 - Firewalld public zone with inbound target DROP; SSH is the only inbound exception and is restricted to 10.1.29.0/24.
 - HOST -> ANY egress policy bound to the explicit FCOS source IP; HTTP/HTTPS, DNS and NTP are allowed. TCP 80/443 are explicit.
 - Suricata HOME_NET, EXTERNAL_NET, suricata.rules/local.rules, NFQ mode and EVE logging.
@@ -50,7 +51,7 @@ The current Butane profile configures:
 - Rootless Podman user socket, linger, CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - Rootful system Podman/Docker socket activation masked.
 
-The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 10.1.29.201/24, gateway/DNS 10.1.29.1, LAN 10.1.29.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
+The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 10.1.29.201/24, gateway/DNS 10.1.29.2, LAN 10.1.29.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
 
 ## Firewalld behavior
 
@@ -102,6 +103,7 @@ The Kasm POC targets an isolated FCOS test VM, not the production guest. It chec
 
 Run from diskless-os/ansible:
 
+    ansible-playbook -i inventory/hosts.yml playbooks/prepare-hypervisor.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/deploy-fcos-vm.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/layer-fcos-packages.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/configure-security.yml --syntax-check

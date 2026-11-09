@@ -62,6 +62,8 @@ jobs:
           set -Eeuo pipefail
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
+          # community.general provides the run0 become plugin used on Secureblue.
+          "$RUNNER_TEMP/ansible-venv/bin/ansible-galaxy" collection install community.general
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
 
       - name: Configure pinned SSH trust
@@ -98,12 +100,18 @@ jobs:
           missing = [name for name in required if not os.environ.get(name)]
           if missing:
               raise SystemExit("Missing GitHub variables: " + ", ".join(missing))
+          hypervisor_host = os.environ["HYPERVISOR_HOST"]
+          # Runner and hypervisor are the same machine: skip SSH entirely.
+          local_hypervisor = hypervisor_host in ("localhost", "127.0.0.1", "::1")
           inventory = {
               "all": {"children": {
                   "hypervisors": {"hosts": {"hypervisor": {
-                      "ansible_host": os.environ["HYPERVISOR_HOST"],
+                      "ansible_host": hypervisor_host,
+                      "ansible_connection": "local" if local_hypervisor else "ssh",
                       "ansible_user": os.environ["HYPERVISOR_USER"],
                       "ansible_become": os.environ["HYPERVISOR_USER"] != "root",
+                      # Secureblue escalates via run0 (polkit), not sudo.
+                      "ansible_become_method": "community.general.run0" if (os.environ.get("HOST_OS") or "") == "secureblue" else "sudo",
                       "ansible_ssh_private_key_file": os.path.expanduser("~/.ssh/hypervisor"),
                       "host_os": os.environ.get("HOST_OS") or "alpine",
                       "fcos_vm_name": os.environ.get("FCOS_VM_NAME") or "fcos-security"

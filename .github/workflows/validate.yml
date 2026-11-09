@@ -42,7 +42,7 @@ jobs:
           export FCOS_SSH_PUBLIC_KEY="$(cat "$RUNNER_TEMP/fcos-validation-key.pub")"
           export FCOS_LAN_IP=10.1.29.201
           export FCOS_LAN_CIDR=10.1.29.0/24
-          export FCOS_GATEWAY=10.1.29.1
+          export FCOS_GATEWAY=10.1.29.2
           export FCOS_INTERFACE=enp1s0
           envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < diskless-os/butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
 

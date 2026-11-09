@@ -1,0 +1,71 @@
+Nov 09 21:15:20 home-security NetworkManager[119149]: <info>  [1794230120.2607] audit: op="connection-update" uuid="e5ae7eac-11cc-4c99-a733-bb301d4270a8" name="br0" args="connection.timestamp" pid=134182 uid=0 result="success"
+Nov 09 21:15:21 home-security NetworkManager[119149]: <info>  [1794230121.3916] audit: op="connection-update" uuid="c8f38add-65aa-4287-9f3b-d2212abd5e8f" name="enp1s0-slave" args="connection.timestamp" pid=134240 uid=0 result="success"
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4325] device (enp1s0): state change: activated -> deactivating (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4325] dhcp4 (enp1s0): canceled DHCP transaction
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4325] dhcp4 (enp1s0): activation: beginning transaction (timeout in 45 seconds)
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4325] dhcp4 (enp1s0): state changed no lease
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4327] dhcp6 (enp1s0): canceled DHCP transaction
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4327] dhcp6 (enp1s0): activation: beginning transaction (timeout in 45 seconds)
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4327] dhcp6 (enp1s0): state changed no lease
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4329] manager: NetworkManager state is now DISCONNECTING
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4338] audit: op="connection-deactivate" uuid="3cbbc595-8dda-47aa-b9be-c72355e746b9" name="wired-dhcp" pid=134287 uid=0 result="success"
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4660] device (enp1s0): state change: deactivating -> disconnected (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:22 home-security NetworkManager[119149]: <info>  [1794230122.4674] manager: NetworkManager state is now DISCONNECTED
+Nov 09 21:15:23 home-security NetworkManager[119149]: <info>  [1794230123.4990] audit: op="connection-update" uuid="3cbbc595-8dda-47aa-b9be-c72355e746b9" name="wired-dhcp" args="connection.timestamp" pid=134367 uid=0 result="success"
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5457] agent-manager: agent[98088bf228c39c39,:1.1414/nmcli-connect/0]: agent registered
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5537] device (br0): state change: unmanaged -> unavailable (reason 'managed', managed-type: 'external')
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5549] device (br0): state change: unavailable -> disconnected (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5555] device (br0): Activation: starting connection 'br0' (e5ae7eac-11cc-4c99-a733-bb301d4270a8)
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5555] audit: op="connection-activate" uuid="e5ae7eac-11cc-4c99-a733-bb301d4270a8" name="br0" pid=134407 uid=0 result="success"
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5557] device (br0): state change: disconnected -> prepare (reason 'none', managed-type: 'full')
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5558] manager: NetworkManager state is now CONNECTING
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5575] device (br0): state change: prepare -> config (reason 'none', managed-type: 'full')
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5694] device (br0): state change: config -> ip-config (reason 'none', managed-type: 'full')
+Nov 09 21:15:24 home-security NetworkManager[119149]: <info>  [1794230124.5705] policy: set 'br0' (br0) as default for IPv4 routing and DNS
+Nov 09 21:15:26 home-security NetworkManager[119149]: <info>  [1794230126.5719] device (br0): state change: ip-config -> ip-check (reason 'none', managed-type: 'full')
+Nov 09 21:15:26 home-security NetworkManager[119149]: <info>  [1794230126.5740] device (br0): state change: ip-check -> secondaries (reason 'none', managed-type: 'full')
+Nov 09 21:15:26 home-security NetworkManager[119149]: <info>  [1794230126.5742] device (br0): state change: secondaries -> activated (reason 'none', managed-type: 'full')
+Nov 09 21:15:26 home-security NetworkManager[119149]: <info>  [1794230126.5744] manager: NetworkManager state is now CONNECTED_SITE
+Nov 09 21:15:26 home-security NetworkManager[119149]: <info>  [1794230126.5746] device (br0): Activation: successful, device activated.
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8506] agent-manager: agent[c11d8bde647e0fd2,:1.1422/nmcli-connect/0]: agent registered
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8526] device (enp1s0): Activation: starting connection 'enp1s0-slave' (c8f38add-65aa-4287-9f3b-d2212abd5e8f)
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8527] audit: op="connection-activate" uuid="c8f38add-65aa-4287-9f3b-d2212abd5e8f" name="enp1s0-slave" pid=134501 uid=0 result="success"
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8527] device (enp1s0): state change: disconnected -> prepare (reason 'none', managed-type: 'full')
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8529] manager: NetworkManager state is now CONNECTING
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8531] device (enp1s0): state change: prepare -> config (reason 'none', managed-type: 'full')
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8665] device (enp1s0): state change: config -> ip-config (reason 'none', managed-type: 'full')
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8694] device (br0): attached bridge port enp1s0
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8695] device (enp1s0): Activation: connection 'enp1s0-slave' attached as port, continuing activation
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8747] device (enp1s0): state change: ip-config -> ip-check (reason 'none', managed-type: 'full')
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8767] device (enp1s0): state change: ip-check -> secondaries (reason 'none', managed-type: 'full')
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8769] device (enp1s0): state change: secondaries -> activated (reason 'none', managed-type: 'full')
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8773] manager: NetworkManager state is now CONNECTED_SITE
+Nov 09 21:15:28 home-security NetworkManager[119149]: <info>  [1794230128.8775] device (enp1s0): Activation: successful, device activated.
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1601] device (br0): state change: activated -> deactivating (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1605] manager: NetworkManager state is now CONNECTED_LOCAL
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1615] audit: op="connection-deactivate" uuid="e5ae7eac-11cc-4c99-a733-bb301d4270a8" name="br0" pid=134559 uid=0 result="success"
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1661] device (br0): state change: deactivating -> disconnected (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1675] device (br0): detached bridge port enp1s0
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1770] device (enp1s0): state change: activated -> deactivating (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1771] manager: NetworkManager state is now DISCONNECTING
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1866] device (br0): state change: disconnected -> unmanaged (reason 'user-requested', managed-type: 'removed')
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1950] device (enp1s0): state change: deactivating -> disconnected (reason 'user-requested', managed-type: 'full')
+Nov 09 21:15:33 home-security NetworkManager[119149]: <info>  [1794230133.1982] manager: NetworkManager state is now DISCONNECTED
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2741] agent-manager: agent[051db7c9a28f8238,:1.1430/nmcli-connect/0]: agent registered
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2758] device (enp1s0): Activation: starting connection 'wired-dhcp' (3cbbc595-8dda-47aa-b9be-c72355e746b9)
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2758] audit: op="connection-activate" uuid="3cbbc595-8dda-47aa-b9be-c72355e746b9" name="wired-dhcp" pid=134612 uid=0 result="success"
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2759] device (enp1s0): state change: disconnected -> prepare (reason 'none', managed-type: 'full')
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2760] manager: NetworkManager state is now CONNECTING
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2761] device (enp1s0): state change: prepare -> config (reason 'none', managed-type: 'full')
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2860] device (enp1s0): state change: config -> ip-config (reason 'none', managed-type: 'full')
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.2866] dhcp4 (enp1s0): activation: beginning transaction (timeout in 45 seconds)
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.3135] dhcp4 (enp1s0): state changed new lease, address=10.1.29.100, acd pending
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4355] dhcp4 (enp1s0): state changed new lease, address=10.1.29.100
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4359] policy: set 'wired-dhcp' (enp1s0) as default for IPv4 routing and DNS
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4442] device (enp1s0): state change: ip-config -> ip-check (reason 'none', managed-type: 'full')
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4489] device (enp1s0): state change: ip-check -> secondaries (reason 'none', managed-type: 'full')
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4491] device (enp1s0): state change: secondaries -> activated (reason 'none', managed-type: 'full')
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4498] manager: NetworkManager state is now CONNECTED_SITE
+Nov 09 21:15:34 home-security NetworkManager[119149]: <info>  [1794230134.4500] device (enp1s0): Activation: successful, device activated.
+Nov 09 21:15:36 home-security NetworkManager[119149]: <info>  [1794230136.3289] dhcp6 (enp1s0): activation: beginning transaction (timeout in 45 seconds)
+Nov 09 21:15:36 home-security NetworkManager[119149]: <info>  [1794230136.7918] manager: NetworkManager state is now CONNECTED_GLOBAL

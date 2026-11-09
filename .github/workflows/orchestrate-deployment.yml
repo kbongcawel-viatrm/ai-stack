@@ -56,6 +56,11 @@ on:
         description: Required when enabling the AIDE timer
         required: false
         type: string
+      prepare_host:
+        description: Prepare the hypervisor (bridge cutover) before deploying the FCOS VM
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -92,7 +97,7 @@ jobs:
       fcos_qcow2_sha256: ${{ vars.FCOS_QCOW2_SHA256 || '' }}
       fcos_lan_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
       fcos_lan_cidr: ${{ vars.FCOS_LAN_CIDR || '10.1.29.0/24' }}
-      fcos_gateway: ${{ vars.FCOS_GATEWAY || '10.1.29.1' }}
+      fcos_gateway: ${{ vars.FCOS_GATEWAY || '10.1.29.2' }}
       fcos_interface: ${{ vars.FCOS_INTERFACE || 'enp1s0' }}
       network_bridge: ${{ vars.FCOS_NETWORK_BRIDGE || 'br0' }}
       vm_memory_mb: 2048
@@ -100,6 +105,7 @@ jobs:
       vm_disk_gb: 40
       vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || ((vars.HOST_OS || 'alpine') != 'alpine' && '/var/lib/libvirt/images') || '/mnt/nvme/libvirt/images' }}
       storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
+      prepare_host: ${{ inputs.prepare_host }}
     secrets: inherit
 
   kasm_poc:

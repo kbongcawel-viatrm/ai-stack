@@ -37,7 +37,7 @@ on:
       fcos_gateway:
         description: LAN default gateway
         required: true
-        default: 10.1.29.1
+        default: 10.1.29.2
         type: string
       fcos_interface:
         description: Guest network interface
@@ -74,6 +74,26 @@ on:
         required: true
         default: /mnt/nvme
         type: string
+      prepare_host:
+        description: Run prepare-hypervisor.yml first (bridge cutover drops connectivity briefly)
+        required: true
+        default: false
+        type: boolean
+      host_bridge_address:
+        description: IP/CIDR assigned to the host bridge
+        required: false
+        default: 10.1.29.100/24
+        type: string
+      host_bridge_slave:
+        description: Physical interface enslaved to the host bridge
+        required: false
+        default: enp1s0
+        type: string
+      host_bridge_dns:
+        description: DNS server for the host bridge (empty uses the gateway)
+        required: false
+        default: ""
+        type: string
   workflow_call:
     inputs:
       host_os:
@@ -102,7 +122,7 @@ on:
       fcos_gateway:
         type: string
         required: false
-        default: 10.1.29.1
+        default: 10.1.29.2
       fcos_interface:
         type: string
         required: false
@@ -131,6 +151,22 @@ on:
         type: string
         required: false
         default: /mnt/nvme
+      prepare_host:
+        type: boolean
+        required: false
+        default: false
+      host_bridge_address:
+        type: string
+        required: false
+        default: 10.1.29.100/24
+      host_bridge_slave:
+        type: string
+        required: false
+        default: enp1s0
+      host_bridge_dns:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -190,6 +226,8 @@ jobs:
           set -Eeuo pipefail
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
+          # community.general provides the run0 become plugin used on Secureblue.
+          "$RUNNER_TEMP/ansible-venv/bin/ansible-galaxy" collection install community.general
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
           BUTANE_VERSION=0.23.0
           curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 \
@@ -263,6 +301,10 @@ jobs:
           FCOS_VM_DISK_GB: ${{ inputs.vm_disk_gb }}
           FCOS_IMAGE_DIR: ${{ inputs.vm_storage_path }}
           FCOS_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
+          PREPARE_HOST: ${{ inputs.prepare_host }}
+          HOST_BRIDGE_ADDRESS: ${{ inputs.host_bridge_address }}
+          HOST_BRIDGE_SLAVE: ${{ inputs.host_bridge_slave }}
+          HOST_BRIDGE_DNS: ${{ inputs.host_bridge_dns }}
           LIBVIRT_QEMU_USER: ${{ vars.LIBVIRT_QEMU_USER }}
           LIBVIRT_QEMU_GROUP: ${{ vars.LIBVIRT_QEMU_GROUP }}
           FCOS_QCOW2_SMB_USERNAME: ${{ secrets.NAS_USER }}
@@ -329,13 +371,27 @@ jobs:
               "fcos_domain_dir": image_dir.rstrip("/") + "/domains",
               "fcos_qemu_user": os.environ.get("LIBVIRT_QEMU_USER") or ("libvirt-qemu" if host_os == "ubuntu" else "qemu"),
               "fcos_qemu_group": os.environ.get("LIBVIRT_QEMU_GROUP") or ("kvm" if host_os == "ubuntu" else "qemu"),
-              "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign")
+              "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign"),
+              "prep_bridge_name": os.environ["FCOS_NETWORK_BRIDGE"],
+              "prep_bridge_address": os.environ["HOST_BRIDGE_ADDRESS"],
+              "prep_gateway": os.environ["FCOS_GATEWAY"],
+              "prep_dns": os.environ.get("HOST_BRIDGE_DNS", ""),
+              "prep_slave_interface": os.environ["HOST_BRIDGE_SLAVE"],
+              "prep_manage_bridge": os.environ.get("PREPARE_HOST", "false").lower() in ("true", "1", "yes"),
+              "prep_check_internet": True,
+              "prep_libvirt_dir": "/var/lib/libvirt"
           }
+          hypervisor_host = os.environ["HYPERVISOR_HOST"]
+          # Runner and hypervisor are the same machine: skip SSH entirely.
+          local_hypervisor = hypervisor_host in ("localhost", "127.0.0.1", "::1")
           inventory = {
               "all": {"children": {"hypervisors": {"hosts": {"hypervisor": {
-                  "ansible_host": os.environ["HYPERVISOR_HOST"],
+                  "ansible_host": hypervisor_host,
+                  "ansible_connection": "local" if local_hypervisor else "ssh",
                   "ansible_user": os.environ["HYPERVISOR_USER"],
-              "ansible_become": os.environ["HYPERVISOR_USER"] != "root"
+                  "ansible_become": os.environ["HYPERVISOR_USER"] != "root",
+                  # Secureblue escalates via run0 (polkit), not sudo.
+                  "ansible_become_method": "community.general.run0" if host_os == "secureblue" else "sudo"
               }}}}}
           }
           with open(os.path.join(os.environ["RUNNER_TEMP"], "inventory.json"), "w") as f:
@@ -348,6 +404,18 @@ jobs:
         run: |
           set -Eeuo pipefail
           ansible-playbook -i localhost, --syntax-check playbooks/deploy-fcos-vm.yml
+          ansible-playbook -i localhost, --syntax-check playbooks/prepare-hypervisor.yml
+
+      - name: Prepare hypervisor host (optional bridge cutover)
+        if: ${{ inputs.prepare_host }}
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "True"
+        run: |
+          set -Eeuo pipefail
+          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+          ansible-playbook -i "$RUNNER_TEMP/inventory.json" playbooks/prepare-hypervisor.yml \
+            --extra-vars "@$RUNNER_TEMP/deploy-vars.json" \
+            --private-key "$HOME/.ssh/hypervisor" --diff
 
       - name: Deploy FCOS VM (does not run Deploy Host OS)
         env:

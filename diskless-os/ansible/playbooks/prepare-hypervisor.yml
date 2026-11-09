@@ -1,0 +1,256 @@
+---
+# Prepare a hypervisor host for FCOS VM deployment.
+#
+# Consolidates the manually verified Secureblue steps:
+#   - ensure br0 exists with static addressing and enslaves the host NIC
+#   - disable the old direct connection so it cannot race the bridge
+#   - verify KVM/libvirt tooling and storage directories
+#
+# Bridge management only runs on NetworkManager-based host OSes
+# (secureblue, arch, ubuntu). On alpine the bridge must already exist.
+#
+# Become note: on Secureblue a non-root user escalates via run0, which is
+# provided by the community.general collection (not ansible-core). Either
+# install that collection and set ansible_become_method, or connect as root.
+
+- name: Prepare hypervisor for FCOS VM deployment
+  hosts: hypervisors
+  become: true
+  gather_facts: true
+  vars:
+    prep_supported_host_os:
+      - alpine
+      - secureblue
+      - arch
+      - ubuntu
+    # NetworkManager-based distros can have their bridge managed here.
+    prep_nm_host_os:
+      - secureblue
+      - arch
+      - ubuntu
+    prep_bridge_name: br0
+    prep_bridge_address: 10.1.29.100/24
+    prep_gateway: 10.1.29.2
+    prep_dns: ""            # empty -> use prep_gateway
+    prep_slave_interface: enp1s0
+    prep_manage_bridge: true
+    prep_check_internet: true
+    prep_libvirt_dir: /var/lib/libvirt
+  tasks:
+    - name: Validate host OS selection
+      ansible.builtin.assert:
+        that:
+          - host_os in prep_supported_host_os
+        fail_msg: "host_os must be one of: {{ prep_supported_host_os | join(', ') }}"
+
+    - name: Verify hypervisor tooling
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        for binary in virsh qemu-img; do
+          command -v "$binary" >/dev/null || {
+            echo "Missing hypervisor tool: $binary" >&2
+            exit 1
+          }
+        done
+        virsh -c qemu:///system uri
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify KVM device
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: kvm_device
+
+    - name: Require KVM device
+      ansible.builtin.assert:
+        that:
+          - kvm_device.stat.exists
+        fail_msg: "KVM is unavailable. Enable virtualization in firmware first."
+
+    - name: Ensure libvirt storage directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ prep_libvirt_dir }}"
+        - "{{ prep_libvirt_dir }}/images"
+        - "{{ prep_libvirt_dir }}/images/domains"
+      when: host_os != "alpine"
+
+    - name: Ensure libvirt daemons are enabled and running
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        if systemctl cat virtqemud.service >/dev/null 2>&1; then
+          systemctl enable --now virtqemud.service
+        elif systemctl cat libvirtd.service >/dev/null 2>&1; then
+          systemctl enable --now libvirtd.service
+        else
+          echo "No known libvirt systemd unit found" >&2
+          exit 1
+        fi
+        systemctl is-active --quiet virtqemud.service \
+          || systemctl is-active --quiet libvirtd.service
+      args:
+        executable: /bin/bash
+      when:
+        - ansible_service_mgr == "systemd"
+        - host_os != "alpine"
+
+    # ------------------------------------------------------------------
+    # Bridge management (NetworkManager distros only)
+    # ------------------------------------------------------------------
+
+    - name: Check whether the target bridge link exists
+      ansible.builtin.command: "ip link show dev {{ prep_bridge_name }}"
+      register: prep_bridge_link
+      changed_when: false
+      failed_when: false
+
+    - name: Require pre-existing bridge on Alpine diskless hosts
+      ansible.builtin.assert:
+        that:
+          - prep_bridge_link.rc == 0
+        fail_msg: >-
+          Bridge {{ prep_bridge_name }} does not exist and Alpine networking
+          is not managed by this playbook. Create it in the apkovl config first.
+      when:
+        - host_os == "alpine"
+        - prep_manage_bridge | bool
+
+    - name: Manage bridge network configuration
+      when:
+        - prep_manage_bridge | bool
+        - host_os in prep_nm_host_os
+      block:
+        - name: Verify NetworkManager CLI is available
+          ansible.builtin.shell: "command -v nmcli"
+          changed_when: false
+
+        - name: Find active connection currently owning the slave interface
+          ansible.builtin.shell: |
+            set -Eeuo pipefail
+            nmcli -t -f NAME,DEVICE con show --active |
+              awk -F: -v dev="{{ prep_slave_interface }}" '$2 == dev {print $1; exit}'
+          args:
+            executable: /bin/bash
+          register: prep_old_conn
+          changed_when: false
+
+        - name: Block bridge cutover with automatic rollback on failure
+          block:
+            - name: Check for existing bridge connection profile
+              ansible.builtin.command: "nmcli con show {{ prep_bridge_name }}"
+              register: prep_bridge_profile
+              changed_when: false
+              failed_when: false
+
+            - name: Create bridge connection profile if missing
+              ansible.builtin.command: >-
+                nmcli con add type bridge con-name {{ prep_bridge_name }}
+                ifname {{ prep_bridge_name }}
+              when: prep_bridge_profile.rc != 0
+
+            - name: Configure bridge addressing, gateway, DNS and STP
+              ansible.builtin.command: >-
+                nmcli con mod {{ prep_bridge_name }}
+                ipv4.method manual
+                ipv4.addresses {{ prep_bridge_address }}
+                ipv4.gateway {{ prep_gateway }}
+                ipv4.dns {{ prep_dns if prep_dns | length > 0 else prep_gateway }}
+                ipv4.dns-search ""
+                ipv6.method disabled
+                bridge.stp no
+
+            - name: Check for existing slave connection profile
+              ansible.builtin.command: "nmcli con show {{ prep_slave_interface }}-slave"
+              register: prep_slave_profile
+              changed_when: false
+              failed_when: false
+
+            - name: Create bridge-slave profile if missing
+              ansible.builtin.command: >-
+                nmcli con add type bridge-slave
+                con-name {{ prep_slave_interface }}-slave
+                ifname {{ prep_slave_interface }} master {{ prep_bridge_name }}
+              when: prep_slave_profile.rc != 0
+
+            - name: Repoint existing slave profile at the bridge
+              ansible.builtin.command: >-
+                nmcli con mod {{ prep_slave_interface }}-slave
+                ifname {{ prep_slave_interface }} master {{ prep_bridge_name }}
+              when: prep_slave_profile.rc == 0
+
+            - name: Deactivate the old direct connection on the slave interface
+              ansible.builtin.command: "nmcli con down {{ prep_old_conn.stdout }}"
+              when:
+                - prep_old_conn.stdout | length > 0
+                - prep_old_conn.stdout != (prep_slave_interface ~ "-slave")
+
+            - name: Prevent the old connection racing the bridge on reboot
+              ansible.builtin.command: >-
+                nmcli con mod {{ prep_old_conn.stdout }} connection.autoconnect no
+              when:
+                - prep_old_conn.stdout | length > 0
+                - prep_old_conn.stdout != (prep_slave_interface ~ "-slave")
+
+            - name: Activate the bridge (brief connectivity drop expected)
+              ansible.builtin.command: "nmcli con up {{ prep_bridge_name }}"
+
+            - name: Activate the bridge slave port if needed
+              ansible.builtin.command: "nmcli con up {{ prep_slave_interface }}-slave"
+              register: prep_slave_up
+              changed_when: false
+              failed_when: false
+
+            - name: Wait for bridge IP address to be assigned
+              ansible.builtin.shell: >-
+                ip -br addr show {{ prep_bridge_name }} | grep -q {{ prep_bridge_address }}
+              register: prep_bridge_ip
+              changed_when: false
+              until: prep_bridge_ip.rc == 0
+              retries: 10
+              delay: 2
+
+            - name: Wait for gateway reachability through the bridge
+              ansible.builtin.command: "ping -c1 -W2 {{ prep_gateway }}"
+              register: prep_gw_ping
+              changed_when: false
+              until: prep_gw_ping.rc == 0
+              retries: 10
+              delay: 2
+
+            - name: Wait for internet reachability
+              ansible.builtin.command: "ping -c1 -W3 8.8.8.8"
+              register: prep_inet_ping
+              changed_when: false
+              until: prep_inet_ping.rc == 0
+              retries: 5
+              delay: 2
+              when: prep_check_internet | bool
+
+          rescue:
+            - name: Roll back bridge activation
+              ansible.builtin.command: "nmcli con down {{ prep_bridge_name }}"
+              failed_when: false
+
+            - name: Restore previous connection
+              ansible.builtin.command: "nmcli con up {{ prep_old_conn.stdout }}"
+              when: prep_old_conn.stdout | length > 0
+              failed_when: false
+
+            - name: Report rollback result
+              ansible.builtin.fail:
+                msg: >-
+                  Bridge cutover failed; rollback was attempted. If connectivity
+                  is lost, recover from the local console:
+                  nmcli con down {{ prep_bridge_name }};
+                  nmcli con up {{ prep_old_conn.stdout | default('the previous connection') }}
+
+        - name: Confirm default route via the bridge
+          ansible.builtin.shell: >-
+            ip route | grep -q "default via {{ prep_gateway }} dev {{ prep_bridge_name }}"
+          changed_when: false

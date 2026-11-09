@@ -62,14 +62,20 @@ rollback() {
 }
 
 verify() {
+    # Poll for up to ~20s: bridge addressing/routes can lag activation.
+    local i
+    for i in $(seq 1 10); do
+        ip -br addr show "$BRIDGE" 2>/dev/null | grep -q "$BRIDGE_IP" &&
+        ip route | grep -q "default via $GATEWAY dev $BRIDGE" &&
+        ping -c1 -W2 "$GATEWAY" >/dev/null 2>&1 &&
+        { [[ $SKIP_INTERNET -eq 1 ]] || ping -c1 -W3 8.8.8.8 >/dev/null 2>&1; } &&
+        return 0
+        sleep 2
+    done
     log "Verifying bridge state..."
-    ip -br addr show "$BRIDGE" | grep -q "$BRIDGE_IP" || return 1
-    ip route | grep -q "default via $GATEWAY dev $BRIDGE" || return 1
-    ping -c2 -W2 "$GATEWAY" >/dev/null 2>&1 || return 1
-    if [[ $SKIP_INTERNET -eq 0 ]]; then
-        ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 || return 1
-    fi
-    return 0
+    ip -br addr show "$BRIDGE" || true
+    ip route || true
+    return 1
 }
 
 # --- 1. Ensure bridge profile exists with manual addressing ---
@@ -82,7 +88,8 @@ nmcli_root con mod "$BRIDGE" \
     ipv4.addresses "$BRIDGE_IP" \
     ipv4.gateway "$GATEWAY" \
     ipv4.dns "$DNS" \
-    ipv6.method disabled
+    ipv6.method disabled \
+    bridge.stp no
 
 # --- 2. Ensure $SLAVE_IF is enslaved to the bridge ---
 SLAVE_CONN="${SLAVE_IF}-slave"
@@ -112,6 +119,17 @@ sleep 2
 nmcli_root con show "$SLAVE_CONN" --active >/dev/null 2>&1 || \
     nmcli_root con up "$SLAVE_CONN"
 
+diagnose() {
+    log "Diagnostics: ip -br addr"
+    ip -br addr || true
+    log "Diagnostics: ip route"
+    ip route || true
+    log "Diagnostics: nmcli device status"
+    nmcli device status || true
+    log "Diagnostics: nmcli -f ALL con show $BRIDGE (active fields)"
+    nmcli -g connection.id,connection.interface-name,ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns,ipv6.method con show "$BRIDGE" || true
+}
+
 # --- 5. Verify; roll back on failure ---
 if verify; then
     log "SUCCESS: $BRIDGE is up with $BRIDGE_IP via $GATEWAY"
@@ -120,6 +138,7 @@ if verify; then
     exit 0
 fi
 
+diagnose
 log "Verification failed — attempting rollback"
 rollback
 if [[ -n "$OLD_CONN" ]]; then
