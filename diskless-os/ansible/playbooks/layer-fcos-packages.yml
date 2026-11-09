@@ -5,6 +5,7 @@
   gather_facts: false
   vars:
     fcos_layered_packages:
+      - python3
       - firewalld
       - nftables
       - suricata
@@ -15,41 +16,34 @@
       - podman-compose
       - logrotate
   tasks:
+    # FCOS ships without Python, so every task up to the reboot must use raw
+    # (SSH exec, no module interpreter). python3 lands via rpm-ostree below.
     - name: Confirm target is rpm-ostree based Fedora CoreOS
-      ansible.builtin.command: rpm-ostree status
+      ansible.builtin.raw: rpm-ostree status
       register: ostree_status
       changed_when: false
-
-    - name: Read guest OS identity
-      ansible.builtin.command:
-        argv: [cat, /etc/os-release]
-      register: fcos_os_release
-      changed_when: false
+      failed_when: ostree_status.rc != 0
 
     - name: Refuse to layer FCOS packages on a non-CoreOS host
-      ansible.builtin.assert:
-        that:
-          - fcos_os_release.stdout is search('VARIANT="CoreOS"')
-        fail_msg: "Target is not Fedora CoreOS. Check the fcos inventory host and SSH destination."
+      ansible.builtin.raw: grep -q 'VARIANT="CoreOS"' /etc/os-release
+      changed_when: false
+      register: coreos_check
+      failed_when: coreos_check.rc != 0
 
     - name: Stage required FCOS packages
-      ansible.builtin.command:
-        argv: "{{ ['rpm-ostree', 'install'] + fcos_layered_packages }}"
+      ansible.builtin.raw: "rpm-ostree install {{ fcos_layered_packages | join(' ') }}"
       register: package_layer
       changed_when: "'Changes staged' in package_layer.stdout or 'Staged deployment' in package_layer.stdout"
 
     - name: Reboot into the package deployment
-      ansible.builtin.reboot:
-        msg: "Rebooting FCOS to activate the security service package deployment"
-        reboot_timeout: 900
-        connect_timeout: 10
-        post_reboot_delay: 30
-        test_command: rpm-ostree status
+      ansible.builtin.raw: systemctl reboot
       when: package_layer.changed
 
-    - name: Wait for FCOS after package deployment
-      ansible.builtin.wait_for_connection:
-        delay: 10
+    - name: Wait for FCOS SSH after package deployment
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 22
+        delay: 15
         sleep: 10
         timeout: 900
       when: package_layer.changed
@@ -57,7 +51,7 @@
     - name: Verify required binaries after layering
       ansible.builtin.shell: |
         set -Eeuo pipefail
-        for binary in firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose; do
+        for binary in python3 firewall-cmd nft suricata suricata-update aide clamscan freshclam lynis podman podman-compose; do
           command -v "$binary" >/dev/null || {
             echo "Missing after package layering: $binary" >&2
             exit 1
