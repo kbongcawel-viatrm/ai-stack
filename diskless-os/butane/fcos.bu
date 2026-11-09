@@ -29,7 +29,7 @@ storage:
     - path: /etc/systemd/user/sockets.target.wants
       mode: 0755
     - path: /etc/suricata
-      mode: 0750
+      mode: 0755
     - path: /etc/sysctl.d
       mode: 0755
     - path: /etc/profile.d
@@ -43,9 +43,27 @@ storage:
     - path: /var/log/aide
       mode: 0750
     - path: /var/lib/suricata/rules
-      mode: 0750
+      mode: 0755
     - path: /var/log/suricata
-      mode: 0750
+      mode: 0770
+    - path: /var/home/core/.config
+      mode: 0755
+      user:
+        name: core
+      group:
+        name: core
+    - path: /var/home/core/.config/containers
+      mode: 0755
+      user:
+        name: core
+      group:
+        name: core
+    - path: /var/home/core/.config/containers/systemd
+      mode: 0755
+      user:
+        name: core
+      group:
+        name: core
 
   files:
     - path: /etc/ssh/sshd_config.d/00-local-security.conf
@@ -217,17 +235,57 @@ storage:
           [Unit]
           After=fcos-bootstrap-firewall.service
 
-    # Suricata 8 override is passed with --include so package defaults remain
-    # intact. Ansible validates this file against the installed Suricata build.
-    - path: /etc/suricata/fcos-overrides.yaml
-      mode: 0640
+    # firewalld ships in the rpm-ostree layer; wait for the first-boot layer
+    # unit so the vendor unit does not start before its binaries exist.
+    - path: /etc/systemd/system/firewalld.service.d/20-fcos-package-layer.conf
+      mode: 0644
       overwrite: true
       contents:
         inline: |
+          [Unit]
+          After=fcos-package-layer.service
+
+    # Suricata 8 override is passed with --include so package defaults remain
+    # intact. Ansible validates this file against the installed Suricata build.
+    - path: /etc/suricata/fcos-overrides.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          %YAML 1.1
+          ---
+          # --include replaces the whole vars map, so every group the ET
+          # rules reference must be redeclared here (mirrors suricata.yaml).
           vars:
             address-groups:
               HOME_NET: "[${FCOS_LAN_CIDR}]"
               EXTERNAL_NET: "!$HOME_NET"
+              HTTP_SERVERS: "$HOME_NET"
+              SMTP_SERVERS: "$HOME_NET"
+              SQL_SERVERS: "$HOME_NET"
+              DNS_SERVERS: "$HOME_NET"
+              TELNET_SERVERS: "$HOME_NET"
+              AIM_SERVERS: "$EXTERNAL_NET"
+              DC_SERVERS: "$HOME_NET"
+              DNP3_SERVER: "$HOME_NET"
+              DNP3_CLIENT: "$HOME_NET"
+              MODBUS_CLIENT: "$HOME_NET"
+              MODBUS_SERVER: "$HOME_NET"
+              ENIP_CLIENT: "$HOME_NET"
+              ENIP_SERVER: "$HOME_NET"
+            port-groups:
+              HTTP_PORTS: "80"
+              SHELLCODE_PORTS: "!80"
+              ORACLE_PORTS: 1521
+              SSH_PORTS: 22
+              DNP3_PORTS: 20000
+              MODBUS_PORTS: 502
+              FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+              FTP_PORTS: 21
+              GENEVE_PORTS: 6081
+              VXLAN_PORTS: 4789
+              TEREDO_PORTS: 3544
+              SIP_PORTS: "[5060, 5061]"
           rule-files:
             - suricata.rules
             - local.rules
@@ -239,7 +297,7 @@ storage:
     # intentionally fail-open if Suricata is down, to avoid losing management
     # connectivity; monitoring must alert if the NFQUEUE service is inactive.
     - path: /var/lib/suricata/rules/local.rules
-      mode: 0640
+      mode: 0644
       overwrite: true
       contents:
         inline: |
@@ -399,13 +457,15 @@ storage:
           #!/usr/bin/bash
           set -Eeuo pipefail
           /usr/local/sbin/fcos-services-preflight
+          install -d -o suricata -g suricata -m 0770 /var/log/suricata
+          install -d -o suricata -g suricata -m 0750 /var/run/suricata
           rules_dir=/var/lib/suricata/rules
           backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
           had_rules=0
-          install -d -m 0750 "$rules_dir"
+          install -d -m 0755 "$rules_dir"
           if [[ ! -e "$rules_dir/local.rules" ]]; then
             printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
-            chmod 0640 "$rules_dir/local.rules"
+            chmod 0644 "$rules_dir/local.rules"
           fi
           cp -a "$rules_dir" "$backup_dir"
           had_rules=1
@@ -423,6 +483,7 @@ storage:
           suricata-update update-sources
           suricata-update enable-source et/open
           suricata-update
+          chown -R suricata:suricata "$rules_dir"
           suricata -T -c /etc/suricata/suricata.yaml
           suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
           trap - EXIT
@@ -484,10 +545,10 @@ storage:
           rules_dir=/var/lib/suricata/rules
           backup_dir="/var/lib/suricata/rules.rollback.$(date +%Y%m%d%H%M%S)"
           had_rules=0
-          install -d -m 0750 "$rules_dir"
+          install -d -m 0755 "$rules_dir"
           if [[ ! -e "$rules_dir/local.rules" ]]; then
             printf '# Local IDS/IPS validation rules are managed by Ansible.\n' > "$rules_dir/local.rules"
-            chmod 0640 "$rules_dir/local.rules"
+            chmod 0644 "$rules_dir/local.rules"
           fi
           cp -a "$rules_dir" "$backup_dir"
           had_rules=1
@@ -505,6 +566,7 @@ storage:
           suricata-update update-sources
           suricata-update enable-source et/open
           suricata-update
+          chown -R suricata:suricata "$rules_dir"
           suricata -T -c /etc/suricata/suricata.yaml
           suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml
           if systemctl is-active --quiet suricata.service; then
@@ -532,7 +594,7 @@ systemd:
         DefaultDependencies=no
         After=local-fs.target
         Before=NetworkManager.service
-        ConditionPathIsExecutable=/usr/sbin/nft
+        ConditionFileIsExecutable=/usr/sbin/nft
 
         [Service]
         Type=oneshot
@@ -541,13 +603,54 @@ systemd:
         ExecStart=/usr/sbin/nft -f /etc/nftables/fcos-bootstrap.nft
         ExecStop=-/usr/sbin/nft delete table inet fcos_bootstrap
         RemainAfterExit=yes
-        NoNewPrivileges=true
         CapabilityBoundingSet=CAP_NET_ADMIN
         AmbientCapabilities=CAP_NET_ADMIN
+        # NoNewPrivileges intentionally omitted: FCOS SELinux denies the
+        # init_t -> iptables_t bounded transition (nnp_transition) for nft.
         RestrictAddressFamilies=AF_NETLINK AF_INET AF_INET6
         ProtectSystem=full
         ProtectHome=true
         PrivateTmp=true
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: fcos-package-layer.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Layer required FCOS packages with rpm-ostree (first boot)
+        Wants=network-online.target
+        After=network-online.target
+        Before=multi-user.target
+        # Prevents running again once the marker file exists
+        ConditionPathExists=!/var/lib/rpm-ostree-install.stamp
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        TimeoutStartSec=30m
+        # Stream output to both journald and the boot console
+        StandardOutput=journal+console
+        StandardError=journal+console
+        # Single-line payload: no nested quotes or shell variables, which
+        # systemd ExecStart quote/specifier parsing would mangle. Hyphenated
+        # tags keep messages quote-free; command -v verifies all binaries at once.
+        ExecStart=/bin/bash -c 'set -e; echo FCOS-LAYER-START-$(date --iso-8601=seconds); /usr/bin/rpm-ostree install --idempotent --allow-inactive python3 firewalld nftables suricata aide clamav clamav-freshclam lynis podman-compose logrotate || { echo FCOS-LAYER-INSTALL-FAILED-$(date --iso-8601=seconds) >&2; exit 1; }; command -v python3 firewall-cmd nft suricata aide clamscan freshclam lynis podman-compose logrotate >/dev/null 2>&1 || { echo FCOS-LAYER-MISSING-BINARY-$(date --iso-8601=seconds) >&2; command -v python3 firewall-cmd nft suricata aide clamscan freshclam lynis podman-compose logrotate; exit 1; }; /usr/bin/touch /var/lib/rpm-ostree-install.stamp && echo FCOS-LAYER-STAMP-WRITTEN-$(date --iso-8601=seconds) && echo FCOS-LAYER-REBOOTING-$(date --iso-8601=seconds) && /usr/bin/systemctl reboot'
+        NoNewPrivileges=true
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        # rpm-ostree needs the system D-Bus socket and ostree state.
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/ostree /etc
 
         [Install]
         WantedBy=multi-user.target
@@ -566,7 +669,7 @@ systemd:
       contents: |
         [Unit]
         Description=Verify FCOS security service dependencies
-        After=local-fs.target
+        After=local-fs.target fcos-package-layer.service
         Before=suricata-prepare.service
 
         [Service]
@@ -596,7 +699,7 @@ systemd:
         [Unit]
         Description=Install Suricata NFQUEUE nftables rules
         Wants=network-online.target firewalld.service
-        After=network-online.target firewalld.service
+        After=network-online.target firewalld.service fcos-package-layer.service
         Before=suricata.service
 
         [Service]
@@ -606,7 +709,8 @@ systemd:
         ExecStop=-/usr/sbin/nft delete table inet suricata_nfq
         RemainAfterExit=yes
         CapabilityBoundingSet=CAP_NET_ADMIN
-        NoNewPrivileges=true
+        # NoNewPrivileges intentionally omitted: FCOS SELinux denies the
+        # init_t -> iptables_t bounded transition (nnp_transition) for nft.
         PrivateTmp=true
         ProtectSystem=full
         ProtectHome=read-only
@@ -636,7 +740,7 @@ systemd:
         Type=oneshot
         ExecStart=/usr/local/sbin/suricata-prepare
         RemainAfterExit=yes
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
         PrivateTmp=true
         ProtectSystem=full
         ProtectHome=read-only
@@ -670,10 +774,12 @@ systemd:
         Restart=on-failure
         RestartSec=5
         User=root
-        Group=root
+        Group=suricata
         AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
         CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        # Group=suricata: CapabilityBoundingSet drops CAP_DAC_OVERRIDE, so the
+        # confined process can only read suricata-group-owned config/rules.
         PrivateTmp=true
         ProtectSystem=full
         ProtectHome=read-only
@@ -704,7 +810,7 @@ systemd:
         [Service]
         Type=oneshot
         ExecStart=/usr/local/sbin/suricata-rule-refresh
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
         PrivateTmp=true
         ProtectSystem=full
         ProtectHome=read-only
@@ -753,7 +859,7 @@ systemd:
         IOSchedulingPriority=7
         ProtectSystem=full
         ProtectHome=read-only
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
         PrivateTmp=true
         ProtectKernelTunables=true
         ProtectKernelModules=true
@@ -799,7 +905,7 @@ systemd:
         CPUWeight=20
         ProtectSystem=full
         ProtectHome=read-only
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
         PrivateTmp=true
         ProtectKernelTunables=true
         ProtectKernelModules=true
@@ -843,7 +949,7 @@ systemd:
         CPUWeight=20
         ProtectSystem=full
         ProtectHome=read-only
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
         PrivateTmp=true
         ProtectKernelTunables=true
         ProtectKernelModules=true
@@ -888,7 +994,7 @@ systemd:
         CPUWeight=20
         ProtectSystem=full
         ProtectHome=read-only
-        NoNewPrivileges=true
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
         PrivateTmp=true
         ProtectKernelTunables=true
         ProtectKernelModules=true

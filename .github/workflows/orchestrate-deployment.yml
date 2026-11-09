@@ -37,11 +37,6 @@ on:
         description: Controlled LAN HTTP server IP (TCP/80) for Suricata validation
         required: false
         type: string
-      layer_packages:
-        description: Layer FCOS packages and reboot if required
-        required: true
-        default: true
-        type: boolean
       container_smoke_image:
         description: Approved container image for rootless Podman smoke test
         required: true
@@ -132,7 +127,6 @@ jobs:
     with:
       fcos_vm_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
       fcos_ssh_user: ${{ vars.KASM_POC_SSH_USER || 'core' }}
-      layer_packages: ${{ inputs.layer_packages }}
       suricata_test_target_ip: ${{ inputs.suricata_test_target_ip || '' }}
       container_smoke_image: ${{ inputs.container_smoke_image }}
       enable_aide_timer: ${{ inputs.enable_aide_timer }}

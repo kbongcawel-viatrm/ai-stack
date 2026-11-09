@@ -38,7 +38,7 @@ FCOS base/overlay QCOW2, Ignition and libvirt domain XML live under the selected
 
 FCOS is provisioned from a pinned QCOW2 image and Ignition configuration. Butane writes the FCOS core SSH key, SSH hardening, static NetworkManager profile, Firewalld zone and egress policy, NFQUEUE nftables rules, rootless Podman user socket defaults, scan scripts, systemd services/timers and kernel/sysctl hardening.
 
-Butane does not install RPM packages. The FCOS package layer must include Firewalld, nftables, Suricata with NFQUEUE support, suricata-update, AIDE, ClamAV, Lynis, Podman and podman-compose. A separate rpm-ostree layering/reboot stage completes before services are relied on. Do not assume packages installed in a Toolbox exist in FCOS.
+Butane installs the FCOS package layer through a first-boot systemd oneshot (fcos-package-layer.service) that runs rpm-ostree install --idempotent --allow-inactive and reboots into the staged deployment (required: --apply-live cannot materialize package-owned /etc files). The layer includes Firewalld, nftables, Suricata with NFQUEUE support, suricata-update, AIDE, ClamAV, Lynis, Podman and podman-compose. Ansible playbooks provide configuration management and validation only, not sequential package installation. Do not assume packages installed in a Toolbox exist in FCOS.
 
 Rootless Podman is configured for the core user. The user socket is /run/user/1000/podman/podman.sock; linger keeps the user manager available. Both CONTAINER_HOST and DOCKER_HOST point to that Unix socket. Interactive docker/docker-compose aliases are convenience interfaces, not proof that every Docker API/Compose behavior is supported. Rootful system Podman/Docker sockets are masked.
 

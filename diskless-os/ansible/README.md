@@ -1,6 +1,6 @@
 # Ansible Operations
 
-Ansible configures the FCOS guest after its base image has booted and SSH is reachable. Butane/Ignition owns first-boot configuration; Ansible handles package layering/reboot coordination, security service activation, Suricata updates, active validation and health checks.
+Ansible configures the FCOS guest after its base image has booted and SSH is reachable. Butane/Ignition owns first-boot configuration including RPM package layering; Ansible handles security service activation, Suricata updates, active validation and health checks. Ansible does not perform sequential package installation.
 
 ## Playbooks
 
@@ -8,7 +8,6 @@ Ansible configures the FCOS guest after its base image has booted and SSH is rea
 |---|---|
 | prepare-hypervisor.yml | Verify KVM/libvirt tooling and storage; on NetworkManager hosts (secureblue/arch/ubuntu) create/configure the host bridge, enslave the NIC, cut over with automatic rollback on failure |
 | deploy-fcos-vm.yml | Provision FCOS on an existing libvirt hypervisor; verifies local persistent storage and refuses existing VM domains or orphaned disks |
-| layer-fcos-packages.yml | Layer Firewalld, nftables, Suricata, AIDE, ClamAV, Lynis, podman-compose and logrotate with rpm-ostree; reboot only when a deployment is staged |
 | configure-security.yml | Validate FCOS identity/NIC, Firewalld, SSH, Suricata NFQUEUE/rules, rootless Podman API and daily timers |
 | suricata-ips-validation.yml | Add temporary IDS/IPS signatures, generate controlled HTTP traffic, verify EVE alerts/drop, restore production rules |
 | podman-compose-poc.yml | Verify a preapproved local image, start an HTTP Compose stack through rootless Podman, test it and remove it |
@@ -21,7 +20,7 @@ The Host VM workflow is independent of Deploy Host OS. It requires an existing h
 
 ## Butane package contract
 
-Butane writes configuration, policy, scripts and systemd units; it does not install RPMs. The package-layering playbook installs:
+Butane's first-boot oneshot fcos-package-layer.service installs the RPM layer with rpm-ostree install --idempotent --allow-inactive and reboots into the staged deployment. Ansible verifies the resulting configuration but does not install packages. The package layer is:
 
 - firewalld, nftables
 - suricata (provides suricata-update)
@@ -50,6 +49,8 @@ The current Butane profile configures:
 - Log rotation for ClamAV, Lynis and AIDE logs.
 - Rootless Podman user socket, linger, CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - Rootful system Podman/Docker socket activation masked.
+- First-boot fcos-package-layer.service oneshot that layers the RPM set above via rpm-ostree and reboots into the staged deployment.
+- Rootless application Quadlet directory at /var/home/core/.config/containers/systemd/ for *.container units generated as core user services.
 
 The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 192.168.1.201/24, gateway/DNS 192.168.1.1, LAN 192.168.1.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
 
@@ -105,7 +106,6 @@ Run from diskless-os/ansible:
 
     ansible-playbook -i inventory/hosts.yml playbooks/prepare-hypervisor.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/deploy-fcos-vm.yml --syntax-check
-    ansible-playbook -i inventory/hosts.yml playbooks/layer-fcos-packages.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/configure-security.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/suricata-ips-validation.yml --syntax-check
     ansible-playbook -i inventory/hosts.yml playbooks/podman-compose-poc.yml --syntax-check
@@ -113,4 +113,4 @@ Run from diskless-os/ansible:
     ansible-playbook -i inventory/hosts.yml playbooks/enable-aide-check.yml --syntax-check
     ansible-playbook -i inventory/health.yml playbooks/health-check.yml --syntax-check
 
-The GitHub Actions Provision Services/Containers workflow orchestrates package layering, security configuration, Compose HTTP validation and active Suricata IDS/IPS validation. Kasm Compatibility POC is a separate manual workflow requiring an isolated FCOS test VM.
+The GitHub Actions Provision Services/Containers workflow orchestrates security configuration, Compose HTTP validation and active Suricata IDS/IPS validation; package layering is completed by the Butane first-boot oneshot before Ansible runs. Kasm Compatibility POC is a separate manual workflow requiring an isolated FCOS test VM.

@@ -78,7 +78,7 @@ Validate Butane with strict mode, parse embedded Firewalld XML, syntax-check emb
 The VM workflow is independent of Host OS. It accepts an existing Alpine, Fedora Secureblue, Arch Linux or Ubuntu hypervisor, validates KVM/libvirt/bridge and local persistent storage, verifies a pinned FCOS QCOW2 SHA-256, renders Butane/Ignition and provisions the guest. It refuses to overwrite an existing VM or orphaned disk.
 
 ### Provision Services/Containers
-Layer FCOS packages with rpm-ostree if requested, reboot only when needed, configure Firewalld/Suricata/AIDE/ClamAV/Lynis/rootless Podman, run active IDS/IPS validation and verify a preapproved rootless Compose HTTP smoke image.
+Configure Firewalld/Suricata/AIDE/ClamAV/Lynis/rootless Podman, run active IDS/IPS validation and verify a preapproved rootless Compose HTTP smoke image. RPM package layering is owned by the Butane first-boot oneshot (fcos-package-layer.service), not Ansible.
 
 ### Health Check
 Run Ansible health checks for the hypervisor and FCOS guest.

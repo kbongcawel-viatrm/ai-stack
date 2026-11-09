@@ -1,6 +1,6 @@
 # FCOS Service Configuration
 
-Butane/Ignition writes the first-boot configuration, security policy, scripts and systemd units. Ansible layers required RPMs, reboots into the new deployment, runs the Suricata preparation gate, enables services, validates IDS/IPS and tests rootless Compose.
+Butane/Ignition writes the first-boot configuration, security policy, scripts and systemd units, including the rpm-ostree package layer installed and activated via first-boot reboot. Ansible configures and validates services, runs the Suricata preparation gate, enables services, validates IDS/IPS and tests rootless Compose.
 
 ## Services
 
@@ -14,7 +14,7 @@ Butane/Ignition writes the first-boot configuration, security policy, scripts an
 
 ## Package prerequisites
 
-The Ansible package-layering playbook installs firewalld, nftables, suricata, aide, clamav, clamav-freshclam, lynis, podman-compose and logrotate using rpm-ostree. Fedora's Suricata package supplies suricata-update. Podman and its user socket are expected from the FCOS base image. Butane does not install RPM packages.
+The Butane first-boot oneshot fcos-package-layer.service installs firewalld, nftables, suricata, aide, clamav, clamav-freshclam, lynis, podman-compose and logrotate using rpm-ostree install --idempotent --allow-inactive, then reboots into the staged deployment. Ansible playbooks configure and validate these services but do not install packages. Fedora's Suricata package supplies suricata-update. Podman and its user socket are expected from the FCOS base image.
 
 ## Operational details
 

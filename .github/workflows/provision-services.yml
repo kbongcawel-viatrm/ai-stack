@@ -4,11 +4,6 @@ on:
     paths: [".github/workflows/provision-services.yml"]
   workflow_dispatch:
     inputs:
-      layer_packages:
-        description: Layer required FCOS packages and reboot if the deployment changes
-        required: true
-        default: true
-        type: boolean
       suricata_test_target_ip:
         description: Controlled LAN HTTP server IP (TCP/80) used for active IDS/IPS validation
         required: true
@@ -46,10 +41,6 @@ on:
         type: string
         required: false
         default: ""
-      layer_packages:
-        type: boolean
-        required: false
-        default: true
       suricata_test_target_ip:
         type: string
         required: true
@@ -127,7 +118,6 @@ jobs:
           CONTAINER_SMOKE_IMAGE: ${{ inputs.container_smoke_image }}
           AIDE_BASELINE_APPROVAL_REASON: ${{ inputs.aide_baseline_approval_reason }}
           ENABLE_AIDE_TIMER: ${{ inputs.enable_aide_timer }}
-          LAYER_PACKAGES: ${{ inputs.layer_packages }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -149,7 +139,6 @@ jobs:
           variables = {
               "aide_enable_daily_timer": os.environ["ENABLE_AIDE_TIMER"].lower() == "true",
               "aide_baseline_approval_reason": os.environ.get("AIDE_BASELINE_APPROVAL_REASON", ""),
-              "layer_packages": os.environ.get("LAYER_PACKAGES", "true").lower() == "true",
               "container_smoke_image": os.environ["CONTAINER_SMOKE_IMAGE"]
           }
           with open(os.path.join(os.environ["RUNNER_TEMP"], "fcos-inventory.json"), "w") as f:
@@ -157,13 +146,6 @@ jobs:
           with open(os.path.join(os.environ["RUNNER_TEMP"], "provision-vars.json"), "w") as f:
               json.dump(variables, f, indent=2)
           PY
-
-      - name: Layer FCOS security packages
-        if: ${{ inputs.layer_packages }}
-        run: |
-          set -Eeuo pipefail
-          ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/layer-fcos-packages.yml \
-            --private-key "$HOME/.ssh/fcos" --diff
 
       - name: Configure Firewalld, Suricata, scan timers and rootless Podman
         env:

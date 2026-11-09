@@ -30,7 +30,8 @@
 - [ ] On Alpine diskless, confirm libvirt-vms restores the domain after a reboot.
 
 ## Phase 3 — FCOS provisioning
-- [ ] Run Provision Services/Containers with package layering enabled if required; allow the controlled FCOS reboot.
+- [ ] Confirm fcos-package-layer.service ran on first boot and FCOS rebooted into the rpm-ostree layered deployment.
+- [ ] Run Provision Services/Containers for configuration management and validation; it performs no package installation.
 - [ ] Configure rootless Podman user socket and linger.
 - [ ] Configure CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - [ ] Configure Firewalld inbound default DROP and explicit source-bound LAN egress policy.

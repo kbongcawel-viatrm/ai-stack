@@ -29,14 +29,16 @@ The workflow uses an envsubst variable allowlist. Do not substitute every shell 
 - **Logrotate:** daily rotation for ClamAV, Lynis and AIDE logs.
 - **Rootless Podman:** rootless user socket for core UID 1000, linger, CONTAINER_HOST and DOCKER_HOST exports, and interactive docker/docker-compose aliases. Rootful system Podman/Docker sockets are masked.
 - **Preflight:** systemd service checks that required binaries and Suricata NFQUEUE support exist before security services start.
+- **Package layer:** fcos-package-layer.service is a first-boot oneshot gated by /var/lib/rpm-ostree-install.stamp. It runs rpm-ostree install --idempotent --allow-inactive for python3, firewalld, nftables, suricata, aide, clamav, clamav-freshclam, lynis, podman-compose and logrotate, writes the stamp, then reboots into the staged deployment. A reboot is required: --apply-live cannot materialize package-owned /etc files (e.g. /etc/suricata/suricata.yaml). Output streams to journald and the boot console; failures abort before the stamp.
+- **Quadlet directory:** /var/home/core/.config/containers/systemd/ is created for rootless application Quadlets. Podman's quadlet generator turns *.container files there into core user units, started at boot because linger is enabled.
 
-Butane writes files, policy and systemd units. It does not install RPM packages, download signatures, initialize an AIDE database, or prove packet inspection. Ansible layers missing RPMs and coordinates service activation/reboot.
+Butane writes files, policy and systemd units, and its first-boot oneshot performs the RPM layering followed by a reboot into the staged deployment. Ansible playbooks handle configuration management and validation only; they do not perform sequential package installation. Butane does not download signatures, initialize an AIDE database, or prove packet inspection.
 
 ## Operational gates
 
 1. Confirm the FCOS static IP and interface match the DHCP reservation and Ansible inventory.
 2. Preserve console recovery before applying the default-DROP firewall and SSH hardening.
-3. Layer packages and reboot FCOS before relying on the services.
+3. Confirm fcos-package-layer.service completed and FCOS rebooted into the layered deployment before relying on the services.
 4. Confirm Firewalld public target is DROP and its only inbound exception is LAN SSH. Kasm HTTPS ingress is intentionally not opened.
 5. Confirm the egress policy contains the explicit FCOS source IP, HTTP/HTTPS services and TCP 80/443 ports.
 6. Run suricata -T -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml. The Ansible prepare unit performs the initial update/test before Suricata starts.
