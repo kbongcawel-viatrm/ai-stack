@@ -37,7 +37,7 @@ Deploy Host VM never invokes or requires Deploy Host OS. Alpine PXE is the defau
 ## Network defaults
 
 - LAN: 10.1.29.0/24
-- FCOS VM: 10.1.29.201/24
+- FCOS VM: 10.1.29.100/24
 - Gateway/DNS: 10.1.29.1
 - FCOS NIC: enp1s0
 - Alpine physical NIC: enp1s0 by default; host IP is assigned to bridge br0

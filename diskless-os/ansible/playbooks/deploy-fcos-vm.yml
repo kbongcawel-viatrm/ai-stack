@@ -13,7 +13,7 @@
     fcos_image_dir: "{{ '/mnt/nvme/libvirt/images' if host_os | default('alpine') == 'alpine' else '/var/lib/libvirt/images' }}"
     fcos_domain_dir: "{{ fcos_image_dir }}/domains"
     fcos_ignition_remote_path: "{{ fcos_image_dir }}/ignition/fcos-security.ign"
-    fcos_lan_ip: 10.1.29.201
+    fcos_lan_ip: 10.1.29.100
     fcos_qemu_user: qemu
     fcos_qemu_group: qemu
     fcos_qcow2_uncompressed_sha256: ""

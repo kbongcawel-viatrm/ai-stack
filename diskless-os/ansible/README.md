@@ -50,7 +50,7 @@ The current Butane profile configures:
 - Rootless Podman user socket, linger, CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - Rootful system Podman/Docker socket activation masked.
 
-The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 10.1.29.201/24, gateway/DNS 10.1.29.1, LAN 10.1.29.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
+The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 10.1.29.100/24, gateway/DNS 10.1.29.1, LAN 10.1.29.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
 
 ## Firewalld behavior
 
