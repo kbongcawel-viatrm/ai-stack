@@ -167,18 +167,34 @@ jobs:
           done
           command -v python3 ssh-keygen curl
 
+      - name: Validate runner environment
+        run: |
+          set -Eeuo pipefail
+          # The self-hosted runner may be an immutable/rpm-ostree host (Secureblue),
+          # Alpine, Arch, or Ubuntu. Do not assume sudo, apt-get, or gettext exist.
+          for tool in python3 curl ssh-keygen git tar; do
+            command -v "$tool" >/dev/null || { echo "Missing required runner tool: $tool" >&2; exit 1; }
+          done
+          python3 -c 'import sys; assert sys.version_info >= (3, 10), f"python3 >= 3.10 required, found {sys.version}"'
+          python3 -m venv "$RUNNER_TEMP/venv-probe"
+          rm -rf "$RUNNER_TEMP/venv-probe"
+          if [ -r /etc/os-release ]; then . /etc/os-release; echo "Runner OS: $NAME $VERSION_ID ($ID)"; fi
+          df -h "$RUNNER_TEMP" | tail -1
+
       - name: Install Ansible and Butane
         run: |
           set -Eeuo pipefail
-          sudo apt-get update
-          sudo apt-get install -y gettext-base
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
           BUTANE_VERSION=0.23.0
-          curl -fsSL -o "$RUNNER_TEMP/butane" "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
+          curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 \
+            -o "$RUNNER_TEMP/butane" \
+            "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
           chmod 0755 "$RUNNER_TEMP/butane"
-          "$RUNNER_TEMP/butane" --version
+          "$RUNNER_TEMP/butane" --version | tee "$RUNNER_TEMP/butane-version.txt"
+          grep -F "$BUTANE_VERSION" "$RUNNER_TEMP/butane-version.txt" >/dev/null \
+            || { echo "butane version mismatch: expected $BUTANE_VERSION" >&2; exit 1; }
 
       - name: Render and validate FCOS Ignition
         env:
@@ -189,8 +205,27 @@ jobs:
           FCOS_INTERFACE: ${{ inputs.fcos_interface }}
         run: |
           set -Eeuo pipefail
-          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
-          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
+          # envsubst/gettext is not guaranteed on every runner OS; render with python3 instead.
+          python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP/fcos-rendered.bu" <<'PY'
+          import os, re, sys
+          allowed = {"FCOS_SSH_PUBLIC_KEY", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "FCOS_GATEWAY", "FCOS_INTERFACE"}
+          template = open(sys.argv[1]).read()
+          def repl(match):
+              name = match.group(1)
+              if name not in allowed:
+                  return match.group(0)
+              return os.environ.get(name, "")
+          rendered = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", repl, template)
+          with open(sys.argv[2], "w") as f:
+              f.write(rendered)
+          PY
+          # fcos.bu embeds shell snippets with their own ${VAR} syntax; only the
+          # five deployment placeholders must be fully substituted.
+          if grep -nE '\$\{(FCOS_SSH_PUBLIC_KEY|FCOS_LAN_IP|FCOS_LAN_CIDR|FCOS_GATEWAY|FCOS_INTERFACE)([^A-Za-z0-9_]|$)' "$RUNNER_TEMP/fcos-rendered.bu"; then
+            echo "Unsubstituted deployment placeholder remains in rendered Butane config" >&2
+            exit 1
+          fi
+          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos-rendered.bu"
           python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
 
       - name: Configure SSH trust for the hypervisor
@@ -235,6 +270,14 @@ jobs:
               raise SystemExit("Missing values: " + ", ".join(missing))
           if not re.fullmatch(r"[0-9a-fA-F]{64}", os.environ["FCOS_QCOW2_SHA256"]):
               raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
+          if not re.fullmatch(r"https://\S+", os.environ["FCOS_QCOW2_URL"]):
+              raise SystemExit("FCOS_QCOW2_URL must be an https:// URL")
+          ipv4 = r"(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}"
+          for name in ("FCOS_LAN_IP", "FCOS_GATEWAY"):
+              if not re.fullmatch(ipv4, os.environ.get(name, "")):
+                  raise SystemExit(f"{name} must be a dotted-quad IPv4 address")
+          if not re.fullmatch(ipv4 + r"/([0-9]|[12][0-9]|3[0-2])", os.environ.get("FCOS_LAN_CIDR", "")):
+              raise SystemExit("FCOS_LAN_CIDR must be an IPv4 CIDR such as 192.168.1.0/24")
           host_os = os.environ["HOST_OS"]
           storage_mountpoint = os.path.normpath(os.environ["FCOS_STORAGE_MOUNTPOINT"])
           default_alpine_dir = os.path.join(storage_mountpoint, "libvirt/images")
@@ -275,6 +318,11 @@ jobs:
           with open(os.path.join(os.environ["RUNNER_TEMP"], "deploy-vars.json"), "w") as f:
               json.dump(vars_data, f)
           PY
+
+      - name: Validate Ansible playbook syntax
+        run: |
+          set -Eeuo pipefail
+          ansible-playbook -i localhost, --syntax-check playbooks/deploy-fcos-vm.yml
 
       - name: Deploy FCOS VM (does not run Deploy Host OS)
         env:
