@@ -297,6 +297,12 @@
         fail_msg: "Decompressed FCOS image checksum does not match the stream metadata."
       when: fcos_qcow2_compressed | bool and fcos_qcow2_uncompressed_sha256 | length > 0
 
+    - name: Remove compressed FCOS base image
+      ansible.builtin.file:
+        path: "{{ fcos_image_dir }}/base/fcos-base.qcow2.xz"
+        state: absent
+      when: fcos_qcow2_compressed | bool
+
     - name: Verify downloaded image format
       ansible.builtin.command: "qemu-img info --output=json {{ fcos_image_dir }}/base/fcos-base.qcow2"
       register: base_image_info
