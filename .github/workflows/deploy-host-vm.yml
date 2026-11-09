@@ -32,12 +32,12 @@ on:
       fcos_lan_cidr:
         description: Guest LAN CIDR
         required: true
-        default: 10.1.29.0/24
+        default: 192.168.1.0/24
         type: string
       fcos_gateway:
         description: LAN default gateway
         required: true
-        default: 10.1.29.2
+        default: 192.168.1.1
         type: string
       fcos_interface:
         description: Guest network interface
@@ -82,7 +82,7 @@ on:
       host_bridge_address:
         description: IP/CIDR assigned to the host bridge
         required: false
-        default: 10.1.29.100/24
+        default: 192.168.1.100/24
         type: string
       host_bridge_slave:
         description: Physical interface enslaved to the host bridge
@@ -123,11 +123,11 @@ on:
       fcos_lan_cidr:
         type: string
         required: false
-        default: 10.1.29.0/24
+        default: 192.168.1.0/24
       fcos_gateway:
         type: string
         required: false
-        default: 10.1.29.2
+        default: 192.168.1.1
       fcos_interface:
         type: string
         required: false
@@ -163,7 +163,7 @@ on:
       host_bridge_address:
         type: string
         required: false
-        default: 10.1.29.100/24
+        default: 192.168.1.100/24
       host_bridge_slave:
         type: string
         required: false
@@ -353,7 +353,7 @@ jobs:
               if not re.fullmatch(ipv4, os.environ.get(name, "")):
                   raise SystemExit(f"{name} must be a dotted-quad IPv4 address")
           if not re.fullmatch(ipv4 + r"/([0-9]|[12][0-9]|3[0-2])", os.environ.get("FCOS_LAN_CIDR", "")):
-              raise SystemExit("FCOS_LAN_CIDR must be an IPv4 CIDR such as 10.1.29.0/24")
+              raise SystemExit("FCOS_LAN_CIDR must be an IPv4 CIDR such as 192.168.1.0/24")
           host_os = os.environ["HOST_OS"]
           storage_mountpoint = os.path.normpath(os.environ["FCOS_STORAGE_MOUNTPOINT"])
           default_alpine_dir = os.path.join(storage_mountpoint, "libvirt/images")

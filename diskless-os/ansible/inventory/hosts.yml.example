@@ -16,7 +16,7 @@ all:
           # For diskless Alpine, this must be on the mounted local NVMe volume.
           fcos_storage_mountpoint: /mnt/nvme
           fcos_image_dir: /mnt/nvme/libvirt/images
-          fcos_lan_ip: 10.1.29.201
+          fcos_lan_ip: 192.168.1.201
           # Ubuntu defaults: libvirt-qemu:kvm. Alpine/Secureblue/Arch: qemu:qemu.
           fcos_qemu_user: qemu
           fcos_qemu_group: qemu
@@ -25,10 +25,10 @@ all:
     fcos:
       hosts:
         fcos-security:
-          ansible_host: 10.1.29.201
+          ansible_host: 192.168.1.201
           ansible_user: core
-          fcos_lan_ip: 10.1.29.201
-          fcos_lan_cidr: 10.1.29.0/24
+          fcos_lan_ip: 192.168.1.201
+          fcos_lan_cidr: 192.168.1.0/24
           fcos_interface: ens2
           suricata_test_target_ip: 192.168.1.50 # Must be a real LAN HTTP endpoint
   vars:

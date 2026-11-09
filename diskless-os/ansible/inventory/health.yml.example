@@ -11,10 +11,10 @@ all:
     fcos:
       hosts:
         fcos-security:
-          ansible_host: 10.1.29.201
+          ansible_host: 192.168.1.201
           ansible_user: core
-          fcos_lan_ip: 10.1.29.201
-          fcos_lan_cidr: 10.1.29.0/24
+          fcos_lan_ip: 192.168.1.201
+          fcos_lan_cidr: 192.168.1.0/24
           fcos_interface: ens2
           aide_enable_daily_timer: false
   vars:

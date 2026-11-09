@@ -48,11 +48,11 @@ Kasm's documented requirements specify Docker Engine and Docker Compose versions
 
 ## Suricata traffic scope
 
-Suricata runs NFQUEUE queue 0 on ingress and egress of enp1s0. HOME_NET is 10.1.29.0/24. nftables queue rules run before the Firewalld filter hook and use bypass to preserve connectivity when the daemon is unavailable; this is fail-open and must be monitored. The configured chains inspect traffic to/from the FCOS host, not arbitrary traffic between other LAN clients. Transit IPS requires routing/bridging or mirrored traffic and separate FORWARD queue rules.
+Suricata runs NFQUEUE queue 0 on ingress and egress of enp1s0. HOME_NET is 192.168.1.0/24. nftables queue rules run before the Firewalld filter hook and use bypass to preserve connectivity when the daemon is unavailable; this is fail-open and must be monitored. The configured chains inspect traffic to/from the FCOS host, not arbitrary traffic between other LAN clients. Transit IPS requires routing/bridging or mirrored traffic and separate FORWARD queue rules.
 
 ## Firewall
 
-Firewalld uses a default-DROP inbound zone on enp1s0. SSH is the only inbound exception and is limited to 10.1.29.0/24. A HOST-to-ANY egress policy uses source address 10.1.29.201 and permits HTTP, HTTPS, DNS and NTP, including explicit TCP ports 80 and 443. Other host-originated IPv4 egress is dropped. Update both Butane and inventory if the FCOS LAN address changes. Container egress is a separate policy surface and must be tested.
+Firewalld uses a default-DROP inbound zone on enp1s0. SSH is the only inbound exception and is limited to 192.168.1.0/24. A HOST-to-ANY egress policy uses source address 192.168.1.201 and permits HTTP, HTTPS, DNS and NTP, including explicit TCP ports 80 and 443. Other host-originated IPv4 egress is dropped. Update both Butane and inventory if the FCOS LAN address changes. Container egress is a separate policy surface and must be tested.
 
 Kasm HTTPS ingress is intentionally not opened by the baseline firewall. Add a narrowly scoped 443 rule only after the compatibility gate passes.
 

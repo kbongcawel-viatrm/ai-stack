@@ -34,7 +34,7 @@
 - [ ] Configure rootless Podman user socket and linger.
 - [ ] Configure CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - [ ] Configure Firewalld inbound default DROP and explicit source-bound LAN egress policy.
-- [ ] Configure Suricata NFQUEUE on enp1s0, HOME_NET 10.1.29.0/24 and free ET Open rules.
+- [ ] Configure Suricata NFQUEUE on enp1s0, HOME_NET 192.168.1.0/24 and free ET Open rules.
 - [ ] Run suricata -T -c /etc/suricata/suricata.yaml, then validate the active FCOS override before service activation.
 - [ ] Validate IDS alert and IPS drop using a controlled HTTP endpoint on a second LAN host.
 - [ ] Enable daily ClamAV and Lynis systemd timers. Initialize AIDE baseline, review it, then explicitly enable its daily timer.

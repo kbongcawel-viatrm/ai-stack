@@ -40,9 +40,9 @@ jobs:
 
           ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/fcos-validation-key"
           export FCOS_SSH_PUBLIC_KEY="$(cat "$RUNNER_TEMP/fcos-validation-key.pub")"
-          export FCOS_LAN_IP=10.1.29.201
-          export FCOS_LAN_CIDR=10.1.29.0/24
-          export FCOS_GATEWAY=10.1.29.2
+          export FCOS_LAN_IP=192.168.1.201
+          export FCOS_LAN_CIDR=192.168.1.0/24
+          export FCOS_GATEWAY=192.168.1.1
           export FCOS_INTERFACE=enp1s0
           envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < diskless-os/butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
 
@@ -74,7 +74,7 @@ jobs:
                   override = yaml.safe_load(body)
                   assert override["nfq"]["mode"] == "accept"
                   assert "local.rules" in override["rule-files"]
-                  assert "10.1.29.0/24" in override["vars"]["address-groups"]["HOME_NET"]
+                  assert "192.168.1.0/24" in override["vars"]["address-groups"]["HOME_NET"]
               if path.startswith("/usr/local/sbin/"):
                   target = output / Path(path).name
                   target.write_text(body)

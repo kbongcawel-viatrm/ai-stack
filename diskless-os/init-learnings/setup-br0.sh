@@ -12,9 +12,9 @@
 set -euo pipefail
 
 BRIDGE="br0"
-BRIDGE_IP="10.1.29.100/24"
-GATEWAY="10.1.29.2"
-DNS="10.1.29.2"
+BRIDGE_IP="192.168.1.100/24"
+GATEWAY="192.168.1.1"
+DNS="192.168.1.1"
 SLAVE_IF="enp1s0"
 OLD_CONN=""          # discovered at runtime
 SKIP_INTERNET=0

@@ -29,8 +29,8 @@
       - arch
       - ubuntu
     prep_bridge_name: br0
-    prep_bridge_address: 10.1.29.100/24
-    prep_gateway: 10.1.29.2
+    prep_bridge_address: 192.168.1.100/24
+    prep_gateway: 192.168.1.1
     prep_dns: ""            # empty -> use prep_gateway
     prep_slave_interface: enp1s0
     prep_manage_bridge: true
