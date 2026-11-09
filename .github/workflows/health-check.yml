@@ -80,8 +80,8 @@ jobs:
 
       - name: Build target inventory
         env:
-          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
-          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HYPERVISOR_HOST: ${{ secrets.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
           HOST_OS: ${{ vars.HOST_OS }}
           FCOS_VM_IP: ${{ inputs.fcos_vm_ip || vars.FCOS_VM_IP }}
           FCOS_VM_NAME: ${{ inputs.fcos_vm_name || 'fcos-security' }}

@@ -206,6 +206,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           # envsubst/gettext is not guaranteed on every runner OS; render with python3 instead.
+          cp ../butane/fcos.bu "$RUNNER_TEMP/fcos.bu"
           python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP/fcos-rendered.bu" <<'PY'
           import os, re, sys
           allowed = {"FCOS_SSH_PUBLIC_KEY", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "FCOS_GATEWAY", "FCOS_INTERFACE"}
