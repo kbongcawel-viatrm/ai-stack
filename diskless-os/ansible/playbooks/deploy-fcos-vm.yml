@@ -383,6 +383,8 @@
           - "{{ fcos_vm_vcpus | string }}"
           - --cpu
           - host-passthrough
+          - --osinfo
+          - detect=on,require=off
           - --import
           - --disk
           - "path={{ fcos_image_dir }}/{{ fcos_vm_name }}.qcow2,format=qcow2,bus=virtio"
