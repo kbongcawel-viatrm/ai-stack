@@ -49,7 +49,7 @@ jobs:
 
   health:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'workflow_call' }}
-    runs-on: [self-hosted, linux, home-server]
+    runs-on: [self-hosted, host-os]
     environment: fcos-production
     defaults:
       run:
