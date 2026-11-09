@@ -18,6 +18,8 @@
     fcos_qemu_group: qemu
     fcos_qcow2_uncompressed_sha256: ""
     fcos_qcow2_compressed: false
+    fcos_qcow2_smb_username: ""
+    fcos_qcow2_smb_password: ""
     supported_host_os:
       - alpine
       - secureblue
@@ -31,6 +33,7 @@
           - fcos_qcow2_url is defined
           - fcos_qcow2_sha256 is defined
           - fcos_qcow2_sha256 is match('^[a-fA-F0-9]{64}$')
+          - fcos_qcow2_url is not match('^(smb|ftp|ftps)://') or (fcos_qcow2_smb_username | length > 0 and fcos_qcow2_smb_password | length > 0)
           - fcos_ignition_local_path is defined
           - fcos_network_bridge | length > 0
           - fcos_image_dir is defined
@@ -152,6 +155,67 @@
         executable: /bin/bash
       when: fcos_qcow2_compressed | bool
 
+    - name: Parse NAS QCOW2 source
+      ansible.builtin.set_fact:
+        fcos_qcow2_nas_host: "{{ fcos_qcow2_url.split('://')[1].split('/')[0].split(':')[0] }}"
+        fcos_qcow2_nas_share: "{{ fcos_qcow2_url.split('://')[1].split('/')[1] }}"
+        fcos_qcow2_nas_path: "{{ fcos_qcow2_url.split('://')[1].split('/')[2:] | join('/') }}"
+      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+
+    - name: Ensure NAS download client
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        proto="{{ fcos_qcow2_url.split('://')[0] }}"
+        need=""
+        case "$proto" in
+          smb) need="smbclient" ;;
+          ftp|ftps) need="curl" ;;
+          *) exit 0 ;;
+        esac
+        command -v "$need" >/dev/null 2>&1 && exit 0
+        case "$need" in
+          smbclient)
+            case "{{ host_os }}" in
+              alpine) apk add --no-cache samba-client ;;
+              ubuntu) apt-get update && apt-get install -y smbclient ;;
+              arch) pacman -Sy --noconfirm samba ;;
+              secureblue) echo "smbclient is missing; layer samba-client via rpm-ostree first." >&2; exit 1 ;;
+              *) echo "Install smbclient/samba-client on {{ host_os }}." >&2; exit 1 ;;
+            esac ;;
+          curl)
+            case "{{ host_os }}" in
+              alpine) apk add --no-cache curl ;;
+              ubuntu) apt-get update && apt-get install -y curl ;;
+              arch) pacman -Sy --noconfirm curl ;;
+              secureblue) echo "curl is missing; layer curl via rpm-ostree first." >&2; exit 1 ;;
+              *) echo "Install curl on {{ host_os }}." >&2; exit 1 ;;
+            esac ;;
+        esac
+        command -v "$need" >/dev/null
+      args:
+        executable: /bin/bash
+      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+
+    - name: Write SMB credentials file
+      ansible.builtin.copy:
+        dest: /root/.fcos-nas-smb.auth
+        content: "username = {{ fcos_qcow2_smb_username }}\npassword = {{ fcos_qcow2_smb_password }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      when: fcos_qcow2_url is match('^smb://')
+
+    - name: Write FTP credentials file
+      ansible.builtin.copy:
+        dest: /root/.fcos-nas.netrc
+        content: "machine {{ fcos_qcow2_nas_host }}\nlogin {{ fcos_qcow2_smb_username }}\npassword {{ fcos_qcow2_smb_password }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      when: fcos_qcow2_url is match('^(ftp|ftps)://')
+
     - name: Download pinned FCOS base QCOW2
       ansible.builtin.get_url:
         url: "{{ fcos_qcow2_url }}"
@@ -161,6 +225,52 @@
         group: root
         mode: "0644"
         timeout: 600
+      when: fcos_qcow2_url is not match('^(smb|ftp|ftps)://')
+
+    - name: Download FCOS base image from NAS
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        dest="{{ fcos_image_dir }}/base/{{ 'fcos-base.qcow2.xz' if fcos_qcow2_compressed | bool else 'fcos-base.qcow2' }}"
+        proto="{{ fcos_qcow2_url.split('://')[0] }}"
+        case "$proto" in
+          smb)
+            smbclient "//{{ fcos_qcow2_nas_host }}/{{ fcos_qcow2_nas_share }}" \
+              -A /root/.fcos-nas-smb.auth -m SMB3 \
+              -c "get {{ fcos_qcow2_nas_path }} {{ dest }}"
+            ;;
+          ftp|ftps)
+            curl -fSL --retry 3 --connect-timeout 15 \
+              --netrc-file /root/.fcos-nas.netrc \
+              -o "$dest" "{{ fcos_qcow2_url }}"
+            ;;
+        esac
+      args:
+        executable: /bin/bash
+      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+
+    - name: Verify NAS-downloaded image checksum
+      ansible.builtin.stat:
+        path: "{{ fcos_image_dir }}/base/{{ 'fcos-base.qcow2.xz' if fcos_qcow2_compressed | bool else 'fcos-base.qcow2' }}"
+        get_checksum: true
+        checksum_algorithm: sha256
+      register: nas_image_checksum
+      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+
+    - name: Assert NAS image checksum matches
+      ansible.builtin.assert:
+        that:
+          - nas_image_checksum.stat.checksum == fcos_qcow2_sha256
+        fail_msg: "NAS-downloaded FCOS image checksum does not match FCOS_QCOW2_SHA256."
+      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+
+    - name: Remove NAS credential files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /root/.fcos-nas-smb.auth
+        - /root/.fcos-nas.netrc
+      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
 
     - name: Decompress FCOS base image
       ansible.builtin.command: "unxz {{ fcos_image_dir }}/base/fcos-base.qcow2.xz"

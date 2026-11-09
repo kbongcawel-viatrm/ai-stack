@@ -16,7 +16,7 @@ on:
         default: fcos-kasm-poc
         type: string
       fcos_qcow2_url:
-        description: Pinned Fedora CoreOS QCOW2 URL (empty resolves latest stable qemu image)
+        description: Pinned Fedora CoreOS QCOW2 URL — https://, smb://, ftp:// or ftps:// (empty resolves latest stable qemu image)
         required: false
         default: ""
         type: string
@@ -265,6 +265,8 @@ jobs:
           FCOS_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
           LIBVIRT_QEMU_USER: ${{ vars.LIBVIRT_QEMU_USER }}
           LIBVIRT_QEMU_GROUP: ${{ vars.LIBVIRT_QEMU_GROUP }}
+          FCOS_QCOW2_SMB_USERNAME: ${{ secrets.NAS_USER }}
+          FCOS_QCOW2_SMB_PASSWORD: ${{ secrets.NAS_PW }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -289,8 +291,8 @@ jobs:
               print("Resolved latest stable FCOS qemu image:", qcow2_url)
           if not re.fullmatch(r"[0-9a-fA-F]{64}", qcow2_sha256):
               raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
-          if not re.fullmatch(r"https://\S+", qcow2_url):
-              raise SystemExit("FCOS_QCOW2_URL must be an https:// URL")
+          if not re.fullmatch(r"(https|smb)://\S+", qcow2_url):
+              raise SystemExit("FCOS_QCOW2_URL must be an https:// or smb:// URL")
           ipv4 = r"(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}"
           for name in ("FCOS_LAN_IP", "FCOS_GATEWAY"):
               if not re.fullmatch(ipv4, os.environ.get(name, "")):
@@ -312,6 +314,8 @@ jobs:
               "fcos_qcow2_sha256": qcow2_sha256,
               "fcos_qcow2_uncompressed_sha256": uncompressed_sha256,
               "fcos_qcow2_compressed": qcow2_url.endswith(".xz"),
+              "fcos_qcow2_smb_username": os.environ.get("FCOS_QCOW2_SMB_USERNAME", ""),
+              "fcos_qcow2_smb_password": os.environ.get("FCOS_QCOW2_SMB_PASSWORD", ""),
               "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
               "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
               "fcos_gateway": os.environ["FCOS_GATEWAY"],

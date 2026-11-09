@@ -21,7 +21,7 @@ The orchestrator passes these values to reusable workflows, so define them as **
 | Variable | Purpose |
 |---|---|
 | `HOST_OS` | Existing hypervisor OS: `alpine`, `secureblue`, `arch`, or `ubuntu`. Set to `secureblue` when deploying directly onto an installed Fedora Secureblue host; the Alpine defaults below only apply when it is unset or `alpine` |
-| `FCOS_QCOW2_URL` | Optional pin for the Fedora CoreOS QCOW2 URL; when unset, the latest stable `qemu` image is resolved from the official stream metadata at deploy time |
+| `FCOS_QCOW2_URL` | Optional pin for the Fedora CoreOS QCOW2 URL — `https://`, `smb://`, `ftp://` or `ftps://`; when unset, the latest stable `qemu` image is resolved from the official stream metadata at deploy time. NAS credentials come from the `NAS_USER`/`NAS_PW` secrets |
 | `FCOS_QCOW2_SHA256` | Optional SHA256 checksum matching `FCOS_QCOW2_URL`; must be set together with the URL |
 | `KASM_POC_FCOS_IP` | Static IP reserved for the isolated FCOS test VM, e.g. `10.1.29.201` |
 | `KASM_POC_SSH_USER` | SSH account on the test VM; normally `core` |
@@ -52,7 +52,7 @@ The Host OS artifacts stage can be skipped entirely when the hypervisor already 
 
 Keep the existing GitHub environments and configure their values:
 
-- **`host-vm-production`**: `HYPERVISOR_HOST`, `HYPERVISOR_USER`, optional `LIBVIRT_QEMU_USER` and `LIBVIRT_QEMU_GROUP`; secrets `HYPERVISOR_SSH_PRIVATE_KEY`, `HYPERVISOR_KNOWN_HOSTS`, and `FCOS_SSH_PUBLIC_KEY`.
+- **`host-vm-production`**: `HYPERVISOR_HOST`, `HYPERVISOR_USER`, optional `LIBVIRT_QEMU_USER` and `LIBVIRT_QEMU_GROUP`; secrets `HYPERVISOR_SSH_PRIVATE_KEY`, `HYPERVISOR_KNOWN_HOSTS`, `FCOS_SSH_PUBLIC_KEY`, and `NAS_USER`/`NAS_PW` when `FCOS_QCOW2_URL` points at an `smb://`/`ftp://`/`ftps://` share.
 - **Repository variable and `kasm-poc` environment**: `KASM_POC_SSH_USER` (normally `core`); secrets `KASM_POC_SSH_PRIVATE_KEY` and `KASM_POC_KNOWN_HOSTS`.
 - **`fcos-production`**: `HYPERVISOR_HOST`, `HYPERVISOR_USER`, `FCOS_LAN_CIDR`, `FCOS_INTERFACE`, and any existing FCOS variables; secrets `FCOS_SSH_PRIVATE_KEY`, `FCOS_KNOWN_HOSTS`, `HYPERVISOR_SSH_PRIVATE_KEY`, and `HEALTH_KNOWN_HOSTS`.
 - **`pxe-production`**: secrets `PXE_SSH_PRIVATE_KEY`, `PXE_KNOWN_HOSTS`, `PXE_HOST`, `PXE_USER`, and `PXE_HTTP_ROOT`.
