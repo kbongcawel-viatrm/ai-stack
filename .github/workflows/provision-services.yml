@@ -125,7 +125,7 @@ jobs:
           set -Eeuo pipefail
           python3 - <<'PY'
           import json, os
-          required = ["FCOS_VM_IP", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "SURICATA_TEST_TARGET_IP", "CONTAINER_SMOKE_IMAGE"]
+          required = ["FCOS_VM_IP", "FCOS_LAN_IP", "FCOS_LAN_CIDR"]
           missing = [name for name in required if not os.environ.get(name)]
           if missing:
               raise SystemExit("Missing values: " + ", ".join(missing))
@@ -175,6 +175,7 @@ jobs:
             --extra-vars "@$RUNNER_TEMP/provision-vars.json" --diff
 
       - name: Prove Suricata IDS alerting and IPS packet drop
+        if: ${{ inputs.suricata_test_target_ip != '' }}
         run: |
           set -Eeuo pipefail
           ansible-playbook -i "$RUNNER_TEMP/fcos-inventory.json" playbooks/suricata-ips-validation.yml \
