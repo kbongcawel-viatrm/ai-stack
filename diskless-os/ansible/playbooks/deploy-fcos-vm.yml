@@ -424,10 +424,11 @@
         delay: 15
         sleep: 10
         timeout: 900
+      when: fcos_wait_for_ssh | default(true) | bool
 
     - name: Report VM provisioning result
       ansible.builtin.debug:
         msg:
-          - "FCOS VM {{ fcos_vm_name }} is reachable at {{ fcos_lan_ip }}."
+          - "FCOS VM {{ fcos_vm_name }} is provisioned{% if fcos_wait_for_ssh | default(true) | bool %} and reachable at {{ fcos_lan_ip }}{% else %}; SSH wait skipped{% endif %}."
           - "Hypervisor OS selected: {{ host_os }}."
           - "Host OS deployment was not invoked; this workflow is independent."

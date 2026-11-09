@@ -61,6 +61,11 @@ on:
         required: true
         default: false
         type: boolean
+      wait_for_ssh:
+        description: Wait for FCOS SSH (port 22) after VM provisioning
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -106,6 +111,7 @@ jobs:
       vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || ((vars.HOST_OS || 'alpine') != 'alpine' && '/var/lib/libvirt/images') || '/mnt/nvme/libvirt/images' }}
       storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
       prepare_host: ${{ inputs.prepare_host }}
+      wait_for_ssh: ${{ inputs.wait_for_ssh }}
     secrets: inherit
 
   kasm_poc:

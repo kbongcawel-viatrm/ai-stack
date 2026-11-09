@@ -94,6 +94,11 @@ on:
         required: false
         default: ""
         type: string
+      wait_for_ssh:
+        description: Wait for FCOS SSH (port 22) to become reachable after VM start
+        required: true
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       host_os:
@@ -167,6 +172,10 @@ on:
         type: string
         required: false
         default: ""
+      wait_for_ssh:
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -241,6 +250,7 @@ jobs:
       - name: Render and validate FCOS Ignition
         env:
           FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+          FCOS_CORE_PASSWORD_HASH: ${{ secrets.FCOS_CORE_PASSWORD_HASH }}
           FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
           FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
           FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
@@ -251,20 +261,22 @@ jobs:
           cp ../butane/fcos.bu "$RUNNER_TEMP/fcos.bu"
           python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP/fcos-rendered.bu" <<'PY'
           import os, re, sys
-          allowed = {"FCOS_SSH_PUBLIC_KEY", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "FCOS_GATEWAY", "FCOS_INTERFACE"}
+          allowed = {"FCOS_SSH_PUBLIC_KEY", "FCOS_CORE_PASSWORD_HASH", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "FCOS_GATEWAY", "FCOS_INTERFACE"}
           template = open(sys.argv[1]).read()
           def repl(match):
               name = match.group(1)
               if name not in allowed:
                   return match.group(0)
               return os.environ.get(name, "")
+          if not os.environ.get("FCOS_CORE_PASSWORD_HASH"):
+              raise SystemExit("FCOS_CORE_PASSWORD_HASH secret is required for core console password login")
           rendered = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", repl, template)
           with open(sys.argv[2], "w") as f:
               f.write(rendered)
           PY
           # fcos.bu embeds shell snippets with their own ${VAR} syntax; only the
-          # five deployment placeholders must be fully substituted.
-          if grep -nE '\$\{(FCOS_SSH_PUBLIC_KEY|FCOS_LAN_IP|FCOS_LAN_CIDR|FCOS_GATEWAY|FCOS_INTERFACE)([^A-Za-z0-9_]|$)' "$RUNNER_TEMP/fcos-rendered.bu"; then
+          # deployment placeholders must be fully substituted.
+          if grep -nE '\$\{(FCOS_SSH_PUBLIC_KEY|FCOS_CORE_PASSWORD_HASH|FCOS_LAN_IP|FCOS_LAN_CIDR|FCOS_GATEWAY|FCOS_INTERFACE)([^A-Za-z0-9_]|$)' "$RUNNER_TEMP/fcos-rendered.bu"; then
             echo "Unsubstituted deployment placeholder remains in rendered Butane config" >&2
             exit 1
           fi
@@ -302,6 +314,7 @@ jobs:
           FCOS_IMAGE_DIR: ${{ inputs.vm_storage_path }}
           FCOS_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
           PREPARE_HOST: ${{ inputs.prepare_host }}
+          FCOS_WAIT_FOR_SSH: ${{ inputs.wait_for_ssh }}
           HOST_BRIDGE_ADDRESS: ${{ inputs.host_bridge_address }}
           HOST_BRIDGE_SLAVE: ${{ inputs.host_bridge_slave }}
           HOST_BRIDGE_DNS: ${{ inputs.host_bridge_dns }}
@@ -379,7 +392,8 @@ jobs:
               "prep_slave_interface": os.environ["HOST_BRIDGE_SLAVE"],
               "prep_manage_bridge": os.environ.get("PREPARE_HOST", "false").lower() in ("true", "1", "yes"),
               "prep_check_internet": True,
-              "prep_libvirt_dir": "/var/lib/libvirt"
+              "prep_libvirt_dir": "/var/lib/libvirt",
+              "fcos_wait_for_ssh": os.environ.get("FCOS_WAIT_FOR_SSH", "true").lower() in ("true", "1", "yes")
           }
           hypervisor_host = os.environ["HYPERVISOR_HOST"]
           # Runner and hypervisor are the same machine: skip SSH entirely.

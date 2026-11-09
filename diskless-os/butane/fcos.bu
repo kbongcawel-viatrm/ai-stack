@@ -8,6 +8,7 @@ passwd:
     - name: core
       groups:
         - wheel
+      password_hash: ${FCOS_CORE_PASSWORD_HASH}
       ssh_authorized_keys:
         - ${FCOS_SSH_PUBLIC_KEY}
 
