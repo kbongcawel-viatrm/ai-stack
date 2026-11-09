@@ -143,7 +143,10 @@ jobs:
             echo "STORAGE_UUID is required: the diskless Alpine host must mount persistent local storage for libvirt VM disks." >&2
             exit 1
           fi
-          [[ "$ALPINE_STORAGE_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+            [[ "$ALPINE_STORAGE_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
+            echo "Invalid STORAGE_UUID format." >&2
+            exit 1
+            }
 
       - name: Build diskless Alpine apkovl
         shell: bash
