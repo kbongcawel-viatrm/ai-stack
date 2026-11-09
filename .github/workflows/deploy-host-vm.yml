@@ -155,8 +155,8 @@ jobs:
 
       - name: Validate protected hypervisor access
         env:
-          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
-          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HYPERVISOR_HOST: ${{ secrets.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
           HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
           HYPERVISOR_KNOWN_HOSTS: ${{ secrets.HYPERVISOR_KNOWN_HOSTS }}
           FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
@@ -207,8 +207,8 @@ jobs:
 
       - name: Build isolated Ansible inventory and variables
         env:
-          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
-          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
+          HYPERVISOR_HOST: ${{ secrets.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
           HOST_OS: ${{ inputs.host_os }}
           FCOS_VM_NAME: ${{ inputs.fcos_vm_name }}
           FCOS_QCOW2_URL: ${{ inputs.fcos_qcow2_url }}
