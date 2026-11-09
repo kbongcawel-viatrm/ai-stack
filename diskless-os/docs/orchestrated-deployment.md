@@ -20,24 +20,33 @@ The orchestrator passes these values to reusable workflows, so define them as **
 
 | Variable | Purpose |
 |---|---|
-| `HOST_OS` | Existing hypervisor OS: `alpine`, `secureblue`, `arch`, or `ubuntu` |
-| `FCOS_QCOW2_URL` | Pinned Fedora CoreOS QCOW2 URL |
-| `FCOS_QCOW2_SHA256` | SHA256 checksum for that exact image |
-| `KASM_POC_FCOS_IP` | Static IP reserved for the isolated FCOS test VM |
+| `HOST_OS` | Existing hypervisor OS: `alpine`, `secureblue`, `arch`, or `ubuntu`. Set to `secureblue` when deploying directly onto an installed Fedora Secureblue host; the Alpine defaults below only apply when it is unset or `alpine` |
+| `FCOS_QCOW2_URL` | Optional pin for the Fedora CoreOS QCOW2 URL; when unset, the latest stable `qemu` image is resolved from the official stream metadata at deploy time |
+| `FCOS_QCOW2_SHA256` | Optional SHA256 checksum matching `FCOS_QCOW2_URL`; must be set together with the URL |
+| `KASM_POC_FCOS_IP` | Static IP reserved for the isolated FCOS test VM, e.g. `10.1.29.201` |
 | `KASM_POC_SSH_USER` | SSH account on the test VM; normally `core` |
-| `FCOS_LAN_CIDR` | Guest LAN CIDR, e.g. `192.168.1.0/24` |
-| `FCOS_GATEWAY` | Guest LAN gateway |
+| `FCOS_LAN_CIDR` | Guest LAN CIDR, e.g. `10.1.29.0/24` |
+| `FCOS_GATEWAY` | Guest LAN gateway, e.g. `10.1.29.1` |
 | `FCOS_INTERFACE` | FCOS guest NIC, e.g. `enp1s0` |
 | `FCOS_NETWORK_BRIDGE` | Existing libvirt bridge on the hypervisor |
-| `FCOS_STORAGE_MOUNTPOINT` | Persistent local storage mountpoint |
-| `FCOS_VM_STORAGE_PATH` | Persistent local VM image directory |
-| `STORAGE_UUID` | UUID of the Alpine host's persistent ext4 volume; required when Host OS artifacts are selected |
-| `ALPINE_HOST_NIC` | Physical NIC for the Alpine host bridge |
-| `ALPINE_HOST_BRIDGE` | Alpine host bridge name |
-| `STORAGE_FSTYPE` | Must be `ext4` for the current Alpine apkovl builder |
-| `ALPINE_VERSION` | Alpine version; current builder accepts the configured 3.24 stable series |
+| `FCOS_STORAGE_MOUNTPOINT` | Persistent local storage mountpoint (Alpine hosts only; ignored for other host OSes) |
+| `FCOS_VM_STORAGE_PATH` | Persistent local VM image directory. Defaults to `/mnt/nvme/libvirt/images` on Alpine and `/var/lib/libvirt/images` on `secureblue`/`arch`/`ubuntu` |
+| `STORAGE_UUID` | UUID of the Alpine host's persistent ext4 volume; required only when Host OS artifacts are selected |
+| `ALPINE_HOST_NIC` | Physical NIC for the Alpine host bridge; Host OS artifacts stage only |
+| `ALPINE_HOST_BRIDGE` | Alpine host bridge name; Host OS artifacts stage only |
+| `STORAGE_FSTYPE` | Must be `ext4` for the current Alpine apkovl builder; Host OS artifacts stage only |
+| `ALPINE_VERSION` | Alpine version; current builder accepts the configured 3.24 stable series; Host OS artifacts stage only |
 
 The deployment defaults to a 2 GiB, 2-vCPU, 40 GiB test VM. This is a conservative starting point for the 8 GiB host, not validated Kasm sizing.
+
+### Deploying onto an existing Secureblue host
+
+The Host OS artifacts stage can be skipped entirely when the hypervisor already runs an installed OS such as Fedora Secureblue. In that case:
+
+- Set `HOST_OS` to `secureblue` (repository variable) so the deploy and health-check stages use `/var/lib/libvirt/images` and Secureblue-specific handling (SELinux `restorecon`, `qemu` QEMU account).
+- `FCOS_VM_STORAGE_PATH`/`FCOS_STORAGE_MOUNTPOINT` are not needed — the `/var/lib/libvirt/images` default applies.
+- The Alpine-only variables (`STORAGE_UUID`, `ALPINE_*`, `STORAGE_FSTYPE`) can remain unset.
+- The hypervisor must already have KVM, `libvirt`/`virt-install`, `qemu-img`, the `br0` (or configured) bridge, and `libvirtd` running. The pipeline does not bootstrap the host OS.
 
 ## Environment variables and secrets
 

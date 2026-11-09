@@ -16,12 +16,14 @@ on:
         default: fcos-kasm-poc
         type: string
       fcos_qcow2_url:
-        description: Pinned Fedora CoreOS QCOW2 URL
-        required: true
+        description: Pinned Fedora CoreOS QCOW2 URL (empty resolves latest stable qemu image)
+        required: false
+        default: ""
         type: string
       fcos_qcow2_sha256:
-        description: SHA256 checksum for the QCOW2 image
-        required: true
+        description: SHA256 checksum for the QCOW2 image (empty resolves latest stable)
+        required: false
+        default: ""
         type: string
       fcos_lan_ip:
         description: Static FCOS guest IP address
@@ -30,12 +32,12 @@ on:
       fcos_lan_cidr:
         description: Guest LAN CIDR
         required: true
-        default: 192.168.1.0/24
+        default: 10.1.29.0/24
         type: string
       fcos_gateway:
         description: LAN default gateway
         required: true
-        default: 192.168.1.1
+        default: 10.1.29.1
         type: string
       fcos_interface:
         description: Guest network interface
@@ -84,21 +86,23 @@ on:
         default: fcos-kasm-poc
       fcos_qcow2_url:
         type: string
-        required: true
+        required: false
+        default: ""
       fcos_qcow2_sha256:
         type: string
-        required: true
+        required: false
+        default: ""
       fcos_lan_ip:
         type: string
         required: true
       fcos_lan_cidr:
         type: string
         required: false
-        default: 192.168.1.0/24
+        default: 10.1.29.0/24
       fcos_gateway:
         type: string
         required: false
-        default: 192.168.1.1
+        default: 10.1.29.1
       fcos_interface:
         type: string
         required: false
@@ -265,20 +269,34 @@ jobs:
           set -Eeuo pipefail
           python3 - <<'PY'
           import json, os, re
-          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE", "FCOS_STORAGE_MOUNTPOINT"]
+          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE", "FCOS_STORAGE_MOUNTPOINT"]
           missing = [name for name in required if not os.environ.get(name)]
           if missing:
               raise SystemExit("Missing values: " + ", ".join(missing))
-          if not re.fullmatch(r"[0-9a-fA-F]{64}", os.environ["FCOS_QCOW2_SHA256"]):
+          qcow2_url = os.environ.get("FCOS_QCOW2_URL", "")
+          qcow2_sha256 = os.environ.get("FCOS_QCOW2_SHA256", "")
+          uncompressed_sha256 = ""
+          if bool(qcow2_url) != bool(qcow2_sha256):
+              raise SystemExit("FCOS_QCOW2_URL and FCOS_QCOW2_SHA256 must be set together")
+          if not qcow2_url:
+              import urllib.request
+              with urllib.request.urlopen("https://builds.coreos.fedoraproject.org/streams/stable.json", timeout=30) as response:
+                  stream = json.load(response)
+              disk = stream["architectures"]["x86_64"]["artifacts"]["qemu"]["formats"]["qcow2.xz"]["disk"]
+              qcow2_url = disk["location"]
+              qcow2_sha256 = disk["sha256"]
+              uncompressed_sha256 = disk.get("uncompressed-sha256", "")
+              print("Resolved latest stable FCOS qemu image:", qcow2_url)
+          if not re.fullmatch(r"[0-9a-fA-F]{64}", qcow2_sha256):
               raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
-          if not re.fullmatch(r"https://\S+", os.environ["FCOS_QCOW2_URL"]):
+          if not re.fullmatch(r"https://\S+", qcow2_url):
               raise SystemExit("FCOS_QCOW2_URL must be an https:// URL")
           ipv4 = r"(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}"
           for name in ("FCOS_LAN_IP", "FCOS_GATEWAY"):
               if not re.fullmatch(ipv4, os.environ.get(name, "")):
                   raise SystemExit(f"{name} must be a dotted-quad IPv4 address")
           if not re.fullmatch(ipv4 + r"/([0-9]|[12][0-9]|3[0-2])", os.environ.get("FCOS_LAN_CIDR", "")):
-              raise SystemExit("FCOS_LAN_CIDR must be an IPv4 CIDR such as 192.168.1.0/24")
+              raise SystemExit("FCOS_LAN_CIDR must be an IPv4 CIDR such as 10.1.29.0/24")
           host_os = os.environ["HOST_OS"]
           storage_mountpoint = os.path.normpath(os.environ["FCOS_STORAGE_MOUNTPOINT"])
           default_alpine_dir = os.path.join(storage_mountpoint, "libvirt/images")
@@ -290,8 +308,10 @@ jobs:
           vars_data = {
               "host_os": host_os,
               "fcos_vm_name": os.environ.get("FCOS_VM_NAME") or "fcos-kasm-poc",
-              "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
-              "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"],
+              "fcos_qcow2_url": qcow2_url,
+              "fcos_qcow2_sha256": qcow2_sha256,
+              "fcos_qcow2_uncompressed_sha256": uncompressed_sha256,
+              "fcos_qcow2_compressed": qcow2_url.endswith(".xz"),
               "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
               "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
               "fcos_gateway": os.environ["FCOS_GATEWAY"],

@@ -37,8 +37,8 @@ Podman and the user-level podman.socket are expected from the FCOS base image. D
 The current Butane profile configures:
 
 - Core user's SSH public key; password and keyboard-interactive SSH disabled, forwarding/tunneling disabled.
-- NetworkManager static IPv4 identity on the configured guest NIC (default enp1s0), gateway/DNS default 192.168.1.1.
-- Firewalld public zone with inbound target DROP; SSH is the only inbound exception and is restricted to 192.168.1.0/24.
+- NetworkManager static IPv4 identity on the configured guest NIC (default enp1s0), gateway/DNS default 10.1.29.1.
+- Firewalld public zone with inbound target DROP; SSH is the only inbound exception and is restricted to 10.1.29.0/24.
 - HOST -> ANY egress policy bound to the explicit FCOS source IP; HTTP/HTTPS, DNS and NTP are allowed. TCP 80/443 are explicit.
 - Suricata HOME_NET, EXTERNAL_NET, suricata.rules/local.rules, NFQ mode and EVE logging.
 - nftables NFQUEUE input/output hooks on the configured NIC at priority -150, queue 0 with bypass.
@@ -50,12 +50,12 @@ The current Butane profile configures:
 - Rootless Podman user socket, linger, CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - Rootful system Podman/Docker socket activation masked.
 
-The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 192.168.1.20/24, gateway/DNS 192.168.1.1, LAN 192.168.1.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
+The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 10.1.29.201/24, gateway/DNS 10.1.29.1, LAN 10.1.29.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
 
 ## Firewalld behavior
 
 - Inbound defaults to DROP.
-- SSH from 192.168.1.0/24 is the only inbound exception. Remove that rich rule if absolutely no inbound service is required, but retain console recovery.
+- SSH from 10.1.29.0/24 is the only inbound exception. Remove that rich rule if absolutely no inbound service is required, but retain console recovery.
 - Host-originated IPv4 egress is source-bound to the FCOS LAN IP and permits HTTP, HTTPS, DNS and NTP.
 - Other host-originated IPv4 egress is dropped. Add required ports explicitly and narrowly.
 - This is not a complete container/forwarding egress policy. Validate rootless container traffic separately.
@@ -64,7 +64,7 @@ The static guest address must match the DHCP reservation and egress policy. Defa
 ## Suricata NFQUEUE behavior
 
 - Interface: enp1s0 by default.
-- HOME_NET: 192.168.1.0/24 by default.
+- HOME_NET: 10.1.29.0/24 by default.
 - NFQUEUE number: 0.
 - Rule source: Emerging Threats Open (et/open).
 - Boot sequence: package preflight, update sources, enable ET Open, update rules, run suricata -T with the FCOS override, then start Suricata.
@@ -72,7 +72,7 @@ The static guest address must match the DHCP reservation and egress policy. Defa
 - nftables queue bypass preserves connectivity if Suricata stops. This is fail-open; inspection is absent while the service is down, so monitor service health.
 - Chains inspect traffic to/from the FCOS host. They do not inspect arbitrary traffic between other LAN clients; transit IPS needs routing/bridging or mirrored traffic and a separate FORWARD queue design.
 
-The active validation playbook requires a controlled HTTP server on TCP/80 inside 192.168.1.0/24. It adds temporary IDS/IPS rules, verifies EVE alert/drop events and restores the generated rule file even when a test fails.
+The active validation playbook requires a controlled HTTP server on TCP/80 inside 10.1.29.0/24. It adds temporary IDS/IPS rules, verifies EVE alert/drop events and restores the generated rule file even when a test fails.
 
 ## Rootless Podman and Docker compatibility
 

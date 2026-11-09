@@ -13,9 +13,11 @@
     fcos_image_dir: "{{ '/mnt/nvme/libvirt/images' if host_os | default('alpine') == 'alpine' else '/var/lib/libvirt/images' }}"
     fcos_domain_dir: "{{ fcos_image_dir }}/domains"
     fcos_ignition_remote_path: "{{ fcos_image_dir }}/ignition/fcos-security.ign"
-    fcos_lan_ip: 192.168.1.20
+    fcos_lan_ip: 10.1.29.201
     fcos_qemu_user: qemu
     fcos_qemu_group: qemu
+    fcos_qcow2_uncompressed_sha256: ""
+    fcos_qcow2_compressed: false
     supported_host_os:
       - alpine
       - secureblue
@@ -133,15 +135,51 @@
           ext4, XFS, Btrfs or F2FS storage. Mount the NVMe volume before
           running this workflow; do not use Alpine's diskless rootfs or SMB/NFS.
 
+    - name: Ensure xz decompressor for compressed FCOS image
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        if command -v xz >/dev/null 2>&1; then
+          exit 0
+        fi
+        case "{{ host_os }}" in
+          alpine) apk add --no-cache xz ;;
+          ubuntu) apt-get update && apt-get install -y xz-utils ;;
+          arch) pacman -Sy --noconfirm xz ;;
+          *) echo "xz is required to decompress the FCOS QCOW2 image; install xz-utils manually." >&2; exit 1 ;;
+        esac
+        command -v xz >/dev/null
+      args:
+        executable: /bin/bash
+      when: fcos_qcow2_compressed | bool
+
     - name: Download pinned FCOS base QCOW2
       ansible.builtin.get_url:
         url: "{{ fcos_qcow2_url }}"
-        dest: "{{ fcos_image_dir }}/base/fcos-base.qcow2"
+        dest: "{{ fcos_image_dir }}/base/{{ 'fcos-base.qcow2.xz' if fcos_qcow2_compressed | bool else 'fcos-base.qcow2' }}"
         checksum: "sha256:{{ fcos_qcow2_sha256 }}"
         owner: root
         group: root
         mode: "0644"
         timeout: 600
+
+    - name: Decompress FCOS base image
+      ansible.builtin.command: "unxz {{ fcos_image_dir }}/base/fcos-base.qcow2.xz"
+      when: fcos_qcow2_compressed | bool
+
+    - name: Verify decompressed image checksum
+      ansible.builtin.stat:
+        path: "{{ fcos_image_dir }}/base/fcos-base.qcow2"
+        get_checksum: true
+        checksum_algorithm: sha256
+      register: base_image_checksum
+      when: fcos_qcow2_compressed | bool
+
+    - name: Assert decompressed image checksum
+      ansible.builtin.assert:
+        that:
+          - base_image_checksum.stat.checksum == fcos_qcow2_uncompressed_sha256
+        fail_msg: "Decompressed FCOS image checksum does not match the stream metadata."
+      when: fcos_qcow2_compressed | bool and fcos_qcow2_uncompressed_sha256 | length > 0
 
     - name: Verify downloaded image format
       ansible.builtin.command: "qemu-img info --output=json {{ fcos_image_dir }}/base/fcos-base.qcow2"

@@ -4,8 +4,8 @@ Butane/Ignition writes the first-boot configuration, security policy, scripts an
 
 ## Services
 
-- **Firewalld:** public zone bound to the configured FCOS NIC (default enp1s0); inbound target DROP; SSH accepted only from the configured trusted LAN (default 192.168.1.0/24). Host-originated IPv4 egress uses HOST -> ANY, defaults to DROP and permits HTTP, HTTPS, DNS and NTP only from the explicit FCOS LAN address (default 192.168.1.20).
-- **Suricata:** NFQUEUE queue 0 on host INPUT/OUTPUT for enp1s0; HOME_NET 192.168.1.0/24. The override includes suricata.rules and local.rules, and sets NFQ mode accept. The prepare unit runs suricata-update update-sources, enables free ET Open (et/open), updates rules and validates suricata -T -c /etc/suricata/suricata.yaml and then validates the active FCOS override before suricata.service starts.
+- **Firewalld:** public zone bound to the configured FCOS NIC (default enp1s0); inbound target DROP; SSH accepted only from the configured trusted LAN (default 10.1.29.0/24). Host-originated IPv4 egress uses HOST -> ANY, defaults to DROP and permits HTTP, HTTPS, DNS and NTP only from the explicit FCOS LAN address (default 10.1.29.201).
+- **Suricata:** NFQUEUE queue 0 on host INPUT/OUTPUT for enp1s0; HOME_NET 10.1.29.0/24. The override includes suricata.rules and local.rules, and sets NFQ mode accept. The prepare unit runs suricata-update update-sources, enables free ET Open (et/open), updates rules and validates suricata -T -c /etc/suricata/suricata.yaml and then validates the active FCOS override before suricata.service starts.
 - **ClamAV:** one daily clamav-scan.timer at 02:00. Its service starts the freshclam one-shot dependency before the read-only scan. No automatic deletion or quarantine.
 - **Lynis:** daily system audit at 03:00.
 - **AIDE:** daily integrity check at 04:00; timer remains disabled until a trusted baseline is initialized and reviewed.
@@ -18,7 +18,7 @@ The Ansible package-layering playbook installs firewalld, nftables, suricata, ai
 
 ## Operational details
 
-- FCOS address defaults to 192.168.1.20/24 with gateway/DNS 192.168.1.1; reserve it in DHCP or adjust the Butane workflow inputs.
+- FCOS address defaults to 10.1.29.201/24 with gateway/DNS 10.1.29.1; reserve it in DHCP or adjust the Butane workflow inputs.
 - The guest NIC defaults to enp1s0 and must match the FCOS VM's actual interface.
 - NFQUEUE hooks use bypass deliberately (fail-open). Firewalld remains active if Suricata stops, but IPS inspection is unavailable; monitor Suricata service health.
 - The configuration inspects traffic to/from FCOS, not general LAN transit traffic.
