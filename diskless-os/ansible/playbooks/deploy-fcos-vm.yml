@@ -380,8 +380,7 @@
           - none
           - --noautoconsole
           - --autostart
-          - --qemu-commandline
-          - "-fw_cfg name=opt/com.coreos/config,file={{ fcos_ignition_remote_path }}"
+          - "--qemu-commandline=-fw_cfg name=opt/com.coreos/config,file={{ fcos_ignition_remote_path }}"
       register: virt_install
       changed_when: true
 
