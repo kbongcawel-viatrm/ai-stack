@@ -88,7 +88,7 @@ concurrency:
 jobs:
   push-event-noop:
     if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, host-os
     steps:
       - name: Keep manual deployment workflow idle on repository pushes
         run: echo "This workflow is manual/scheduled only; no infrastructure changes are made on push."
@@ -189,7 +189,7 @@ jobs:
   publish:
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.publish }}
     needs: build
-    runs-on: [self-hosted, linux, home-server]
+    runs-on: [self-hosted, host-os]
     environment: pxe-production
     steps:
       - uses: actions/download-artifact@v4
