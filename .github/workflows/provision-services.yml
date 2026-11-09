@@ -88,9 +88,13 @@ jobs:
         working-directory: diskless-os/ansible
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # --------------------------------------------------
+      # 2. Upgrade pip on the GitHub Actions runner
+      # --------------------------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.12'
+          python-version: '3.15.2'
 
       - name: Install Ansible
         run: |
