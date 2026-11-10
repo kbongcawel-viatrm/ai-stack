@@ -3,11 +3,11 @@ name: Orchestrate infrastructure deployment
 on:
   workflow_dispatch:
     inputs:
-      run_host_os:
-        description: Build and publish Alpine diskless host artifacts (does not reboot or install the host)
-        required: true
-        default: false
-        type: boolean
+      #run_host_os:
+      #  description: Build and publish Alpine diskless host artifacts (does not reboot or install the host)
+      #  required: true
+      #  default: false
+      #  type: boolean
       run_host_vm:
         description: Deploy the isolated Fedora CoreOS VM
         required: true
@@ -70,20 +70,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  host_os:
-    name: Host OS artifacts
-    if: ${{ inputs.run_host_os }}
-    uses: ./.github/workflows/deploy-host-os.yml
-    with:
-      alpine_version: ${{ vars.ALPINE_VERSION || '3.24.4' }}
-      publish: true
-      host_nic: ${{ vars.ALPINE_HOST_NIC || 'enp1s0' }}
-      host_bridge: ${{ vars.ALPINE_HOST_BRIDGE || 'br0' }}
-      storage_uuid: ${{ vars.STORAGE_UUID || '' }}
-      storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
-      vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || '/mnt/nvme/libvirt/images' }}
-      storage_fstype: ${{ vars.STORAGE_FSTYPE || 'ext4' }}
-    secrets: inherit
+  #host_os:
+  #  name: Host OS artifacts
+  #  if: ${{ inputs.run_host_os }}
+  #  uses: ./.github/workflows/deploy-host-os.yml
+  #  with:
+  #    alpine_version: ${{ vars.ALPINE_VERSION || '3.24.4' }}
+  #    publish: true
+  #    host_nic: ${{ vars.ALPINE_HOST_NIC || 'enp1s0' }}
+  #    host_bridge: ${{ vars.ALPINE_HOST_BRIDGE || 'br0' }}
+  #    storage_uuid: ${{ vars.STORAGE_UUID || '' }}
+  #    storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
+  #    vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || '/mnt/nvme/libvirt/images' }}
+  #    storage_fstype: ${{ vars.STORAGE_FSTYPE || 'ext4' }}
+  #  secrets: inherit
 
   host_vm:
     name: Deploy isolated FCOS VM
