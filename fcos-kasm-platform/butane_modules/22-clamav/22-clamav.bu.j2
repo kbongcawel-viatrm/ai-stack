@@ -1,0 +1,71 @@
+# 22-clamav — ClamAV freshclam config + daily update/scan timer.
+# clamav-init.service primes the signature DB and enables the timer after
+# rpm-ostree layering (the binaries do not exist at first boot).
+variant: fcos
+version: 1.5.0
+
+storage:
+  directories:
+    - path: /etc/clamav
+      mode: 0755
+    - path: /var/lib/clamav
+      mode: 0750
+    - path: /usr/local/sbin
+      mode: 0755
+  files:
+    - path: /etc/clamav/freshclam.conf
+      mode: 0640
+      overwrite: true
+      contents:
+        local: files/freshclam.conf
+    - path: /usr/local/sbin/clamav-init.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: files/clamav-init.sh
+
+systemd:
+  units:
+    - name: clamav-init.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=ClamAV DB prime and timer enable (post rpm-ostree layering)
+        After=network-online.target rpm-ostree-layer.service
+        Wants=network-online.target
+        ConditionPathExists=/var/lib/rpm-ostree-install.stamp
+        ConditionPathExists=/etc/clamav/freshclam.conf
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/local/sbin/clamav-init.sh
+        TimeoutStartSec=600
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: clamav-daily.service
+      contents: |
+        [Unit]
+        Description=Daily ClamAV signature update and quick filesystem scan
+        After=network-online.target
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/freshclam --quiet --config=/etc/clamav/freshclam.conf
+        ExecStart=/usr/bin/clamscan --infected --recursive --exclude-dir='^/proc' --exclude-dir='^/sys' --exclude-dir='^/dev' --exclude-dir='^/run' /home /var/www /var/opt 2>/dev/null || true
+        Nice=19
+        IOSchedulingClass=idle
+
+    - name: clamav-daily.timer
+      contents: |
+        [Unit]
+        Description=Run clamav-daily daily at 03:30
+
+        [Timer]
+        OnCalendar=*-*-* 03:30:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target

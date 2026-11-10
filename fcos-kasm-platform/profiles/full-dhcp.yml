@@ -1,0 +1,3 @@
+---
+# Profile: full stack, DHCP addressing (no static NM keyfile).
+use_static_ip: false

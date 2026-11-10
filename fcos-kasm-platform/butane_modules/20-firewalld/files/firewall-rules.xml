@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Applied to /etc/firewalld/zones/fcos-workspace.xml
+     Bound to ${FCOS_INTERFACE} by security-finalize (firewall-cmd --zone=... --change-interface).
+     Default zone behavior: everything not listed is dropped inbound. -->
+<zone target="default">
+  <short>FCOS workspace zone</short>
+  <description>FCOS VM host: SSH admin, Kasm HTTPS/VNC, DHCP client.</description>
+
+  <service name="ssh"/>
+  <service name="dhcpv6-client"/>
+
+  <!-- Kasm Workspaces HTTPS frontend -->
+  <port port="443" protocol="tcp"/>
+  <!-- KasmVNC direct workspace port (standalone compose mode: ubuntu desktop) -->
+  <port port="6901" protocol="tcp"/>
+  <!-- KasmVNC direct workspace port (LibreWolf browser workspace) -->
+  <port port="3101" protocol="tcp"/>
+  <!-- KasmVNC direct workspace port (bolens Arch Linux XFCE workspace) -->
+  <port port="3201" protocol="tcp"/>
+  <!-- HTTP for ACME/redirects if TLS is terminated upstream -->
+  <port port="80" protocol="tcp"/>
+
+  <!-- Rich rules: allow established/related return traffic explicitly -->
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_CIDR}"/>
+    <port port="3389" protocol="tcp"/>
+    <accept/>
+  </rule>
+</zone>

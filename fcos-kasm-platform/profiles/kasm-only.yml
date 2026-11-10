@@ -1,0 +1,10 @@
+---
+# Profile: Kasm workspaces only — no security modules, no home-security stack.
+enable_firewalld: false
+enable_suricata: false
+enable_clamav: false
+enable_aide: false
+enable_lynis: false
+enable_kasm: true
+enable_home_security: false
+use_static_ip: true

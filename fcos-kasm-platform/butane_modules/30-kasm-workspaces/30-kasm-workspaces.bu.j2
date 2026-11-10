@@ -1,0 +1,136 @@
+# 30-kasm-workspaces — container level: KasmVNC workspace compose stack,
+# home-security.uk v2 stack (optional), container update timer.
+#
+# The compose file is provisioned read-only under /opt/kasm; kasm-init.sh
+# stages it into /var/opt/kasm with a generated .env after rpm-ostree
+# layering, then enables the lifecycle units.
+#
+# Standalone KasmVNC containers — they do NOT require the full Kasm Workspaces
+# server. To deploy the upstream Kasm platform instead, see the kasm skill
+# (install.sh + seed_data filtering) — that is a separate deployment mode.
+variant: fcos
+version: 1.5.0
+
+storage:
+  directories:
+    - path: /opt/kasm
+      mode: 0755
+    - path: /var/opt/kasm
+      mode: 0755
+    - path: /var/opt/home-security
+      mode: 0755
+    - path: /usr/local/sbin
+      mode: 0755
+  files:
+    - path: /opt/kasm/docker-compose.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: files/docker-compose.yaml
+    - path: /usr/local/sbin/kasm-init.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: files/kasm-init.sh
+
+systemd:
+  units:
+    - name: kasm-init.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Kasm stack staging and enable (post rpm-ostree layering)
+        After=network-online.target rpm-ostree-layer.service docker.service
+        Wants=network-online.target
+        ConditionPathExists=/var/lib/rpm-ostree-install.stamp
+        ConditionPathExists=/opt/kasm/docker-compose.yaml
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/local/sbin/kasm-init.sh
+        TimeoutStartSec=300
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: kasm-workspace.service
+      contents: |
+        [Unit]
+        Description=Kasm workspace container lifecycle manager
+        After=network-online.target docker.service
+        Wants=network-online.target
+        Requires=docker.service
+        # kasm-init.sh copies the Ignition-provisioned compose from read-only
+        # /opt/kasm into /var/opt/kasm together with a generated .env.
+        ConditionPathExists=/var/opt/kasm/docker-compose.yaml
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        WorkingDirectory=/var/opt/kasm
+        ExecStartPre=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml pull
+        ExecStart=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml up -d
+        ExecStop=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml down
+        TimeoutStartSec=900
+
+        [Install]
+        WantedBy=multi-user.target
+
+{% if enable_home_security | bool %}
+    - name: home-security.service
+      contents: |
+        [Unit]
+        Description=home-security.uk v2 stack (clone + docker compose up)
+        Documentation=https://github.com/kbongcawel-viatrm/v2.home-security.uk
+        After=network-online.target docker.service kasm-workspace.service
+        Wants=network-online.target
+        Requires=docker.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        # The upstream repo contains local/* images (openobserve-with-curl,
+        # fluent-bit-hardened) that must be built on-host first — see its
+        # scripts/ and worker-image/ directories. This unit ensures the
+        # checkout exists and brings the stack up; image builds are a
+        # manual/pre-seeded step.
+        ExecStart=/usr/bin/bash -c '\
+          set -e; \
+          if [ ! -d /var/opt/home-security/.git ]; then \
+            git clone --depth 1 https://github.com/kbongcawel-viatrm/v2.home-security.uk /var/opt/home-security; \
+          fi; \
+          cd /var/opt/home-security/v2.home-security.uk && \
+          /usr/bin/docker compose pull --ignore-buildable 2>/dev/null || true; \
+          /usr/bin/docker compose up -d'
+        ExecStop=/usr/bin/bash -c 'cd /var/opt/home-security/v2.home-security.uk && /usr/bin/docker compose down'
+        TimeoutStartSec=900
+
+        [Install]
+        WantedBy=multi-user.target
+{% endif %}
+
+    - name: container-update.service
+      contents: |
+        [Unit]
+        Description=Daily container image update for /var/opt/kasm stack
+        After=network-online.target docker.service
+
+        [Service]
+        Type=oneshot
+        WorkingDirectory=/var/opt/kasm
+        ExecStart=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml pull
+        ExecStart=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml up -d
+        TimeoutStartSec=900
+
+    - name: container-update.timer
+      contents: |
+        [Unit]
+        Description=Run container-update weekly on Sunday 05:00
+
+        [Timer]
+        OnCalendar=Sun *-*-* 05:00:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target

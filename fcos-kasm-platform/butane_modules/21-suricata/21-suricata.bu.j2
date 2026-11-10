@@ -1,0 +1,60 @@
+# 21-suricata — Suricata IDS config, local rules, ET Open bootstrap.
+#
+# Config is declarative; suricata-init.service (post-layering) fixes runtime
+# ownership, runs suricata-update once (ET Open), and enables the service.
+# AF_PACKET capture on the guest NIC; fail-open — no NFQUEUE inline blocking.
+variant: fcos
+version: 1.5.0
+
+storage:
+  directories:
+    # 0755 (not 0750): the packaged suricata.service runs as user 'suricata'
+    # and must traverse this dir to read its config.
+    - path: /etc/suricata
+      mode: 0755
+    - path: /var/lib/suricata/rules
+      mode: 0750
+    - path: /var/log/suricata
+      mode: 0750
+    - path: /var/run/suricata
+      mode: 0750
+    - path: /usr/local/sbin
+      mode: 0755
+  files:
+    - path: /etc/suricata/suricata.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: files/suricata.yaml
+    # Local policy rules — picked up by suricata-update into suricata.rules.
+    - path: /var/lib/suricata/rules/local.rules
+      mode: 0644
+      overwrite: true
+      contents:
+        local: files/local.rules
+    - path: /usr/local/sbin/suricata-init.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: files/suricata-init.sh
+
+systemd:
+  units:
+    - name: suricata-init.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Suricata rules bootstrap and enable (post rpm-ostree layering)
+        After=network-online.target rpm-ostree-layer.service
+        Wants=network-online.target
+        ConditionPathExists=/var/lib/rpm-ostree-install.stamp
+        ConditionPathExists=/etc/suricata/suricata.yaml
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/local/sbin/suricata-init.sh
+        TimeoutStartSec=600
+
+        [Install]
+        WantedBy=multi-user.target

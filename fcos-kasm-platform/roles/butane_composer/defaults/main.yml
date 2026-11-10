@@ -1,0 +1,29 @@
+# butane_composer — render butane_modules/*.bu.j2, transpile each to .ign,
+# merge via root.bu (ignition.config.merge), emit build/config.ign.
+#
+# Runs on localhost (the hypervisor host). Requires: butane binary, python3,
+# ansible. See roles/butane_composer/files/render_vars.py for ${VAR} handling.
+platform_root: "{{ playbook_dir }}"
+butane_bin: "{{ lookup('env', 'BUTANE') | default('butane', true) }}"
+butane_version: "0.23.0"
+build_dir: "{{ platform_root }}/build"
+
+# Vars substituted into payload files (${VAR} syntax). Everything else —
+# notably docker-compose ${VAR:-default} runtime interpolation — is untouched.
+render_vars_allowed:
+  - FCOS_SSH_PUBLIC_KEY
+  - FCOS_CORE_PASSWORD_HASH
+  - FCOS_LAN_IP
+  - FCOS_LAN_CIDR
+  - FCOS_GATEWAY
+  - FCOS_INTERFACE
+
+# Environment handed to render_vars.py — maps Ansible vars onto the ${VAR}
+# names payload files use.
+render_vars_env:
+  FCOS_SSH_PUBLIC_KEY: "{{ fcos_ssh_public_key }}"
+  FCOS_CORE_PASSWORD_HASH: "{{ fcos_core_password_hash }}"
+  FCOS_LAN_IP: "{{ fcos_lan_ip }}"
+  FCOS_LAN_CIDR: "{{ fcos_lan_cidr }}"
+  FCOS_GATEWAY: "{{ fcos_gateway }}"
+  FCOS_INTERFACE: "{{ fcos_interface }}"
