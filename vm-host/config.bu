@@ -133,6 +133,9 @@ systemd:
     - name: kasm-workspace.service
       enabled: false   # enabled by security-finalize once docker exists
       contents_local: 2_systemd_level/kasm-workspace.service
+    - name: home-security.service
+      enabled: false   # enabled by security-finalize once docker exists
+      contents_local: 2_systemd_level/home-security.service
     - name: clamav-daily.service
       contents_local: 2_systemd_level/clamav-daily.service
     - name: clamav-daily.timer

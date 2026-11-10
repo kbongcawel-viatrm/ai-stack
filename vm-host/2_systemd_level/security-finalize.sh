@@ -45,5 +45,7 @@ systemctl enable --now container-update.timer || true
 # --- kasm workspace lifecycle -------------------------------------------------
 systemctl enable kasm-workspace.service || true
 systemctl start kasm-workspace.service || true
+systemctl enable home-security.service || true
+systemctl start home-security.service || true
 
 exit 0
