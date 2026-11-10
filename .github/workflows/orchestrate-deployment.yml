@@ -87,7 +87,7 @@ jobs:
 
   host_vm:
     name: Deploy isolated FCOS VM
-    needs: [host_os]
+    #needs: [host_os]
     if: ${{ always() && inputs.run_host_vm && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-host-vm.yml
     with:
