@@ -16,14 +16,12 @@ on:
         default: fcos-kasm-poc
         type: string
       fcos_qcow2_url:
-        description: Pinned Fedora CoreOS QCOW2 URL — https://, smb://, ftp:// or ftps:// (empty resolves latest stable qemu image)
-        required: false
-        default: ""
+        description: Pinned Fedora CoreOS QCOW2 URL
+        required: true
         type: string
       fcos_qcow2_sha256:
-        description: SHA256 checksum for the QCOW2 image (empty resolves latest stable)
-        required: false
-        default: ""
+        description: SHA256 checksum for the QCOW2 image
+        required: true
         type: string
       fcos_lan_ip:
         description: Static FCOS guest IP address
@@ -42,7 +40,7 @@ on:
       fcos_interface:
         description: Guest network interface
         required: true
-        default: ens2
+        default: enp1s0
         type: string
       network_bridge:
         description: Existing hypervisor bridge
@@ -74,31 +72,6 @@ on:
         required: true
         default: /mnt/nvme
         type: string
-      prepare_host:
-        description: Run prepare-hypervisor.yml first (bridge cutover drops connectivity briefly)
-        required: true
-        default: false
-        type: boolean
-      host_bridge_address:
-        description: IP/CIDR assigned to the host bridge
-        required: false
-        default: 192.168.1.100/24
-        type: string
-      host_bridge_slave:
-        description: Physical interface enslaved to the host bridge
-        required: false
-        default: enp1s0
-        type: string
-      host_bridge_dns:
-        description: DNS server for the host bridge (empty uses the gateway)
-        required: false
-        default: ""
-        type: string
-      wait_for_ssh:
-        description: Wait for FCOS SSH (port 22) to become reachable after VM start
-        required: true
-        default: true
-        type: boolean
   workflow_call:
     inputs:
       host_os:
@@ -111,12 +84,10 @@ on:
         default: fcos-kasm-poc
       fcos_qcow2_url:
         type: string
-        required: false
-        default: ""
+        required: true
       fcos_qcow2_sha256:
         type: string
-        required: false
-        default: ""
+        required: true
       fcos_lan_ip:
         type: string
         required: true
@@ -131,7 +102,7 @@ on:
       fcos_interface:
         type: string
         required: false
-        default: ens2
+        default: enp1s0
       network_bridge:
         type: string
         required: false
@@ -156,26 +127,6 @@ on:
         type: string
         required: false
         default: /mnt/nvme
-      prepare_host:
-        type: boolean
-        required: false
-        default: false
-      host_bridge_address:
-        type: string
-        required: false
-        default: 192.168.1.100/24
-      host_bridge_slave:
-        type: string
-        required: false
-        default: enp1s0
-      host_bridge_dns:
-        type: string
-        required: false
-        default: ""
-      wait_for_ssh:
-        type: boolean
-        required: false
-        default: true
 
 permissions:
   contents: read
@@ -194,25 +145,18 @@ jobs:
 
   deploy:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
-    runs-on: [self-hosted, hostOS]
+    runs-on: [self-hosted, linux, home-server]
     environment: host-vm-production
     defaults:
       run:
         working-directory: diskless-os/ansible
     steps:
       - uses: actions/checkout@v4
-      # --------------------------------------------------
-      # 2. Upgrade pip on the GitHub Actions runner
-      # --------------------------------------------------
-      - name: Setup Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.13'
 
       - name: Validate protected hypervisor access
         env:
-          HYPERVISOR_HOST: ${{ secrets.HYPERVISOR_HOST }}
-          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
           HYPERVISOR_SSH_PRIVATE_KEY: ${{ secrets.HYPERVISOR_SSH_PRIVATE_KEY }}
           HYPERVISOR_KNOWN_HOSTS: ${{ secrets.HYPERVISOR_KNOWN_HOSTS }}
           FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
@@ -223,71 +167,30 @@ jobs:
           done
           command -v python3 ssh-keygen curl
 
-      - name: Validate runner environment
-        run: |
-          set -Eeuo pipefail
-          # The self-hosted runner may be an immutable/rpm-ostree host (Secureblue),
-          # Alpine, Arch, or Ubuntu. Do not assume sudo, apt-get, or gettext exist.
-          for tool in python3 curl ssh-keygen git tar; do
-            command -v "$tool" >/dev/null || { echo "Missing required runner tool: $tool" >&2; exit 1; }
-          done
-          python3 -c 'import sys; assert sys.version_info >= (3, 10), f"python3 >= 3.10 required, found {sys.version}"'
-          python3 -m venv "$RUNNER_TEMP/venv-probe"
-          rm -rf "$RUNNER_TEMP/venv-probe"
-          if [ -r /etc/os-release ]; then . /etc/os-release; echo "Runner OS: $NAME $VERSION_ID ($ID)"; fi
-          df -h "$RUNNER_TEMP" | tail -1
-
       - name: Install Ansible and Butane
         run: |
           set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
-          # community.general provides the run0 become plugin used on Secureblue.
-          "$RUNNER_TEMP/ansible-venv/bin/ansible-galaxy" collection install community.general
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
           BUTANE_VERSION=0.23.0
-          curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 15 \
-            -o "$RUNNER_TEMP/butane" \
-            "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
+          curl -fsSL -o "$RUNNER_TEMP/butane" "https://github.com/coreos/butane/releases/download/v${BUTANE_VERSION}/butane-x86_64-unknown-linux-gnu"
           chmod 0755 "$RUNNER_TEMP/butane"
-          "$RUNNER_TEMP/butane" --version | tee "$RUNNER_TEMP/butane-version.txt"
-          grep -F "$BUTANE_VERSION" "$RUNNER_TEMP/butane-version.txt" >/dev/null \
-            || { echo "butane version mismatch: expected $BUTANE_VERSION" >&2; exit 1; }
+          "$RUNNER_TEMP/butane" --version
 
       - name: Render and validate FCOS Ignition
         env:
           FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
-          FCOS_CORE_PASSWORD_HASH: ${{ secrets.FCOS_CORE_PASSWORD_HASH }}
           FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
           FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
           FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
           FCOS_INTERFACE: ${{ inputs.fcos_interface }}
         run: |
           set -Eeuo pipefail
-          # envsubst/gettext is not guaranteed on every runner OS; render with python3 instead.
-          cp ../butane/fcos.bu "$RUNNER_TEMP/fcos.bu"
-          python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP/fcos-rendered.bu" <<'PY'
-          import os, re, sys
-          allowed = {"FCOS_SSH_PUBLIC_KEY", "FCOS_CORE_PASSWORD_HASH", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "FCOS_GATEWAY", "FCOS_INTERFACE"}
-          template = open(sys.argv[1]).read()
-          def repl(match):
-              name = match.group(1)
-              if name not in allowed:
-                  return match.group(0)
-              return os.environ.get(name, "")
-          if not os.environ.get("FCOS_CORE_PASSWORD_HASH"):
-              raise SystemExit("FCOS_CORE_PASSWORD_HASH secret is required for core console password login")
-          rendered = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", repl, template)
-          with open(sys.argv[2], "w") as f:
-              f.write(rendered)
-          PY
-          # fcos.bu embeds shell snippets with their own ${VAR} syntax; only the
-          # deployment placeholders must be fully substituted.
-          if grep -nE '\$\{(FCOS_SSH_PUBLIC_KEY|FCOS_CORE_PASSWORD_HASH|FCOS_LAN_IP|FCOS_LAN_CIDR|FCOS_GATEWAY|FCOS_INTERFACE)([^A-Za-z0-9_]|$)' "$RUNNER_TEMP/fcos-rendered.bu"; then
-            echo "Unsubstituted deployment placeholder remains in rendered Butane config" >&2
-            exit 1
-          fi
-          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos-rendered.bu"
+          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
+          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
           python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
 
       - name: Configure SSH trust for the hypervisor
@@ -304,8 +207,8 @@ jobs:
 
       - name: Build isolated Ansible inventory and variables
         env:
-          HYPERVISOR_HOST: ${{ secrets.HYPERVISOR_HOST }}
-          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+          HYPERVISOR_HOST: ${{ vars.HYPERVISOR_HOST }}
+          HYPERVISOR_USER: ${{ vars.HYPERVISOR_USER }}
           HOST_OS: ${{ inputs.host_os }}
           FCOS_VM_NAME: ${{ inputs.fcos_vm_name }}
           FCOS_QCOW2_URL: ${{ inputs.fcos_qcow2_url }}
@@ -320,47 +223,18 @@ jobs:
           FCOS_VM_DISK_GB: ${{ inputs.vm_disk_gb }}
           FCOS_IMAGE_DIR: ${{ inputs.vm_storage_path }}
           FCOS_STORAGE_MOUNTPOINT: ${{ inputs.storage_mountpoint }}
-          PREPARE_HOST: ${{ inputs.prepare_host }}
-          FCOS_WAIT_FOR_SSH: ${{ inputs.wait_for_ssh }}
-          HOST_BRIDGE_ADDRESS: ${{ inputs.host_bridge_address }}
-          HOST_BRIDGE_SLAVE: ${{ inputs.host_bridge_slave }}
-          HOST_BRIDGE_DNS: ${{ inputs.host_bridge_dns }}
           LIBVIRT_QEMU_USER: ${{ vars.LIBVIRT_QEMU_USER }}
           LIBVIRT_QEMU_GROUP: ${{ vars.LIBVIRT_QEMU_GROUP }}
-          FCOS_QCOW2_SMB_USERNAME: ${{ secrets.NAS_USER }}
-          FCOS_QCOW2_SMB_PASSWORD: ${{ secrets.NAS_PW }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
           import json, os, re
-          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE", "FCOS_STORAGE_MOUNTPOINT"]
+          required = ["HYPERVISOR_HOST", "HYPERVISOR_USER", "FCOS_QCOW2_URL", "FCOS_QCOW2_SHA256", "FCOS_LAN_IP", "FCOS_NETWORK_BRIDGE", "FCOS_STORAGE_MOUNTPOINT"]
           missing = [name for name in required if not os.environ.get(name)]
           if missing:
               raise SystemExit("Missing values: " + ", ".join(missing))
-          qcow2_url = os.environ.get("FCOS_QCOW2_URL", "")
-          qcow2_sha256 = os.environ.get("FCOS_QCOW2_SHA256", "")
-          uncompressed_sha256 = ""
-          if bool(qcow2_url) != bool(qcow2_sha256):
-              raise SystemExit("FCOS_QCOW2_URL and FCOS_QCOW2_SHA256 must be set together")
-          if not qcow2_url:
-              import urllib.request
-              with urllib.request.urlopen("https://builds.coreos.fedoraproject.org/streams/stable.json", timeout=30) as response:
-                  stream = json.load(response)
-              disk = stream["architectures"]["x86_64"]["artifacts"]["qemu"]["formats"]["qcow2.xz"]["disk"]
-              qcow2_url = disk["location"]
-              qcow2_sha256 = disk["sha256"]
-              uncompressed_sha256 = disk.get("uncompressed-sha256", "")
-              print("Resolved latest stable FCOS qemu image:", qcow2_url)
-          if not re.fullmatch(r"[0-9a-fA-F]{64}", qcow2_sha256):
+          if not re.fullmatch(r"[0-9a-fA-F]{64}", os.environ["FCOS_QCOW2_SHA256"]):
               raise SystemExit("FCOS_QCOW2_SHA256 must be 64 hexadecimal characters")
-          if not re.fullmatch(r"(https|smb)://\S+", qcow2_url):
-              raise SystemExit("FCOS_QCOW2_URL must be an https:// or smb:// URL")
-          ipv4 = r"(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}"
-          for name in ("FCOS_LAN_IP", "FCOS_GATEWAY"):
-              if not re.fullmatch(ipv4, os.environ.get(name, "")):
-                  raise SystemExit(f"{name} must be a dotted-quad IPv4 address")
-          if not re.fullmatch(ipv4 + r"/([0-9]|[12][0-9]|3[0-2])", os.environ.get("FCOS_LAN_CIDR", "")):
-              raise SystemExit("FCOS_LAN_CIDR must be an IPv4 CIDR such as 192.168.1.0/24")
           host_os = os.environ["HOST_OS"]
           storage_mountpoint = os.path.normpath(os.environ["FCOS_STORAGE_MOUNTPOINT"])
           default_alpine_dir = os.path.join(storage_mountpoint, "libvirt/images")
@@ -372,12 +246,8 @@ jobs:
           vars_data = {
               "host_os": host_os,
               "fcos_vm_name": os.environ.get("FCOS_VM_NAME") or "fcos-kasm-poc",
-              "fcos_qcow2_url": qcow2_url,
-              "fcos_qcow2_sha256": qcow2_sha256,
-              "fcos_qcow2_uncompressed_sha256": uncompressed_sha256,
-              "fcos_qcow2_compressed": qcow2_url.endswith(".xz"),
-              "fcos_qcow2_smb_username": os.environ.get("FCOS_QCOW2_SMB_USERNAME", ""),
-              "fcos_qcow2_smb_password": os.environ.get("FCOS_QCOW2_SMB_PASSWORD", ""),
+              "fcos_qcow2_url": os.environ["FCOS_QCOW2_URL"],
+              "fcos_qcow2_sha256": os.environ["FCOS_QCOW2_SHA256"],
               "fcos_lan_ip": os.environ["FCOS_LAN_IP"],
               "fcos_lan_cidr": os.environ["FCOS_LAN_CIDR"],
               "fcos_gateway": os.environ["FCOS_GATEWAY"],
@@ -391,28 +261,13 @@ jobs:
               "fcos_domain_dir": image_dir.rstrip("/") + "/domains",
               "fcos_qemu_user": os.environ.get("LIBVIRT_QEMU_USER") or ("libvirt-qemu" if host_os == "ubuntu" else "qemu"),
               "fcos_qemu_group": os.environ.get("LIBVIRT_QEMU_GROUP") or ("kvm" if host_os == "ubuntu" else "qemu"),
-              "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign"),
-              "prep_bridge_name": os.environ["FCOS_NETWORK_BRIDGE"],
-              "prep_bridge_address": os.environ["HOST_BRIDGE_ADDRESS"],
-              "prep_gateway": os.environ["FCOS_GATEWAY"],
-              "prep_dns": os.environ.get("HOST_BRIDGE_DNS", ""),
-              "prep_slave_interface": os.environ["HOST_BRIDGE_SLAVE"],
-              "prep_manage_bridge": os.environ.get("PREPARE_HOST", "false").lower() in ("true", "1", "yes"),
-              "prep_check_internet": True,
-              "prep_libvirt_dir": "/var/lib/libvirt",
-              "fcos_wait_for_ssh": os.environ.get("FCOS_WAIT_FOR_SSH", "true").lower() in ("true", "1", "yes")
+              "fcos_ignition_local_path": os.path.join(os.environ["RUNNER_TEMP"], "fcos.ign")
           }
-          hypervisor_host = os.environ["HYPERVISOR_HOST"]
-          # Runner and hypervisor are the same machine: skip SSH entirely.
-          local_hypervisor = hypervisor_host in ("localhost", "127.0.0.1", "::1")
           inventory = {
               "all": {"children": {"hypervisors": {"hosts": {"hypervisor": {
-                  "ansible_host": hypervisor_host,
-                  "ansible_connection": "local" if local_hypervisor else "ssh",
+                  "ansible_host": os.environ["HYPERVISOR_HOST"],
                   "ansible_user": os.environ["HYPERVISOR_USER"],
-                  "ansible_become": os.environ["HYPERVISOR_USER"] != "root",
-                  # Secureblue escalates via run0 (polkit), not sudo.
-                  "ansible_become_method": "community.general.run0" if host_os == "secureblue" else "sudo"
+              "ansible_become": os.environ["HYPERVISOR_USER"] != "root"
               }}}}}
           }
           with open(os.path.join(os.environ["RUNNER_TEMP"], "inventory.json"), "w") as f:
@@ -420,23 +275,6 @@ jobs:
           with open(os.path.join(os.environ["RUNNER_TEMP"], "deploy-vars.json"), "w") as f:
               json.dump(vars_data, f)
           PY
-
-      - name: Validate Ansible playbook syntax
-        run: |
-          set -Eeuo pipefail
-          ansible-playbook -i localhost, --syntax-check playbooks/deploy-fcos-vm.yml
-          ansible-playbook -i localhost, --syntax-check playbooks/prepare-hypervisor.yml
-
-      - name: Prepare hypervisor host (optional bridge cutover)
-        if: ${{ inputs.prepare_host }}
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "True"
-        run: |
-          set -Eeuo pipefail
-          export ANSIBLE_SSH_ARGS="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
-          ansible-playbook -i "$RUNNER_TEMP/inventory.json" playbooks/prepare-hypervisor.yml \
-            --extra-vars "@$RUNNER_TEMP/deploy-vars.json" \
-            --private-key "$HOME/.ssh/hypervisor" --diff
 
       - name: Deploy FCOS VM (does not run Deploy Host OS)
         env:
