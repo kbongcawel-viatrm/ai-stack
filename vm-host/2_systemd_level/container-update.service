@@ -1,0 +1,18 @@
+# vm-host daily container/workspace image refresh
+# Installed as /etc/systemd/system/vm-host-container-update.service
+[Unit]
+Description=vm-host: refresh Docker and Kasm workspace images
+Requires=docker.service
+After=docker.service network-online.target vm-host-kasm-workspace.service
+
+[Service]
+Type=oneshot
+Nice=10
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+TimeoutStartSec=30m
+# Pull updated workspace images, then recreate containers whose image
+# changed. base OS/ostree updates are handled by Zincati, not here.
+ExecStart=/bin/bash -c '/usr/bin/docker compose --file /opt/vm-host/kasm/docker-compose.yaml pull --ignore-pull-failures; /usr/bin/docker compose --file /opt/vm-host/kasm/docker-compose.yaml up -d --remove-orphans'
+UMask=0027

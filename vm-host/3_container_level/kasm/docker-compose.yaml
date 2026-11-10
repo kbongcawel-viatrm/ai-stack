@@ -1,0 +1,40 @@
+# vm-host lightweight Kasm workspace images.
+# Kasm Workspaces (installed by vm-host-kasm-workspace.service into
+# /opt/kasm/current) manages workspace container lifecycles itself through
+# its own compose stack. This file defines the lightweight image set the
+# platform uses (GPU-less host: MESA llvmpipe software rendering; never
+# configure /dev/dri passthrough).
+#
+# It is used by vm-host-container-update.service to pre-pull refreshed
+# images so workspace launches stay fast, and can bring up standalone
+# validation instances via:
+#   docker compose --file /opt/vm-host/kasm/docker-compose.yaml up -d
+services:
+  alpine-321-desktop:
+    image: kasmweb/alpine-321-desktop:1.17.0-rolling
+    container_name: ws-alpine-321-desktop
+    restart: unless-stopped
+    shm_size: "512m"
+    mem_limit: "1536m"
+    cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+    profiles: ["pull", "validate"]
+
+  firefox:
+    image: kasmweb/firefox:1.17.0-rolling
+    container_name: ws-firefox
+    restart: unless-stopped
+    shm_size: "512m"
+    mem_limit: "1536m"
+    cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+    profiles: ["pull", "validate"]
+    ports:
+      - "127.0.0.1:6901:6901"   # validation instance only; Kasm proxies the real sessions
+
+# Image registration in the Kasm UI/admin seed should mirror this set with
+# cores: 1.0 and memory: 1536000000 per image. Optional additions:
+#   kasmweb/ubuntu-noble-desktop, kasmweb/debian-bookworm-desktop,
+#   kasmweb/fedora-42-desktop, kasmweb/brave, kasmweb/chromium, kasmweb/vivaldi

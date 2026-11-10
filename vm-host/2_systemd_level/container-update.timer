@@ -1,0 +1,12 @@
+# vm-host daily workspace image refresh timer
+[Unit]
+Description=vm-host: refresh container images weekly (Sun 03:30)
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=vm-host-container-update.service
+
+[Install]
+WantedBy=timers.target

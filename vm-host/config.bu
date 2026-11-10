@@ -1,0 +1,204 @@
+variant: fcos
+version: 1.6.0
+
+# vm-host/config.bu — the single root Butane config.
+#
+# Every concrete config file and unit body lives as a raw fragment under
+# 1_host_level/, 2_systemd_level/ and 3_container_level/ and is pulled in
+# via `contents: local:` / `contents_local:` (resolved by build.sh with
+# --files-dir). Edit fragments; re-run build.sh; boot.
+
+# The workflow substitutes these environment variables before Butane
+# transpilation; never commit a real key or password hash.
+passwd:
+  users:
+    - name: core
+      groups:
+        - wheel
+      password_hash: ${FCOS_CORE_PASSWORD_HASH}
+      ssh_authorized_keys:
+        - ${FCOS_SSH_PUBLIC_KEY}
+
+storage:
+  directories:
+    - path: /etc/ssh/sshd_config.d
+      mode: 0700
+    - path: /etc/systemd/journald.conf.d
+      mode: 0755
+    - path: /etc/NetworkManager/system-connections
+      mode: 0700
+    - path: /etc/firewalld/zones
+      mode: 0750
+    - path: /etc/sysctl.d
+      mode: 0755
+    - path: /etc/zincati/config.d
+      mode: 0755
+    - path: /etc/suricata
+      mode: 0755
+    - path: /var/lib/vm-host
+      mode: 0755
+    - path: /var/log/clamav
+      mode: 0750
+    - path: /var/log/lynis
+      mode: 0750
+    - path: /var/log/aide
+      mode: 0750
+    - path: /var/log/suricata
+      mode: 0770
+    - path: /var/lib/suricata/rules
+      mode: 0755
+    - path: /opt/vm-host/kasm
+      mode: 0755
+
+  files:
+    ## ---------- 1_host_level ----------------------------------------------
+    - path: /etc/ssh/sshd_config.d/00-vm-host-security.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/sshd-hardening.conf
+
+    - path: /etc/systemd/journald.conf.d/00-vm-host-hardening.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/journald-hardening.conf
+
+    - path: /etc/sysctl.d/90-vm-host-kasm.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/sysctl-kasm.conf
+
+    - path: /etc/zincati/config.d/90-vm-host-updates.toml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/zincati-updates.toml
+
+    - path: /etc/aide.conf
+      mode: 0640
+      overwrite: true
+      contents:
+        local: 1_host_level/files/aide/aide.conf
+
+    - path: /etc/freshclam.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/files/clamav/freshclam.conf
+
+    - path: /etc/suricata/vm-host-overrides.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/files/suricata/suricata.yaml
+
+    - path: /var/lib/suricata/rules/local.rules
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/files/suricata/suricata.rules
+
+    # Ingress zone: default DROP; SSH + Kasm HTTPS (8443) from LAN only.
+    - path: /etc/firewalld/zones/public.xml
+      mode: 0640
+      overwrite: true
+      contents:
+        local: 1_host_level/files/firewalld/firewall-rules.xml
+
+    # Static guest address must match the DHCP reservation and the
+    # egress/firewall policies embedded in the fragments above.
+    - path: /etc/NetworkManager/system-connections/${FCOS_INTERFACE}.nmconnection
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          [connection]
+          id=${FCOS_INTERFACE}
+          type=ethernet
+          interface-name=${FCOS_INTERFACE}
+          autoconnect=true
+          autoconnect-priority=100
+
+          [ethernet]
+
+          [ipv4]
+          method=manual
+          address1=${FCOS_LAN_IP}/24,${FCOS_GATEWAY}
+          dns=${FCOS_GATEWAY};
+          ignore-auto-dns=true
+
+          [ipv6]
+          method=disabled
+
+    - path: /etc/motd.d/managed-by-vbhost
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          vm-host: hardened Fedora CoreOS + Kasm Workspaces
+          Ingress: default DROP; SSH/Kasm restricted to ${FCOS_LAN_CIDR}.
+          Updates: Zincati, Sunday 04:00-06:00 window.
+
+    ## ---------- 3_container_level -----------------------------------------
+    - path: /opt/vm-host/kasm/docker-compose.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/kasm/docker-compose.yaml
+
+systemd:
+  units:
+    ## ---------- 2_systemd_level -------------------------------------------
+    - name: NetworkManager.service
+      enabled: true
+
+    - name: sshd.service
+      enabled: true
+
+    - name: vm-host-security-setup.service
+      enabled: true
+      contents_local: 2_systemd_level/security-setup.service
+
+    - name: vm-host-kasm-workspace.service
+      enabled: true
+      contents_local: 2_systemd_level/kasm-workspace.service
+
+    - name: vm-host-clamav-daily.service
+      enabled: false
+      contents_local: 2_systemd_level/clamav-daily.service
+
+    - name: vm-host-clamav-daily.timer
+      enabled: true
+      contents_local: 2_systemd_level/clamav-daily.timer
+
+    - name: vm-host-aide-daily.service
+      enabled: false
+      contents_local: 2_systemd_level/aide-daily.service
+
+    - name: vm-host-aide-daily.timer
+      enabled: true
+      contents_local: 2_systemd_level/aide-daily.timer
+
+    - name: vm-host-container-update.service
+      enabled: false
+      contents_local: 2_systemd_level/container-update.service
+
+    - name: vm-host-container-update.timer
+      enabled: true
+      contents_local: 2_systemd_level/container-update.timer
+
+    - name: vm-host-lynis-daily.service
+      enabled: false
+      contents_local: 2_systemd_level/lynis-daily.service
+
+    - name: vm-host-lynis-daily.timer
+      enabled: true
+      contents_local: 2_systemd_level/lynis-daily.timer
+
+    # The packaged freshclam daemons clash with vm-host-clamav-daily.
+    - name: clamav-freshclam.service
+      mask: true
+    - name: clamav-freshclam.timer
+      mask: true

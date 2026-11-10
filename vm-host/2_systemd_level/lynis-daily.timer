@@ -1,0 +1,12 @@
+# vm-host daily Lynis timer
+[Unit]
+Description=vm-host: run daily Lynis audit at 03:00
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=vm-host-lynis-daily.service
+
+[Install]
+WantedBy=timers.target
