@@ -3,11 +3,11 @@ name: Orchestrate infrastructure deployment
 on:
   workflow_dispatch:
     inputs:
-      #run_host_os:
-      #  description: Build and publish Alpine diskless host artifacts (does not reboot or install the host)
-      #  required: true
-      #  default: false
-      #  type: boolean
+      run_host_os:
+        description: Build and publish Alpine diskless host artifacts (does not reboot or install the host)
+        required: true
+        default: false
+        type: boolean
       run_host_vm:
         description: Deploy the isolated Fedora CoreOS VM
         required: true
@@ -37,6 +37,11 @@ on:
         description: Controlled LAN HTTP server IP (TCP/80) for Suricata validation
         required: false
         type: string
+      layer_packages:
+        description: Layer FCOS packages and reboot if required
+        required: true
+        default: true
+        type: boolean
       container_smoke_image:
         description: Approved container image for rootless Podman smoke test
         required: true
@@ -51,16 +56,6 @@ on:
         description: Required when enabling the AIDE timer
         required: false
         type: string
-      prepare_host:
-        description: Prepare the hypervisor (bridge cutover) before deploying the FCOS VM
-        required: true
-        default: false
-        type: boolean
-      wait_for_ssh:
-        description: Wait for FCOS SSH (port 22) after VM provisioning
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: read
@@ -70,49 +65,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  #host_os:
-  #  name: Host OS artifacts
-  #  if: ${{ inputs.run_host_os }}
-  #  uses: ./.github/workflows/deploy-host-os.yml
-  #  with:
-  #    alpine_version: ${{ vars.ALPINE_VERSION || '3.24.4' }}
-  #    publish: true
-  #    host_nic: ${{ vars.ALPINE_HOST_NIC || 'enp1s0' }}
-  #    host_bridge: ${{ vars.ALPINE_HOST_BRIDGE || 'br0' }}
-  #    storage_uuid: ${{ vars.STORAGE_UUID || '' }}
-  #    storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
-  #    vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || '/mnt/nvme/libvirt/images' }}
-  #    storage_fstype: ${{ vars.STORAGE_FSTYPE || 'ext4' }}
-  #  secrets: inherit
+  host_os:
+    name: Host OS artifacts
+    if: ${{ inputs.run_host_os }}
+    uses: ./.github/workflows/deploy-host-os.yml
+    with:
+      alpine_version: ${{ vars.ALPINE_VERSION || '3.24.4' }}
+      publish: true
+      host_nic: ${{ vars.ALPINE_HOST_NIC || 'enp1s0' }}
+      host_bridge: ${{ vars.ALPINE_HOST_BRIDGE || 'br0' }}
+      storage_uuid: ${{ vars.STORAGE_UUID || '' }}
+      storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
+      vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || '/mnt/nvme/libvirt/images' }}
+      storage_fstype: ${{ vars.STORAGE_FSTYPE || 'ext4' }}
+    secrets: inherit
 
   host_vm:
     name: Deploy isolated FCOS VM
-    #needs: [host_os]
-    #if: ${{ always() && inputs.run_host_vm && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' }}
+    needs: [host_os]
+    if: ${{ always() && inputs.run_host_vm && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' }}
     uses: ./.github/workflows/deploy-host-vm.yml
     with:
-      #host_os: ${{ vars.HOST_OS || 'alpine' }}
+      host_os: ${{ vars.HOST_OS || 'alpine' }}
       fcos_vm_name: fcos-kasm-poc
       fcos_qcow2_url: ${{ vars.FCOS_QCOW2_URL || '' }}
       fcos_qcow2_sha256: ${{ vars.FCOS_QCOW2_SHA256 || '' }}
       fcos_lan_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
       fcos_lan_cidr: ${{ vars.FCOS_LAN_CIDR || '192.168.1.0/24' }}
       fcos_gateway: ${{ vars.FCOS_GATEWAY || '192.168.1.1' }}
-      fcos_interface: ${{ vars.FCOS_INTERFACE || 'ens2' }}
+      fcos_interface: ${{ vars.FCOS_INTERFACE || 'enp1s0' }}
       network_bridge: ${{ vars.FCOS_NETWORK_BRIDGE || 'br0' }}
       vm_memory_mb: 2048
       vm_vcpus: 2
       vm_disk_gb: 40
-      vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || ((vars.HOST_OS || 'alpine') != 'alpine' && '/var/lib/libvirt/images') || '/mnt/nvme/libvirt/images' }}
+      vm_storage_path: ${{ vars.FCOS_VM_STORAGE_PATH || '/mnt/nvme/libvirt/images' }}
       storage_mountpoint: ${{ vars.FCOS_STORAGE_MOUNTPOINT || '/mnt/nvme' }}
-      prepare_host: ${{ inputs.prepare_host }}
-      wait_for_ssh: ${{ inputs.wait_for_ssh }}
     secrets: inherit
 
   kasm_poc:
     name: Kasm compatibility gate
-    needs: [host_vm]
-    #if: ${{ always() && inputs.run_kasm_poc && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' && needs.host_vm.result != 'failure' && needs.host_vm.result != 'cancelled' }}
+    needs: [host_os, host_vm]
+    if: ${{ always() && inputs.run_kasm_poc && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' && needs.host_vm.result != 'failure' && needs.host_vm.result != 'cancelled' }}
     uses: ./.github/workflows/kasm-compatibility-poc.yml
     with:
       confirm_isolated_test_vm: ${{ inputs.confirm_isolated_test_vm }}
@@ -121,12 +114,13 @@ jobs:
 
   provision_services:
     name: Provision FCOS services
-    needs: [host_vm, kasm_poc]
-    #if: ${{ always() && inputs.run_provision_services && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' && needs.host_vm.result != 'failure' && needs.host_vm.result != 'cancelled' && needs.kasm_poc.result != 'failure' && needs.kasm_poc.result != 'cancelled' }}
+    needs: [host_os, host_vm, kasm_poc]
+    if: ${{ always() && inputs.run_provision_services && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' && needs.host_vm.result != 'failure' && needs.host_vm.result != 'cancelled' && needs.kasm_poc.result != 'failure' && needs.kasm_poc.result != 'cancelled' }}
     uses: ./.github/workflows/provision-services.yml
     with:
       fcos_vm_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
       fcos_ssh_user: ${{ vars.KASM_POC_SSH_USER || 'core' }}
+      layer_packages: ${{ inputs.layer_packages }}
       suricata_test_target_ip: ${{ inputs.suricata_test_target_ip || '' }}
       container_smoke_image: ${{ inputs.container_smoke_image }}
       enable_aide_timer: ${{ inputs.enable_aide_timer }}
@@ -135,8 +129,8 @@ jobs:
 
   health_check:
     name: FCOS and hypervisor health check
-    needs: [host_vm, kasm_poc, provision_services]
-    #if: ${{ always() && inputs.run_health_check && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' && needs.host_vm.result != 'failure' && needs.host_vm.result != 'cancelled' && needs.kasm_poc.result != 'failure' && needs.kasm_poc.result != 'cancelled' && needs.provision_services.result != 'failure' && needs.provision_services.result != 'cancelled' }}
+    needs: [host_os, host_vm, kasm_poc, provision_services]
+    if: ${{ always() && inputs.run_health_check && needs.host_os.result != 'failure' && needs.host_os.result != 'cancelled' && needs.host_vm.result != 'failure' && needs.host_vm.result != 'cancelled' && needs.kasm_poc.result != 'failure' && needs.kasm_poc.result != 'cancelled' && needs.provision_services.result != 'failure' && needs.provision_services.result != 'cancelled' }}
     uses: ./.github/workflows/health-check.yml
     with:
       fcos_vm_ip: ${{ vars.KASM_POC_FCOS_IP || '' }}
