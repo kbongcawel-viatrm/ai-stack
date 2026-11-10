@@ -19,7 +19,7 @@ Butane/Ignition writes the first-boot configuration, security policy, scripts an
 
 | Directory | Fragment | Boot payload(s) |
 |---|---|---|
-| `ssh/` | `ssh.bu` | `provision-ssh.sh` (sshd -t validation) + `00-local-security.conf` drop-in |
+| `ssh/` | `ssh.bu` | `provision-ssh.sh` (sshd -t validation) + `00-local-security.conf` drop-in (publickey-only globally; password auth allowed for sources in the trusted LAN CIDRs as break-glass) |
 | `firewalld/` | `firewalld.bu` | `provision-firewalld.sh` (policy verification), `fcos-bootstrap.nft`, zone/policy XML, service drop-ins; `harden-firewalld.sh` is a generic-host CIS script, not used by FCOS |
 | `suricata/` | `suricata.bu` | `suricata-prepare.sh` (update+validate gate), `suricata-rule-refresh.sh` (weekly timer), `fcos-overrides.yaml`, `suricata-nfq.nft`, `local.rules` |
 | `clamav/` | `clamav.bu` | `provision-clamav.sh` (env check + one-time DB seed), `clamav-daily-scan.sh` |
