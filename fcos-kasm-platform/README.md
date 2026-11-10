@@ -97,31 +97,44 @@ export FCOS_CORE_PASSWORD_HASH="$(openssl passwd -6)"   # console fallback
 
 ## Run it
 
+`build.sh` (or the `Makefile` targets) wraps the Ansible pipeline — it
+locates `ansible-playbook`/`butane`, checks required env vars, and runs the
+right tags in order. `make` targets: `render`, `provision`, `configure`,
+`all` (default), `clean`.
+
 ```bash
 cd ~/workspace/ai-stack/fcos-kasm-platform
 
 # 0) one-time: pin the FCOS build (see "FCOS image" below), ensure br0 has carrier
 
+export FCOS_SSH_PUBLIC_KEY="$(cat ~/.ssh/core.pub)"
+export FCOS_CORE_PASSWORD_HASH="$(openssl passwd -6)"   # console fallback
+
 # 1) render Ignition
-BUTANE=~/.local/bin/butane ansible-playbook -i inventory.ini site.yml --tags render
+./build.sh render            # or: make render
 #    → build/config.ign (valid JSON, N modules merged)
 
 # 2) provision the VM (downloads ~600MB base image once)
-ansible-playbook -i inventory.ini site.yml --tags provision
+./build.sh provision         # renders first if config.ign is missing
 
 # 3) wait for first boot + the rpm-ostree reboot (5–15 min), then:
-ansible-playbook -i inventory.ini site.yml --tags configure
+./build.sh configure         # or: make all  (render → provision → configure)
+```
 
-# or all three at once:
-ansible-playbook -i inventory.ini site.yml
+Direct Ansible equivalents (same thing, more control):
+
+```bash
+BUTANE=~/.local/bin/butane ansible-playbook -i inventory.ini site.yml --tags render
+ansible-playbook -i inventory.ini site.yml --tags provision
+ansible-playbook -i inventory.ini site.yml --tags configure
 ```
 
 ### Profile overrides
 
-Render a different feature combination with `-e @profiles/<name>.yml`:
-
 ```bash
-ansible-playbook -i inventory.ini site.yml --tags render -e @profiles/kasm-only.yml
+./build.sh render -e @profiles/kasm-only.yml
+# or
+PROFILE=kasm-only make render
 ```
 
 ## Guest endpoints

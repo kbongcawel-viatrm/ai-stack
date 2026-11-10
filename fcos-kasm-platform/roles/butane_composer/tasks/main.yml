@@ -15,10 +15,24 @@
       export them or pass -e overrides.
 
 - name: Locate butane binary
+  ansible.builtin.shell: command -v "{{ butane_bin }}" || true
+  register: butane_which
+  changed_when: false
+  tags: render
+
+- name: Resolve butane path
+  ansible.builtin.set_fact:
+    butane_bin_resolved: >-
+      {{ butane_which.stdout | trim if butane_which.stdout | trim | length > 0
+         else butane_bin }}
+  tags: render
+
+- name: Verify butane binary exists
   ansible.builtin.stat:
-    path: "{{ butane_bin }}"
+    path: "{{ butane_bin_resolved }}"
   register: butane_stat
   failed_when: not butane_stat.stat.exists
+  tags: render
 
 - name: Create build tree
   ansible.builtin.file:
@@ -54,7 +68,7 @@
 
 - name: Transpile module to Ignition fragment
   ansible.builtin.command: >-
-    {{ butane_bin }} --strict --files-dir=. --output={{ build_dir }}/fragments/{{ item }}.ign {{ item }}.bu
+    {{ butane_bin_resolved }} --strict --files-dir=. --output={{ build_dir }}/fragments/{{ item }}.ign {{ item }}.bu
   args:
     chdir: "{{ build_dir }}/modules/{{ item }}"
   loop: "{{ enabled_bu_modules }}"
@@ -67,7 +81,7 @@
 
 - name: Transpile merged config to config.ign
   ansible.builtin.command: >-
-    {{ butane_bin }} --strict --files-dir={{ build_dir }} --output={{ build_dir }}/config.ign {{ build_dir }}/root.bu
+    {{ butane_bin_resolved }} --strict --files-dir={{ build_dir }} --output={{ build_dir }}/config.ign {{ build_dir }}/root.bu
 
 - name: Validate config.ign is valid JSON
   ansible.builtin.command: python3 -m json.tool {{ build_dir }}/config.ign
