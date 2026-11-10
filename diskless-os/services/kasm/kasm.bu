@@ -1,0 +1,66 @@
+variant: fcos
+version: 1.6.0
+
+# kasm fragment: Kasm Workspaces on real Docker Engine. Contributes
+# moby-engine + docker-compose to the shared rpm-ostree layer via
+# /etc/fcos/extra-rpm-ostree-packages and runs the pinned installer as a
+# first-boot oneshot after docker.service is up.
+#
+# Requires FCOS_EXCLUDE_SERVICES=docker-lockdown at compose time so the
+# docker.service/docker.socket masks are not applied.
+storage:
+  directories:
+    - path: /etc/fcos
+      mode: 0755
+    - path: /var/lib/kasm-install
+      mode: 0755
+
+  files:
+    - path: /etc/fcos/extra-rpm-ostree-packages
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          moby-engine docker-compose
+
+    - path: /usr/local/sbin/kasm-install
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/kasm/kasm-install.sh@@
+
+systemd:
+  units:
+    - name: kasm-install.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install Kasm Workspaces (pinned bundle, Docker Engine)
+        After=docker.service fcos-package-layer.service network-online.target
+        Wants=docker.service network-online.target
+        # The installer pulls multi-GB image bundles; allow a long first boot.
+        TimeoutStartSec=2h
+        ConditionPathExists=!/var/lib/kasm-install.stamp
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=/usr/bin/systemctl enable --now docker.service docker.socket
+        ExecStart=/usr/local/sbin/kasm-install
+        RemainAfterExit=yes
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/kasm-install /opt/kasm /var/lib/docker
+        UMask=0077
+
+        [Install]
+        WantedBy=multi-user.target

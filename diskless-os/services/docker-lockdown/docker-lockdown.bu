@@ -1,0 +1,15 @@
+variant: fcos
+version: 1.6.0
+
+# docker-lockdown fragment: masks the rootful Docker Engine sockets so the
+# guest only exposes the rootless Podman API. Exclude this service
+# (FCOS_EXCLUDE_SERVICES=docker-lockdown) when the Kasm fragment is enabled —
+# Kasm Workspaces requires a real Docker Engine.
+storage: {}
+
+systemd:
+  units:
+    - name: docker.service
+      mask: true
+    - name: docker.socket
+      mask: true

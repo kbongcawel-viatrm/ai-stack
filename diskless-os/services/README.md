@@ -25,6 +25,8 @@ Butane/Ignition writes the first-boot configuration, security policy, scripts an
 | `clamav/` | `clamav.bu` | `provision-clamav.sh` (env check + one-time DB seed), `clamav-daily-scan.sh` |
 | `lynis/` | `lynis.bu` | `provision-lynis.sh` (env check), `lynis-daily-audit.sh`; `install-lynis-daily.sh` is a generic-host installer, not used by FCOS |
 | `aide/` | `aide.bu` | `provision-aide.sh` (env check, never initializes baseline), `aide-daily-check.sh` |
+| `kasm/` | `kasm.bu` | `kasm-install.sh` (pinned bundle + sha256, `install.sh --accept-eula --no-swap-check`) via `kasm-install.service`; adds `moby-engine docker-compose` to the rpm-ostree layer. Excluded by default; enable with `FCOS_EXCLUDE_SERVICES=docker-lockdown` |
+| `docker-lockdown/` | `docker-lockdown.bu` | Masks `docker.service`/`docker.socket` for podman-only builds. Excluded when Kasm is enabled |
 
 `compose.yaml` is a rootless Podman Compose smoke test, not a boot service.
 

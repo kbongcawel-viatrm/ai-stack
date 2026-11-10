@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -89,7 +90,18 @@ def main() -> int:
         fragments.append((base_bu, output_name(base_bu, services_dir)))
 
     if services_dir.is_dir():
+        # FCOS_EXCLUDE_SERVICES: comma-separated service directory names to
+        # skip (e.g. "kasm" for a podman-only build, "docker-lockdown" when
+        # Kasm needs the real Docker Engine sockets).
+        excluded = {
+            name.strip()
+            for name in os.environ.get("FCOS_EXCLUDE_SERVICES", "").split(",")
+            if name.strip()
+        }
         for bu in sorted(services_dir.glob("*/*.bu")):
+            if bu.parent.name in excluded:
+                print(f"skipped {bu.relative_to(repo_root)} (FCOS_EXCLUDE_SERVICES)")
+                continue
             name = output_name(bu, services_dir)
             if any(existing == name for _, existing in fragments):
                 raise SystemExit(f"duplicate fragment output name: {name}")

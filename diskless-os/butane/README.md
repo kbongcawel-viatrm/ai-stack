@@ -6,7 +6,8 @@ The FCOS first-boot configuration is composed from modular Butane fragments:
   hardening, rootless Podman plumbing, the rpm-ostree package layer, the
   cross-service preflight oneshot, logrotate and masked rootful sockets.
 - `diskless-os/services/<service>/<service>.bu` — one fragment per service
-  (aide, clamav, firewalld, lynis, ssh, suricata). Each fragment owns its
+  (aide, clamav, docker-lockdown, firewalld, kasm, lynis, ssh, suricata).
+  Each fragment owns its
   config files, `/usr/local/sbin` payload scripts and systemd units, including
   a first-boot `provision-<service>.service` oneshot where applicable.
 
@@ -20,6 +21,15 @@ From the repository root (Python 3.10+, no third-party packages):
 
 ```bash
 python3 diskless-os/butane/compose-bu.py --out-dir build/bu
+```
+
+Feature profiles are selected with `FCOS_EXCLUDE_SERVICES` (comma-separated
+service directory names to skip). Default deploys exclude `kasm`; Kasm
+deploys exclude `docker-lockdown` instead so Docker Engine sockets stay
+unmasked. Example:
+
+```bash
+FCOS_EXCLUDE_SERVICES=docker-lockdown python3 diskless-os/butane/compose-bu.py --out-dir build/bu-kasm
 ```
 
 Then substitute the deployment variables in each rendered `*.bu` (except

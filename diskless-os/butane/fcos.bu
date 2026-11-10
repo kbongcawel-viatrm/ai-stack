@@ -249,7 +249,7 @@ systemd:
         # Single-line payload: no nested quotes or shell variables, which
         # systemd ExecStart quote/specifier parsing would mangle. Hyphenated
         # tags keep messages quote-free; command -v verifies all binaries at once.
-        ExecStart=/bin/bash -c 'set -e; echo FCOS-LAYER-START-$(date --iso-8601=seconds); /usr/bin/rpm-ostree install --idempotent --allow-inactive python3 firewalld nftables suricata aide clamav clamav-freshclam lynis podman-compose logrotate || { echo FCOS-LAYER-INSTALL-FAILED-$(date --iso-8601=seconds) >&2; exit 1; }; command -v python3 firewall-cmd nft suricata aide clamscan freshclam lynis podman-compose logrotate >/dev/null 2>&1 || { echo FCOS-LAYER-MISSING-BINARY-$(date --iso-8601=seconds) >&2; command -v python3 firewall-cmd nft suricata aide clamscan freshclam lynis podman-compose logrotate; exit 1; }; /usr/bin/touch /var/lib/rpm-ostree-install.stamp && echo FCOS-LAYER-STAMP-WRITTEN-$(date --iso-8601=seconds) && echo FCOS-LAYER-REBOOTING-$(date --iso-8601=seconds) && /usr/bin/systemctl reboot'
+        ExecStart=/bin/bash -c 'set -e; echo FCOS-LAYER-START-$(date --iso-8601=seconds); EXTRA=""; [ -f /etc/fcos/extra-rpm-ostree-packages ] && EXTRA="$(cat /etc/fcos/extra-rpm-ostree-packages)"; /usr/bin/rpm-ostree install --idempotent --allow-inactive python3 firewalld nftables suricata aide clamav clamav-freshclam lynis podman-compose logrotate $EXTRA || { echo FCOS-LAYER-INSTALL-FAILED-$(date --iso-8601=seconds) >&2; exit 1; }; command -v python3 firewall-cmd nft suricata aide clamscan freshclam lynis podman-compose logrotate >/dev/null 2>&1 || { echo FCOS-LAYER-MISSING-BINARY-$(date --iso-8601=seconds) >&2; command -v python3 firewall-cmd nft suricata aide clamscan freshclam lynis podman-compose logrotate; exit 1; }; /usr/bin/touch /var/lib/rpm-ostree-install.stamp && echo FCOS-LAYER-STAMP-WRITTEN-$(date --iso-8601=seconds) && echo FCOS-LAYER-REBOOTING-$(date --iso-8601=seconds) && /usr/bin/systemctl reboot'
         NoNewPrivileges=true
         PrivateTmp=true
         ProtectSystem=full
@@ -317,11 +317,9 @@ systemd:
         WantedBy=multi-user.target
 
     # Do not start or expose the rootful Podman API socket.
+    # docker.service/docker.socket masks live in services/docker-lockdown so
+    # Kasm-enabled builds (which need real Docker Engine) can exclude them.
     - name: podman.socket
       mask: true
     - name: podman.service
-      mask: true
-    - name: docker.service
-      mask: true
-    - name: docker.socket
       mask: true

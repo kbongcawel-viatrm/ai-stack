@@ -85,3 +85,20 @@ Before the Compose smoke workflow, use the existing `podwhitelist` function insi
 ## Recovery
 
 Use hypervisor/VM console access if firewall or SSH changes lock out remote access. Preserve journal and Suricata logs before retrying. Restore the previous known-good PXE release or FCOS overlay/base image as appropriate. Do not delete VM disks or AIDE databases as a troubleshooting shortcut.
+
+### Kasm Workspaces (optional profile)
+
+Kasm is excluded from default builds. Deploy with `enable_kasm=true` on
+`deploy-host-vm` (sets `FCOS_EXCLUDE_SERVICES=docker-lockdown`), which adds
+`moby-engine`/`docker-compose` to the rpm-ostree layer and unmasks Docker.
+First boot then runs `kasm-install.service` (pinned 1.19.0 bundle,
+sha256-verified, `install.sh --accept-eula --no-swap-check`, up to 2h).
+
+```bash
+systemctl status kasm-install.service
+journalctl -u kasm-install.service --no-pager | tail -50
+grep -A5 'admin@kasm.local' /opt/kasm/current/install_log.txt
+```
+
+Post-install API/UI trimming is driven by
+`diskless-os/ansible/playbooks/configure-kasm.yml`.

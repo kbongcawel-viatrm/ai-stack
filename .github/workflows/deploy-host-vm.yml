@@ -44,6 +44,11 @@ on:
         required: true
         default: ens2
         type: string
+      enable_kasm:
+        description: Install Kasm Workspaces (Docker Engine); disables docker socket lockdown
+        required: false
+        default: false
+        type: boolean
       network_bridge:
         description: Existing hypervisor bridge
         required: true
@@ -132,6 +137,10 @@ on:
         type: string
         required: false
         default: ens2
+      enable_kasm:
+        type: boolean
+        required: false
+        default: false
       network_bridge:
         type: string
         required: false
@@ -262,6 +271,7 @@ jobs:
           FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
           FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
           FCOS_INTERFACE: ${{ inputs.fcos_interface }}
+          FCOS_EXCLUDE_SERVICES: ${{ inputs.enable_kasm && 'docker-lockdown' || 'kasm' }}
         run: |
           set -Eeuo pipefail
           # Compose per-service Butane fragments (diskless-os/services/*/*.bu

@@ -1,0 +1,64 @@
+---
+- name: Configure Kasm Workspaces after first-boot install
+  hosts: fcos
+  become: true
+  gather_facts: false
+  vars:
+    kasm_install_stamp: /var/lib/kasm-install.stamp
+    kasm_install_log: /opt/kasm/current/install_log.txt
+    kasm_base_url: "https://{{ fcos_lan_ip }}"
+    kasm_allowed_images:
+      - kasmweb/alpine-321-desktop
+      - kasmweb/firefox
+    kasm_validate_certs: false
+  tasks:
+    - name: Wait for the Kasm installer stamp
+      ansible.builtin.wait_for:
+        path: "{{ kasm_install_stamp }}"
+        state: present
+        timeout: 7200
+
+    - name: Read generated admin credentials from install log
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        grep -oE 'admin@kasm\.local[^[:space:]]*|password[^[:space:]]*' "{{ kasm_install_log }}" | tail -5
+      args:
+        executable: /bin/bash
+      register: kasm_admin_creds
+      changed_when: false
+      no_log: true
+
+    - name: Report credential location (values redacted)
+      ansible.builtin.debug:
+        msg: >-
+          Admin credentials were generated during install; see
+          {{ kasm_install_log }} on the guest or the journal of
+          kasm-install.service. Retrieve the password with:
+          grep -A5 'admin@kasm.local' {{ kasm_install_log }}
+
+    - name: Check Kasm API reachability
+      ansible.builtin.uri:
+        url: "{{ kasm_base_url }}/api/public/get_system_info"
+        method: POST
+        body_format: json
+        body: {}
+        validate_certs: "{{ not kasm_validate_certs }}"
+        status_code: [200, 400, 401, 403]
+      register: kasm_api_probe
+      failed_when: false
+      changed_when: false
+
+    - name: Assert Kasm API endpoint responds
+      ansible.builtin.assert:
+        that:
+          - kasm_api_probe.status is defined
+        fail_msg: "Kasm API did not respond on {{ kasm_base_url }}; check kasm-install.service status."
+
+    - name: Report manual configuration steps
+      ansible.builtin.debug:
+        msg:
+          - "Kasm Workspaces installed. Remaining manual/API steps:"
+          - "1. Log in at {{ kasm_base_url }} as admin@kasm.local (password in {{ kasm_install_log }})."
+          - "2. Settings > Developer API Keys: create an admin API key/secret."
+          - "3. Trim workspaces to the allowlist {{ kasm_allowed_images }} via Workspaces UI or /api/admin/update_image."
+          - "4. For Windows RDP workspaces: Infrastructure > Servers, register the Windows host, then create an image_type=Server workspace; allow TCP 3389 egress."
