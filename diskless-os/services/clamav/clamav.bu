@@ -1,0 +1,149 @@
+variant: fcos
+version: 1.6.0
+
+# clamav fragment: daily read-only scan + freshclam update units and a
+# first-boot environment check.
+storage:
+  directories:
+    - path: /var/log/clamav
+      mode: 0750
+
+  files:
+    - path: /usr/local/sbin/clamav-daily-scan
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/clamav/clamav-daily-scan.sh@@
+
+    - path: /usr/local/sbin/provision-clamav
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/clamav/provision-clamav.sh@@
+
+systemd:
+  units:
+    - name: clamav-freshclam.service
+      mask: true
+    - name: clamav-freshclam-once.timer
+      mask: true
+    - name: clamav-freshclam-daily.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Update ClamAV signatures
+        ConditionFileIsExecutable=/usr/bin/freshclam
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/freshclam --verbose
+        Nice=10
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        ProtectSystem=full
+        ProtectHome=read-only
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/lib/clamav /var/log/clamav
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        TimeoutStartSec=600
+
+    - name: clamav-freshclam-daily.timer
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily ClamAV signature update
+
+        [Timer]
+        OnCalendar=*-*-* 01:30:00
+        RandomizedDelaySec=15m
+        Persistent=true
+        Unit=clamav-freshclam-daily.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: clamav-scan.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily read-only ClamAV scan
+        ConditionFileIsExecutable=/usr/bin/clamscan
+        Requires=clamav-freshclam-daily.service
+        After=clamav-freshclam-daily.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/clamav-daily-scan
+        Nice=15
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        CPUWeight=20
+        ProtectSystem=full
+        ProtectHome=read-only
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/log/clamav
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        TimeoutStartSec=6h
+
+    - name: clamav-scan.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily ClamAV filesystem scan
+
+        [Timer]
+        OnCalendar=*-*-* 02:00:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=clamav-scan.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: clamav-provision.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=First-boot ClamAV environment check
+        After=fcos-package-layer.service fcos-services-preflight.service network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/provision-clamav
+        RemainAfterExit=yes
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        ReadWritePaths=/var/lib/clamav /var/log/clamav
+        UMask=0077
+        TimeoutStartSec=15m
+
+        [Install]
+        WantedBy=multi-user.target

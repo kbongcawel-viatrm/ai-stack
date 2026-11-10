@@ -5,3 +5,5 @@ ansible/inventory/health.yml
 *.key
 *.pem
 .secrets/
+services/suricata/rules/urlhause.rules
+services/suricata/suricata-documentation.pdf

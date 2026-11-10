@@ -1,0 +1,21 @@
+table inet fcos_bootstrap {
+  chain input {
+    type filter hook input priority -160; policy drop;
+    iifname "lo" accept
+    ct state established,related accept
+    # iifname != "lo" covers the single guest NIC regardless of its
+    # hypervisor-assigned name (enp1s0/ens2/...); the guest has no other
+    # non-loopback interfaces.
+    iifname != "lo" ip saddr ${FCOS_LAN_CIDR} tcp dport 22 ct state new accept
+  }
+
+  chain output {
+    type filter hook output priority -160; policy drop;
+    oifname "lo" accept
+    ct state established,related accept
+    oifname != "lo" ip saddr ${FCOS_LAN_IP} ip daddr ${FCOS_GATEWAY} udp dport 53 accept
+    oifname != "lo" ip saddr ${FCOS_LAN_IP} ip daddr ${FCOS_GATEWAY} tcp dport 53 accept
+    oifname != "lo" ip saddr ${FCOS_LAN_IP} udp dport 123 accept
+    oifname != "lo" ip saddr ${FCOS_LAN_IP} tcp dport { 80, 443 } accept
+  }
+}

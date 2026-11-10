@@ -5,13 +5,13 @@ if [ -f /etc/bashrc ]; then
 fi
 
 # User specific environment
-if ! [[ "$PATH" =~ "$HOME/.local/bin:$HOME/bin:" ]]; then
-    PATH="$HOME/.local/bin:$HOME/bin:$PATH"
-fi
+for dir in "$HOME/.local/bin" "$HOME/bin" "$HOME/.mistral/bin"; do
+    if [[ -d "$dir" && ":$PATH:" != *":$dir:"* ]]; then
+        PATH="$dir:$PATH"
+    fi
+done
+unset dir
 export PATH
-
-# Uncomment the following line if you don't like systemctl's auto-paging feature:
-# export SYSTEMD_PAGER=
 
 # User specific aliases and functions
 if [ -d ~/.bashrc.d ]; then
@@ -23,23 +23,17 @@ if [ -d ~/.bashrc.d ]; then
 fi
 unset rc
 
-
-
-
-#############################
-# Needed functions ##########
-#############################
-# Alter terminal output
-# Display file contents directly in the terminal
+#  GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   
+#  Display file contents directly in the terminal 
 tcat() {
     if [[ ! -w /dev/tty ]]; then
         printf 'Error: No writable terminal available.\n' >&2
         return 1
     fi
-
     command cat -- "$@" > /dev/tty
 }
 
+# Better than echo ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 _terminal_msg() {
     local status="$1"
     shift
@@ -53,7 +47,6 @@ _terminal_msg() {
         *)       color='0';    icon=''    ;;  # Reset/Plain
     esac
 
-    # Check if /dev/tty supports colors (requires >= 8 colors and NO_COLOR unset)
     local colors=0
     if [[ -z "${NO_COLOR:-}" ]] && command -v tput >/dev/null 2>&1; then
         colors=$(tput colors </dev/tty 2>/dev/null || echo 0)
@@ -66,10 +59,11 @@ _terminal_msg() {
     fi
 }
 
-_print_line() {
+# Prints a line ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+_terminal_line() {
     local style="${1:-thin}"
     local color="${2:-38;5;244}"
-    local width="${3:-50}" # Reduced default width to 50 characters
+    local width="${3:-50}"
     local char
 
     case "$style" in
@@ -88,128 +82,181 @@ _print_line() {
     printf '\033[%sm%s\033[0m\n' "$color" "$line" | tcat
 }
 
-##############################################################
-# End of needed functions										      ##
-##############################################################
+# Animations ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
-##############################################################
-## Declaration 															##
-##############################################################
-_terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
-_print_line bold "1;32" 35
+# ============================================================
+# GLOBAL TERMINAL LOADER
+# ============================================================
 
-##############################################################
-### start of functions P1  											##
-##############################################################
+_LOADER_PID=""
+_LOADER_ICON="📦"
+_LOADER_DELAY="0.05"
 
-# Syntax check bashrc
-validatebash	() {
-    if [[ -f "$HOME/.bashrc" ]]; then
-        _terminal_msg normal ".bashrc configuration"
+# Start shared animated loader.
+# Usage: _loader_start [icon] [delay]
+_loader_start() {
+    local icon="${1:-📦}"
+    local delay="${2:-0.05}"
+    local width max
 
-        if bash -n "$HOME/.bashrc"; then
-            _terminal_msg success "Syntax OK! Configuration reloaded! ♻️"
-        else
-            _terminal_msg error "Syntax error found in ~/.bashrc"
-            return 1
-        fi
-    else
-        _terminal_msg error "~/.bashrc does not exist"
-        return 1
+    # Prevent duplicate loaders.
+    [[ -n "${_LOADER_PID:-}" ]] && return 0
+
+    # Do not animate without an interactive terminal.
+    [[ -t 2 && -w /dev/tty ]] || return 0
+
+    # Validate delay.
+    if [[ ! "$delay" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        delay="0.05"
     fi
-echo ""
 
+    width=$(stty size </dev/tty 2>/dev/null)
+    width=${width##*$'\t'}
+    [[ "$width" =~ ^[0-9]+$ ]] || width=40
+
+    (( width > 6 )) || width=40
+    max=$((width - 4))
+
+    _LOADER_ICON="$icon"
+    _LOADER_DELAY="$delay"
+
+    # Background animation.
+    (
+        trap 'printf "\033[?25h" >/dev/tty 2>/dev/null' EXIT
+        trap 'exit 0' INT TERM HUP
+
+        printf '\033[?25l' >/dev/tty 2>/dev/null || exit 0
+
+        local i
+
+        while :; do
+            for ((i=0; i<=max; i++)); do
+                printf '\r\033[K%*s%s' \
+                    "$i" "" "$icon" >/dev/tty 2>/dev/null || exit 0
+                sleep "$delay" || exit 0
+            done
+
+            for ((i=max; i>=0; i--)); do
+                printf '\r\033[K%*s%s' \
+                    "$i" "" "$icon" >/dev/tty 2>/dev/null || exit 0
+                sleep "$delay" || exit 0
+            done
+        done
+    ) </dev/null >/dev/null 2>&1 &
+
+    _LOADER_PID=$!
 }
 
-validatepath(){
-  _terminal_msg normal "PATH configuration"
-  sleep 2
-  if printf '%s' "$PATH" | awk -v RS=: '
-      length($0) == 0 || $0 !~ /^\// { bad = 1 }
-      END { exit (bad || NR == 0) }
-      '; then
-  
-      _terminal_msg success "Syntax OK! PATH looks good. 👌"    
-  else
-      _terminal_msg error "FAIL❌: PATH has some issues. Please check. 🙇"
-  fi
+# Stop shared loader.
+_loader_stop() {
+    local pid="${_LOADER_PID:-}"
+
+    if [[ -n "$pid" ]]; then
+        kill "$pid" 2>/dev/null || :
+        wait "$pid" 2>/dev/null || :
+        _LOADER_PID=""
+    fi
+
+    if [[ -w /dev/tty ]]; then
+        printf '\r\033[K\033[?25h' >/dev/tty 2>/dev/null || :
+    fi
 }
 
-bashconfigcheck(){
- sleep 1
- _terminal_msg normal "Checklist initialize 📋"
- sleep 1
- echo
-validatepath
- echo
- sleep 1
- validatebash
- echo
- sleep 1
- _terminal_msg normal "done with all checks..."
- _terminal_msg success "Enjoy 🎉"
- echo
- _print_line bold "1;32" 35 
- echo
- sleep 1
+# Execute a command with animation.
+# Usage: _loader_run [icon] [delay] command [arguments...]
+_loader_run() {
+    local icon="${1:-📦}"
+    local delay="${2:-0.05}"
+    local rc
+
+    shift 2
+
+    if (( $# == 0 )); then
+        printf 'Usage: _loader_run [icon] [delay] command [args...]\n' >&2
+        return 2
+    fi
+
+    _loader_start "$icon" "$delay"
+
+    "$@"
+    rc=$?
+
+    _loader_stop
+
+    return "$rc"
 }
-##############################################################
-### end of functions P1                                    ###
-##############################################################
 
 
-##############################################################
-# Declarative Shell hardening                               ##
-##############################################################
+# END OF GLOBAL FUNCTIONS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
-# Default visual and editor
-export EDITOR=/usr/bin/vim
-export VISUAL=/usr/bin/vim
-export BUN_JSC_useJIT=1 cline=1 cline
+#  INTRO MESSAGES          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+_terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
+_terminal_line bold "1;32" 35
+
+#  DECLARATIVE CONFIG      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+export EDITOR="/usr/bin/vim"
+export VISUAL="/usr/bin/vim"
+
+# JavaScriptCore / Bun
+export BUN_JSC_useJIT=1
 export JavaScriptCoreUseJIT=1
-# Ensure newly created files/folders are completely private to the owner
-umask 077 2>/dev/null
 
-# PATH hardening
-# Keep only absolute PATH entries. This removes:
-# - Empty entries (which can mean the current working directory)
-# - "." and other relative directory entries
-# Explicit execution using ./program remains possible.
-PATH="$(printf '%s' "$PATH" | awk -v RS=: '
-    /^\// {
-        if (n++) printf ":"
-        printf "%s", $0
-    }
-')"
-export PATH
+# Private default permissions
+umask 077
 
-# Validate that PATH contains only absolute, non-empty entries.
-
-# Prevents the shell and its children from creating memory core dumps on crash
+# Disable core dumps
 ulimit -c 0
 
-# ignorespace: Hidden from history if command starts with a space
-# ignoredups: Do not record sequential duplicate commands
-export HISTCONTROL=ignoreboth
-
-# Erase specific high-risk command names entirely from being recorded
+# Shell history
+export HISTCONTROL="ignoreboth"
 export HISTIGNORE="passwd:run0*:sudo*:*api_key*:*token*:*secret*:run0edit:workspace*:kses*:shazam*"
 
-# Force immediate history append instead of overwriting on shell exit
-shopt -s histappend 2>/dev/null
-export PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
+shopt -s histappend
 
-# Automatically log out of the shell session after 10 minutes of inactivity (600 seconds)
-# If not yet set to readonly else set it.
-if [[ "${TMOUT@a}" != *r* ]]; then
-    export TMOUT=600
-    readonly -f TMOUT 2>/dev/null
+# Append history without duplicating PROMPT_COMMAND entries.
+_history_append() {
+    history -a
+}
+
+# Check whether _history_append is already registered.
+if [[ ! ";${PROMPT_COMMAND-};" =~ (^|[[:space:];])_history_append([[:space:];]|$) ]]; then
+    _pc="${PROMPT_COMMAND-}"
+
+    # Remove trailing semicolons and whitespace.
+    while [[ "$_pc" == *[[:space:]\;] ]]; do
+        _pc="${_pc%?}"
+    done
+
+    # Append the history function.
+    if [[ -n "$_pc" ]]; then
+        PROMPT_COMMAND="${_pc};_history_append"
+    else
+        PROMPT_COMMAND="_history_append"
+    fi
+
+    unset _pc
 fi
-# Harden critical execution aliases natively
-alias run0='run0 -i' # -q adds a silent flag
-alias rm='rm -rf'
+
+# Session inactivity timeout.
+# Preserve the existing 10-minute policy.
+if [[ "${TMOUT@a}" != *r* ]]; then
+    TMOUT=600
+    export TMOUT
+    readonly TMOUT
+fi
+
+# ALIAS     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+# Common command aliases
+alias distro='distrobox'
+alias tlbx='toolbox'
+alias tlbxen='toolbox enter'
+alias tlbxli='toolbox list'
+alias tlbxcr='toolbox create'
+
 alias ls='ls -alt'
-alias ps='ps -aux'
+alias ps='ps aux'
+
+# System management
 alias run0ctl='run0 systemctl'
 alias run0ctlrestart='run0 systemctl restart'
 alias run0ctlstart='run0 systemctl start'
@@ -218,88 +265,56 @@ alias run0ctlenable='run0 systemctl enable --now'
 alias run0ctlstop='run0 systemctl stop'
 alias run0journal='run0 journalctl -u'
 
-# Mark aliases or sensitive protective paths as read-only to block runtime tampering
-readonly -f run0 2>/dev/null
-readonly -f sudo 2>/dev/null
+# Protect security-critical shell functions.
+for fn in run0 sudo; do
+    if declare -F "$fn" >/dev/null 2>&1; then
+        readonly -f "$fn"
+    fi
+done
 
-##############################################################
-## End of declared configuration                            ##
-##############################################################
+# Protect the automatic shell timeout.
+if [[ ${TMOUT+x} ]]; then
+    readonly TMOUT
+fi
 
-##############################################################
-### start of functions P2  											##
-##############################################################
-workspacevirshall(){
-virsh -c qemu:///system list --all
-}
-shazam() {
-  # Runs the target utility inside the systemd execution framework
-  # --empower dynamically elevates or assigns capabilities
-  # --property=LogLevelMax=0 silences systemd-level log generation for this fork
-  run0 --empower && _terminal_msg warning "With great power comes with great responsibility"
-}
+# FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
-# workspace navigator
-workspace() {
-    local target_dir="$HOME/workspace"
-    local -a folders=()
-    local item choice selected_folder
-    local choice_num i
-
-    # 1. Verify the workspace directory exists
-    if [[ ! -d "$target_dir" ]]; then
-        printf 'Error: Directory %s does not exist.\n' "$target_dir" >&2
+getbash() {
+    if [[ -f "$HOME/.bashrc" ]]; then
+        _terminal_msg normal ".bashrc configuration"
+        if bash -n "$HOME/.bashrc"; then
+            _terminal_msg success "Syntax OK! Configuration valid! ♻️"
+        else
+            _terminal_msg error "Syntax error found in ~/.bashrc"
+            return 1
+        fi
+    else
+        _terminal_msg error "~/.bashrc does not exist"
         return 1
     fi
-
-    # 2. Collect subdirectories, preserving spaces in names
-    for item in "$target_dir"/*; do
-        [[ -d "$item" ]] || continue
-        folders+=("${item##*/}")
-    done
-
-    # 3. Handle an empty workspace
-    if (( ${#folders[@]} == 0 )); then
-        printf 'No subfolders found in %s.\n' "$target_dir"
-        return 0
-    fi
-
-    # 4. Display the numbered list
-    printf 'Which folder do you want to enter?\n'
-    for i in "${!folders[@]}"; do
-        printf '%d. %s\n' "$((i + 1))" "${folders[$i]}"
-    done
-
-    # 5. Read the selection
-    read -r -p 'Enter number: ' choice || return 1
-
-    # 6. Validate the selection
-    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
-        printf 'Error: Enter a valid number.\n' >&2
-        return 1
-    fi
-
-    choice_num=$((10#$choice))
-
-    if (( choice_num < 1 || choice_num > ${#folders[@]} )); then
-        printf 'Error: Selection out of range.\n' >&2
-        return 1
-    fi
-
-    # 7. Change the current shell's directory
-    selected_folder="${folders[$((choice_num - 1))]}"
-
-    if ! cd -- "$target_dir/$selected_folder"; then
-        printf 'Error: Could not enter directory.\n' >&2
-        return 1
-    fi
-
-    printf 'Moved to: %s\n' "$PWD"
-
+    echo ""
 }
 
-# manage nodejs, npm, and nvm
-workspacenode(){
+getpath() {
+    _terminal_msg normal "PATH configuration"
+    if printf '%s' "$PATH" | awk -v RS=: '
+        length($0) == 0 || $0 !~ /^\// { bad = 1 }
+        END { exit (bad || NR == 0) }
+    '; then
+        _terminal_msg success "Syntax OK! PATH looks good. 👌"
+    else
+        _terminal_msg error "FAIL❌: PATH has some issues. Please check. 🙇"
+        return 1
+    fi
+}
+
+# Get all virtual instances
+getvirtall() {
+    virsh -c qemu:///system list --all
+}
+
+# download nvm node and npm
+getnvm(){
 echo
 _terminal_msg normal '🚀 Downloading latest NVM.'
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/HEAD/install.sh | bash
@@ -321,6 +336,79 @@ _terminal_msg normal 🟢'node:'$(node -v)
 _terminal_msg normal 🟢'npm:'$(npm -v)
 echo
 }
+
+# empowered
+whoseyourdaddy() {
+    run0 --empower && _terminal_msg warning "With great power comes with great responsibility"
+}
+
+workspaceconfigcheck() {
+    _terminal_msg normal "Checklist initialize 📋"
+    echo
+    getpath
+    echo
+    getbash
+    echo
+    _terminal_msg normal "Done with all checks..."
+    _terminal_msg success "Enjoy 🎉"
+    echo
+    _terminal_line bold "1;32" 35
+    echo
+}
+
+# Workspace navigator
+workspace() {
+    local target_dir="$HOME/workspace"
+    local -a folders=()
+    local item choice selected_folder choice_num i
+
+    if [[ ! -d "$target_dir" ]]; then
+        printf 'Error: Directory %s does not exist.\n' "$target_dir" >&2
+        return 1
+    fi
+
+    for item in "$target_dir"/*; do
+        [[ -d "$item" ]] || continue
+        folders+=("${item##*/}")
+    done
+
+    if (( ${#folders[@]} == 0 )); then
+        printf 'No subfolders found in %s.\n' "$target_dir"
+        return 0
+    fi
+    echo
+    _terminal_msg normal ' Which folder do you want to enter? 📂 '
+    _terminal_line thin "1;32" 35
+    for i in "${!folders[@]}"; do
+        printf '%d. %s\n' "$((i + 1))" "${folders[$i]}"
+    done
+
+    read -r -p 'Enter number: ' choice || return 1
+
+    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+        printf 'Error: Enter a valid number.\n' >&2
+        return 1
+    fi
+
+    choice_num=$((10#$choice))
+
+    if (( choice_num < 1 || choice_num > ${#folders[@]} )); then
+        printf 'Error: Selection out of range.\n' >&2
+        return 1
+    fi
+
+    selected_folder="${folders[$((choice_num - 1))]}"
+
+    if ! cd -- "$target_dir/$selected_folder"; then
+        printf 'Error: Could not enter directory.\n' >&2
+        return 1
+    fi
+
+    printf 'Moved to: %s\n' "$PWD"
+}
+
+# manage nodejs, npm, and nvm
+
 
 # Back up user dotfiles for Fedora Secureblue workspace recovery
 workspacesync() {
@@ -615,7 +703,7 @@ _terminal_msg warning "  🔑 SSH public key : (Proceed to add in GH)"
 cat "${ssh_key_path}.pub"
 sleep 2
 
-_print_line bold "1;32" 35
+_terminal_line bold "1;32" 35
 
 _terminal_msg warning"  🔑 GPG public key: (Proceed to add in GH)"
 gpg --armor --export "$gpg_key_id"
@@ -634,7 +722,7 @@ _gvariant_quote() {
 }
 
 # Interactive GNOME Custom Keyboard Shortcuts Manager. Simply add keyboard shortcuts.
-myshortcutkeys() {
+workspaceshortcuts() {
     if ! command -v gsettings >/dev/null 2>&1; then
         _terminal_msg error "gsettings not found. A compatible GNOME settings schema is required."
         return 1
@@ -766,7 +854,7 @@ myshortcutkeys() {
 
 # Optional one-time Ptyxis shortcut provisioning.
 # Manually execute: setup_ptyxis_shortcut
-setup_ptyxis_shortcut() {
+workspaceterminalshortcut() {
     if ! command -v gsettings >/dev/null 2>&1; then
         _terminal_msg error "gsettings not found."
         return 1
@@ -805,7 +893,7 @@ setup_ptyxis_shortcut() {
     _terminal_msg success "Ptyxis shortcut configured: Ctrl+1"
 }
 # Whitelist podman image
-podwhitelist() {
+podimage() {
     local input_path repo_scope policy_file answer
     local toolbox_name
 
@@ -943,7 +1031,7 @@ podwhitelist() {
 }
 
 # Setup rootless podam
-podsetuprootless() {
+podrootless() {
     local sock_path="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
     local host_uri="unix://${sock_path}"
 
@@ -1295,17 +1383,175 @@ gcloud_workspace_sync() {
     fi
 }
 
-##############################################################
-# End of functions  Pt2                                     ## 
-##############################################################
-
-##############################################################
-# Validate Configuration                                    ## 
-##############################################################
-
-##############################################################
-# EOF                                                       ## 
-##############################################################
-
 # Re-apply managed network/DNS state (Cloudflare DoT global DNS + dnsconfd/Unbound)
-fix-network() { /usr/bin/run0 /usr/local/sbin/network-state-enforce; }
+mynetworkfix() {
+#!/usr/bin/env bash
+# Enforce the desired network/DNS state on this Secureblue system.
+# Idempotent: only restarts NetworkManager when something actually changed.
+# Managed state:
+#   - Resolver: dnsconfd (Unbound) on 127.0.0.1; systemd-resolved masked/stopped
+#   - Global DNS: Cloudflare "security" profile via NM global-dns (DoT)
+#   - Trivalent browser DoH: https://security.cloudflare-dns.com/dns-query
+#   - No per-connection static DNS / bogus dns-search domains
+#   - Dead USB NIC (enp0s20f0u10) kept down / autoconnect disabled
+changed=0
+note() { printf 'network-state-enforce: %s\n' "$*"; }
+
+# --- 1. NM plugin config: dns=dnsconfd -------------------------------------
+DNSCONFD_NM=/etc/NetworkManager/conf.d/dnsconfd.conf
+if ! cmp -s "$DNSCONFD_NM" <(printf '[main]\ndns=dnsconfd\n') 2>/dev/null; then
+    printf '[main]\ndns=dnsconfd\n' > "$DNSCONFD_NM"; chmod 644 "$DNSCONFD_NM"; changed=1
+    note "rewrote $DNSCONFD_NM"
+fi
+
+# --- 2. Global DNS (Cloudflare security profile) ----------------------------
+GLOBALDNS=/etc/NetworkManager/conf.d/global-dns.conf
+GLOBALDNS_WANT='[global-dns]
+resolve-mode=exclusive
+
+[global-dns-domain-*]
+servers=dns+tls://1.1.1.2#security.cloudflare-dns.com,dns+tls://1.0.0.2#security.cloudflare-dns.com,dns+tls://[2606:4700:4700::1112]#security.cloudflare-dns.com,dns+tls://[2606:4700:4700::1002]#security.cloudflare-dns.com
+'
+if ! cmp -s "$GLOBALDNS" <(printf '%s' "$GLOBALDNS_WANT") 2>/dev/null; then
+    printf '%s' "$GLOBALDNS_WANT" > "$GLOBALDNS"; chmod 644 "$GLOBALDNS"; changed=1
+    note "rewrote $GLOBALDNS"
+fi
+
+# --- 3. Trivalent DoH policy -------------------------------------------------
+TRIV=/etc/trivalent/policies/managed/10-securedns-browser.json
+TRIV_WANT='{
+    "DnsOverHttpsMode": "secure",
+    "DnsOverHttpsTemplates": "https://security.cloudflare-dns.com/dns-query"
+}
+'
+if ! cmp -s "$TRIV" <(printf '%s' "$TRIV_WANT") 2>/dev/null; then
+    install -d -m 0755 "$(dirname "$TRIV")"
+    printf '%s' "$TRIV_WANT" > "$TRIV"; chmod 644 "$TRIV"; changed=1
+    note "rewrote $TRIV"
+fi
+
+# --- 4. DNSSEC stays off (no /etc/dnsconfd.conf) -----------------------------
+if [[ -e /etc/dnsconfd.conf ]]; then
+    rm -f /etc/dnsconfd.conf; changed=1; note "removed /etc/dnsconfd.conf (DNSSEC off)"
+fi
+
+# --- 5. resolv.conf: real file for dnsconfd, not systemd stub ---------------
+if [[ -L /etc/resolv.conf ]] || ! grep -q '^nameserver 127\.0\.0\.1' /etc/resolv.conf 2>/dev/null; then
+    rm -f /etc/resolv.conf
+    printf 'options edns0 trust-ad\nnameserver 127.0.0.1\n' > /etc/resolv.conf
+    chown dnsconfd:root /etc/resolv.conf; chmod 644 /etc/resolv.conf
+    changed=1; note "recreated /etc/resolv.conf for dnsconfd"
+fi
+
+# --- 6. Resolver services ----------------------------------------------------
+if systemctl is-enabled --quiet systemd-resolved.service 2>/dev/null \
+   || systemctl is-active --quiet systemd-resolved.service 2>/dev/null; then
+    systemctl disable --now systemd-resolved.service >/dev/null 2>&1 || true
+    systemctl mask systemd-resolved.service >/dev/null 2>&1 || true
+    changed=1; note "stopped/disabled/masked systemd-resolved"
+fi
+for svc in dnsconfd.service unbound.socket unbound-control.socket; do
+    if ! systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+        systemctl enable "$svc" >/dev/null 2>&1 || true; changed=1; note "enabled $svc"
+    fi
+done
+if ! systemctl is-active --quiet dnsconfd.service 2>/dev/null; then
+    systemctl start dnsconfd.service >/dev/null 2>&1 || true
+fi
+
+# --- 7. Strip per-connection static DNS drift (ethernet/wifi profiles) ------
+while IFS= read -r conn; do
+    [[ -z "$conn" ]] && continue
+    dirty="$(nmcli -g ipv4.dns,ipv4.dns-search,ipv6.dns,ipv6.dns-search,ipv4.dns-options,ipv6.dns-options con show "$conn" 2>/dev/null | tr '\n' ',' )"
+    if [[ "$dirty" =~ [^,[:space:]-] ]]; then
+        nmcli con mod "$conn" ipv4.dns "" ipv4.dns-search "" ipv6.dns "" ipv6.dns-search "" \
+            ipv4.dns-options "" ipv6.dns-options "" >/dev/null 2>&1 || true
+        changed=1; note "cleared static DNS on connection '$conn'"
+    fi
+done < <(nmcli -t -f NAME,TYPE con show 2>/dev/null | awk -F: '$2 ~ /^802-3-ethernet$|^802-11-wireless$/ {print $1}')
+
+# --- 8. Keep dead USB NIC down ----------------------------------------------
+while IFS= read -r conn; do
+    [[ -z "$conn" ]] && continue
+    iface="$(nmcli -g connection.interface-name con show "$conn" 2>/dev/null || true)"
+    if [[ "$iface" == "enp0s20f0u10" ]]; then
+        auto="$(nmcli -g connection.autoconnect con show "$conn" 2>/dev/null || true)"
+        if [[ "$auto" != "no" ]]; then
+            nmcli con mod "$conn" connection.autoconnect no >/dev/null 2>&1 || true
+            changed=1; note "disabled autoconnect on '$conn' ($iface)"
+        fi
+        if nmcli -t -f DEVICE,STATE device status 2>/dev/null | awk -F: -v i="$iface" '$1==i && $2=="connected" {f=1} END{exit !f}'; then
+            nmcli device disconnect "$iface" >/dev/null 2>&1 || true
+            note "disconnected dead interface $iface"
+        fi
+    fi
+done < <(nmcli -t -f NAME con show 2>/dev/null)
+
+# --- 9. Apply ----------------------------------------------------------------
+if [[ "$changed" -eq 1 ]]; then
+    note "changes applied; restarting NetworkManager"
+    systemctl restart NetworkManager.service
+    sleep 3
+    systemctl start dnsconfd.service >/dev/null 2>&1 || true
+else
+    note "state already correct"
+fi
+
+}
+
+# Restart a systemd service
+mysystemdrestart(){
+    local keyword="$1"
+    
+    # Prompt for a keyword if none was passed as an argument
+    if [[ -z "$keyword" ]]; then
+        read -rp "Enter service keyword: " keyword
+    fi
+
+    # Exit if still empty
+    [[ -z "$keyword" ]] && echo "No keyword provided." && return 1
+
+    # Gather matching systemd service names into an array
+    local services=()
+    while IFS= read -r line; do
+        services+=("$line")
+    done < <(systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -i "$keyword")
+
+    # Handle no matches
+    if [[ ${#services[@]} -eq 0 ]]; then
+        echo "No services found matching '$keyword'."
+        return 1
+    fi
+
+    # Display interactive menu
+    echo "Select a service to restart:"
+    PS3="Enter number (or Ctrl+C to cancel): "
+    select svc in "${services[@]}"; do
+        if [[ -n "$svc" ]]; then
+            echo "Restarting $svc..."
+            run0 systemctl restart "$svc"
+            break
+        else
+            echo "Invalid selection. Try again."
+        fi
+    done
+}
+
+# usbguard generate allow policy
+
+myusbgenpolicy(){
+_terminal_msg normal " Generating new policy: Default Allow all 💾 "
+run0 usbguard generate-policy > /etc/usbguard/rules.conf
+run0 chmod 600 /etc/usbguard/rules.conf
+run0ctl enable --now usbguard.service
+run0ctl restart  usbguard.service
+run0ctl status usbguard.service
+
+
+}
+
+# EOF
+
+# >>> Mistral >>>
+export PATH="/home/kim/.mistral/bin:$PATH"
+# <<< Mistral <<<

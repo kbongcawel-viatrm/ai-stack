@@ -1,0 +1,103 @@
+variant: fcos
+version: 1.6.0
+
+# aide fragment: daily integrity check (timer stays disabled until a trusted
+# baseline is reviewed) plus a first-boot environment check that never
+# initializes a baseline.
+storage:
+  directories:
+    - path: /var/log/aide
+      mode: 0750
+
+  files:
+    - path: /usr/local/sbin/aide-daily-check
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/aide/aide-daily-check.sh@@
+
+    - path: /usr/local/sbin/provision-aide
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/aide/provision-aide.sh@@
+
+systemd:
+  units:
+    - name: aide-check.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily AIDE integrity check
+        ConditionFileIsExecutable=/usr/sbin/aide
+        ConditionPathExists=/var/lib/aide/aide.db.gz
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/aide-daily-check
+        Nice=10
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        CPUWeight=20
+        ProtectSystem=full
+        ProtectHome=read-only
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/lib/aide /var/log/aide
+        RestrictAddressFamilies=AF_UNIX
+        TimeoutStartSec=4h
+
+    # Deliberately disabled until an administrator initializes and reviews
+    # the trusted AIDE database. Never auto-initialize/rebaseline in a timer.
+    - name: aide-check.timer
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily AIDE integrity check (enable after baseline review)
+
+        [Timer]
+        OnCalendar=*-*-* 04:00:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=aide-check.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: aide-provision.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=First-boot AIDE environment check (no baseline init)
+        After=fcos-package-layer.service fcos-services-preflight.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/provision-aide
+        RemainAfterExit=yes
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX
+        ReadWritePaths=/var/lib/aide /var/log/aide
+        UMask=0077
+        TimeoutStartSec=5m
+
+        [Install]
+        WantedBy=multi-user.target

@@ -264,9 +264,16 @@ jobs:
           FCOS_INTERFACE: ${{ inputs.fcos_interface }}
         run: |
           set -Eeuo pipefail
-          # envsubst/gettext is not guaranteed on every runner OS; render with python3 instead.
-          cp ../butane/fcos.bu "$RUNNER_TEMP/fcos.bu"
-          python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP/fcos-rendered.bu" <<'PY'
+          # Compose per-service Butane fragments (diskless-os/services/*/*.bu
+          # plus the base diskless-os/butane/fcos.bu), then render deployment
+          # placeholders per fragment. envsubst/gettext is not guaranteed on
+          # every runner OS; render with python3 instead.
+          python3 ../butane/compose-bu.py --out-dir "$RUNNER_TEMP/bu"
+          for bu in "$RUNNER_TEMP"/bu/*.bu; do
+            name="$(basename "$bu")"
+            if [ "$name" = "root.bu" ]; then continue; fi
+            stem="${name%.bu}"
+            python3 - "$bu" "$RUNNER_TEMP/bu/$stem.rendered.bu" <<'PY'
           import os, re, sys
           allowed = {"FCOS_SSH_PUBLIC_KEY", "FCOS_CORE_PASSWORD_HASH", "FCOS_LAN_IP", "FCOS_LAN_CIDR", "FCOS_GATEWAY", "FCOS_INTERFACE"}
           template = open(sys.argv[1]).read()
@@ -281,13 +288,15 @@ jobs:
           with open(sys.argv[2], "w") as f:
               f.write(rendered)
           PY
-          # fcos.bu embeds shell snippets with their own ${VAR} syntax; only the
-          # deployment placeholders must be fully substituted.
-          if grep -nE '\$\{(FCOS_SSH_PUBLIC_KEY|FCOS_CORE_PASSWORD_HASH|FCOS_LAN_IP|FCOS_LAN_CIDR|FCOS_GATEWAY|FCOS_INTERFACE)([^A-Za-z0-9_]|$)' "$RUNNER_TEMP/fcos-rendered.bu"; then
-            echo "Unsubstituted deployment placeholder remains in rendered Butane config" >&2
-            exit 1
-          fi
-          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos-rendered.bu"
+            # Fragments embed shell snippets with their own ${VAR} syntax; only
+            # the deployment placeholders must be fully substituted.
+            if grep -nE '\$\{(FCOS_SSH_PUBLIC_KEY|FCOS_CORE_PASSWORD_HASH|FCOS_LAN_IP|FCOS_LAN_CIDR|FCOS_GATEWAY|FCOS_INTERFACE)([^A-Za-z0-9_]|$)' "$RUNNER_TEMP/bu/$stem.rendered.bu"; then
+              echo "Unsubstituted deployment placeholder remains in rendered Butane config" >&2
+              exit 1
+            fi
+            "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/bu/$stem.ign" "$RUNNER_TEMP/bu/$stem.rendered.bu"
+          done
+          "$RUNNER_TEMP/butane" --strict --pretty --files-dir "$RUNNER_TEMP/bu" --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/bu/root.bu"
           python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
 
       - name: Configure SSH trust for the hypervisor

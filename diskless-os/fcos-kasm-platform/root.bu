@@ -1,0 +1,10 @@
+variant: fcos
+version: 1.6.0
+
+# Transpile 00-package-layer.bu to 00-package-layer.ign first, then transpile
+# this root with --files-dir set to this directory. Ignition merges the local
+# fragment at first boot.
+ignition:
+  config:
+    merge:
+      - local: 00-package-layer.ign

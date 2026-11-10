@@ -1,20 +1,24 @@
 ---
 name: fcos-kasm-platform
-description: >-
-  Planned modular architecture for scaling the Fedora CoreOS security/Kasm
-  platform: composable Butane fragments merged via ignition.config.merge,
-  tag-driven Ansible roles (butane_composer, qemu_provisioner,
-  kasm_configurator), lightweight Kasm Workspaces (Alpine + Firefox), and
-  Windows RDP Server workspaces. Use when modularizing diskless-os/butane,
-  adding Kasm Workspaces, splitting services into feature-flagged modules,
-  or planning multi-node FCOS deployments.
+description: "Planned modular architecture for scaling the Fedora CoreOS
+  security/Kasm platform: composable Butane fragments merged via
+  ignition.config.merge, tag-driven Ansible roles (butane_composer,
+  qemu_provisioner, kasm_configurator), lightweight Kasm Workspaces (Alpine +
+  Firefox), and Windows RDP Server workspaces. Use when modularizing
+  diskless-os/butane, adding Kasm Workspaces, splitting services into
+  feature-flagged modules, or planning multi-node FCOS deployments."
 ---
 
 # FCOS + Kasm Platform — Modularization Plan
 
-Status: **design captured, not yet implemented.** Current repo state is the
-monolithic `diskless-os/butane/fcos.bu` (verified working baseline, commit
-347039e). This skill preserves the agreed direction for the next phase.
+Status: **partially implemented (2026-11-10).** The monolithic `fcos.bu`
+(verified working baseline, commit 347039e) was split into a base fragment
+plus per-service fragments under `diskless-os/services/<svc>/<svc>.bu`,
+composed by `diskless-os/butane/compose-bu.py` (`@@include` markers →
+`ignition.config.merge` via generated `root.bu`). This matches the
+`butane_modules` idea but lives in `services/` instead. Ansible roles
+(`butane_composer`, `qemu_provisioner`, `kasm_configurator`) and feature
+toggles remain unimplemented.
 
 ## Target repository layout
 

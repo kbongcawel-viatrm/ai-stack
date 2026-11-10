@@ -36,7 +36,7 @@ FCOS base/overlay QCOW2, Ignition and libvirt domain XML live under the selected
 
 ## FCOS guest
 
-FCOS is provisioned from a pinned QCOW2 image and Ignition configuration. Butane writes the FCOS core SSH key, SSH hardening, static NetworkManager profile, Firewalld zone and egress policy, NFQUEUE nftables rules, rootless Podman user socket defaults, scan scripts, systemd services/timers and kernel/sysctl hardening.
+FCOS is provisioned from a pinned QCOW2 image and Ignition configuration. The Ignition config is composed from modular Butane fragments — a base `fcos.bu` plus one fragment per service under `diskless-os/services/<service>/` — merged via `ignition.config.merge` (see `diskless-os/butane/README.md`). Together they write the FCOS core SSH key, SSH hardening, static NetworkManager profile, Firewalld zone and egress policy, NFQUEUE nftables rules, rootless Podman user socket defaults, scan scripts, systemd services/timers and kernel/sysctl hardening. Each service fragment also installs a first-boot `provision-<service>.service` oneshot that validates or seeds the service environment after the package layer.
 
 Butane installs the FCOS package layer through a first-boot systemd oneshot (fcos-package-layer.service) that runs rpm-ostree install --idempotent --allow-inactive and reboots into the staged deployment (required: --apply-live cannot materialize package-owned /etc files). The layer includes Firewalld, nftables, Suricata with NFQUEUE support, suricata-update, AIDE, ClamAV, Lynis, Podman and podman-compose. Ansible playbooks provide configuration management and validation only, not sequential package installation. Do not assume packages installed in a Toolbox exist in FCOS.
 
@@ -48,11 +48,11 @@ Kasm's documented requirements specify Docker Engine and Docker Compose versions
 
 ## Suricata traffic scope
 
-Suricata runs NFQUEUE queue 0 on ingress and egress of enp1s0. HOME_NET is 192.168.1.0/24. nftables queue rules run before the Firewalld filter hook and use bypass to preserve connectivity when the daemon is unavailable; this is fail-open and must be monitored. The configured chains inspect traffic to/from the FCOS host, not arbitrary traffic between other LAN clients. Transit IPS requires routing/bridging or mirrored traffic and separate FORWARD queue rules.
+Suricata runs NFQUEUE queue 0 on ingress and egress of all non-loopback interfaces. HOME_NET is 192.168.1.0/24. nftables queue rules run before the Firewalld filter hook and use bypass to preserve connectivity when the daemon is unavailable; this is fail-open and must be monitored. The configured chains inspect traffic to/from the FCOS host, not arbitrary traffic between other LAN clients. Transit IPS requires routing/bridging or mirrored traffic and separate FORWARD queue rules.
 
 ## Firewall
 
-Firewalld uses a default-DROP inbound zone on enp1s0. SSH is the only inbound exception and is limited to 192.168.1.0/24. A HOST-to-ANY egress policy uses source address 192.168.1.201 and permits HTTP, HTTPS, DNS and NTP, including explicit TCP ports 80 and 443. Other host-originated IPv4 egress is dropped. Update both Butane and inventory if the FCOS LAN address changes. Container egress is a separate policy surface and must be tested.
+Firewalld uses a default-DROP inbound zone bound to the guest NIC via its NetworkManager connection. SSH is the only inbound exception and is limited to 192.168.1.0/24. A HOST-to-ANY egress policy uses source address 192.168.1.201 and permits HTTP, HTTPS, DNS and NTP, including explicit TCP ports 80 and 443. Other host-originated IPv4 egress is dropped. Update both Butane and inventory if the FCOS LAN address changes. Container egress is a separate policy surface and must be tested.
 
 Kasm HTTPS ingress is intentionally not opened by the baseline firewall. Add a narrowly scoped 443 rule only after the compatibility gate passes.
 

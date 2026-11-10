@@ -1,5 +1,5 @@
 # Similar reference architectures combine immutable container-focused Linux distributions (such as Fedora CoreOS or Flatcar Container Linux) provisioned declaratively via Ignition/Butane with containerized remote desktop gateways (like Kasm Workspaces or Apache Guacamole) and policy-routed VPN isolation.
-Because your topology separates host management (10.1.29.0/24) from a bridged Layer 2 interface (br0 on 192.168.1.0/24), public reference setups fall into four architectural patterns that mirror different parts of your stack:
+Because your topology places both host management and the bridged Layer 2 interface (br0) on the same 192.168.1.0/24 LAN, public reference setups fall into four architectural patterns that mirror different parts of your stack:
 https://github.com/coreos/ignition/blob/main/butane/docs/getting-started.md
 https://github.com/flatcar
 
@@ -21,7 +21,7 @@ https://docs.kasm.com/docs/how-to/networking/vpn-inside-container
 
 ## 3. Dual-Subnet / Bypassed-NAT Bridge Topologies
 https://openwrt.org/docs/guide-user/network/wifi/wifiextenders/bridgedap
-• Multi-Homed Management vs. Bridged Data Plane: Your network diagram (routing host management through a secondary router on 10.1.29.0/24 while bridging a dedicated NIC directly to the primary 192.168.1.0/24 ISP router) mirrors standard homelab segmentation designs—such as those documented in OpenWrt Bridged AP Topologies and Super User Subnet Isolation Threads—where management traffic stays behind an internal NAT while servers or VMs take a direct Layer 2 address on the upstream subnet.
+• Bridged Data Plane on the Primary LAN: Your network diagram (bridging a dedicated NIC via br0 directly onto the primary 192.168.1.0/24 ISP router while host management shares the same subnet) mirrors standard homelab designs—such as those documented in OpenWrt Bridged AP Topologies—where servers or VMs take a direct Layer 2 address on the upstream subnet.
 ## 4. Comparable Browser-Streamed Workspace & Security Labs
 https://www.linkedin.com/posts/housenathan_7-free-remote-desktops-you-can-run-in-a-browser-activity-7517525290282139649-5KPW
 • Browser-Based VDI Alternatives: Security overviews like Nathan House's Browser Remote Desktop Comparison group Kasm Workspaces alongside Apache Guacamole (for pure RDP/SSH browser proxying to Windows hosts) and LinuxServer Webtop (for lightweight containerized Alpine/Ubuntu desktops) behind VPN-restricted access.

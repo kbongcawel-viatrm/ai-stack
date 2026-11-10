@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="DROP">
+  <short>FCOS restricted LAN interface</short>
+  <description>Default-deny inbound policy. SSH is permitted only from the trusted LAN. Bound to the guest NIC via the NetworkManager connection's zone setting; the interface name is hypervisor-dependent.</description>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_CIDR}"/>
+    <service name="ssh"/>
+    <accept/>
+  </rule>
+</zone>

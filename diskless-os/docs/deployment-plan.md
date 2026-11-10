@@ -24,18 +24,19 @@
 - [ ] Confirm virsh, qemu-img, KVM and the selected bridge already exist.
 - [ ] Set vm_storage_path to a local persistent filesystem; the playbook accepts ext4, XFS, Btrfs or F2FS and rejects tmpfs/overlay/network filesystems. For Alpine diskless, keep this path identical to the Host OS apkovl workflow value.
 - [ ] Supply a pinned, uncompressed FCOS QCOW2 URL and SHA-256 plus the FCOS SSH public key.
-- [ ] Render/validate Butane, generate Ignition and provision the FCOS VM.
+- [ ] Render/validate the composed Butane fragments (compose-bu.py → per-fragment `butane --strict` → merged Ignition) and provision the FCOS VM.
 - [ ] Verify FCOS static IP, SSH and guest network reachability.
 - [ ] Confirm base/overlay QCOW2, Ignition and libvirt domain XML are stored under the persistent path.
 - [ ] On Alpine diskless, confirm libvirt-vms restores the domain after a reboot.
 
 ## Phase 3 — FCOS provisioning
 - [ ] Confirm fcos-package-layer.service ran on first boot and FCOS rebooted into the rpm-ostree layered deployment.
+- [ ] Confirm each service's first-boot provision oneshot passed: ssh-provision, firewalld-provision, suricata-prepare, clamav-provision, lynis-provision, aide-provision (`systemctl list-units '*provision*' '*prepare*'`).
 - [ ] Run Provision Services/Containers for configuration management and validation; it performs no package installation.
 - [ ] Configure rootless Podman user socket and linger.
 - [ ] Configure CONTAINER_HOST, DOCKER_HOST and interactive docker/docker-compose aliases.
 - [ ] Configure Firewalld inbound default DROP and explicit source-bound LAN egress policy.
-- [ ] Configure Suricata NFQUEUE on enp1s0, HOME_NET 192.168.1.0/24 and free ET Open rules.
+- [ ] Configure Suricata NFQUEUE on the guest NIC (interface-name agnostic), HOME_NET 192.168.1.0/24 and free ET Open rules.
 - [ ] Run suricata -T -c /etc/suricata/suricata.yaml, then validate the active FCOS override before service activation.
 - [ ] Validate IDS alert and IPS drop using a controlled HTTP endpoint on a second LAN host.
 - [ ] Enable daily ClamAV and Lynis systemd timers. Initialize AIDE baseline, review it, then explicitly enable its daily timer.

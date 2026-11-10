@@ -1,0 +1,204 @@
+variant: fcos
+version: 1.6.0
+
+# suricata fragment: NFQUEUE override/rules/nftables files, the prepare gate,
+# the IDS/IPS unit override and the weekly rule-refresh timer.
+storage:
+  directories:
+    - path: /etc/suricata
+      mode: 0755
+    - path: /var/lib/suricata/rules
+      mode: 0755
+    - path: /var/log/suricata
+      mode: 0770
+
+  files:
+    # Suricata 8 override is passed with --include so package defaults remain
+    # intact. Ansible validates this file against the installed Suricata build.
+    - path: /etc/suricata/fcos-overrides.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/suricata/fcos-overrides.yaml@@
+
+    - path: /var/lib/suricata/rules/local.rules
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/suricata/local.rules@@
+
+    # The rules inspect host traffic entering/leaving the configured NIC.
+    # Queue bypass is intentionally fail-open if Suricata is down, to avoid
+    # losing management connectivity; monitoring must alert if the NFQUEUE
+    # service is inactive.
+    - path: /etc/nftables/suricata-nfq.nft
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/suricata/suricata-nfq.nft@@
+
+    - path: /usr/local/sbin/suricata-prepare
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/suricata/suricata-prepare.sh@@
+
+    - path: /usr/local/sbin/suricata-rule-refresh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/suricata/suricata-rule-refresh.sh@@
+
+systemd:
+  units:
+    - name: suricata-nfq-rules.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install Suricata NFQUEUE nftables rules
+        Wants=network-online.target firewalld.service
+        After=network-online.target firewalld.service fcos-package-layer.service
+        Before=suricata.service
+
+        [Service]
+        Type=oneshot
+        ExecStartPre=-/usr/sbin/nft delete table inet suricata_nfq
+        ExecStart=/usr/sbin/nft -f /etc/nftables/suricata-nfq.nft
+        ExecStop=-/usr/sbin/nft delete table inet suricata_nfq
+        RemainAfterExit=yes
+        CapabilityBoundingSet=CAP_NET_ADMIN
+        # NoNewPrivileges intentionally omitted: FCOS SELinux denies the
+        # init_t -> iptables_t bounded transition (nnp_transition) for nft.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_NETLINK
+        UMask=0077
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: suricata-prepare.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Update Suricata sources and validate configuration before IDS/IPS
+        Requires=fcos-services-preflight.service
+        After=fcos-services-preflight.service network-online.target
+        Wants=network-online.target
+        Before=suricata.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/suricata-prepare
+        RemainAfterExit=yes
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/suricata /var/log/suricata /run
+        UMask=0027
+        TimeoutStartSec=15m
+
+    # This replaces the package's passive/AF_PACKET unit with explicit NFQUEUE.
+    # The service starts only after rule preparation and nftables queue setup.
+    - name: suricata.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Suricata IDS/IPS (NFQUEUE on primary NIC)
+        Requires=suricata-prepare.service suricata-nfq-rules.service
+        After=suricata-prepare.service suricata-nfq-rules.service network-online.target
+        Wants=network-online.target
+        StartLimitIntervalSec=300
+        StartLimitBurst=5
+
+        [Service]
+        Type=simple
+        ExecStart=/usr/bin/suricata -c /etc/suricata/suricata.yaml --include /etc/suricata/fcos-overrides.yaml -q 0
+        Restart=on-failure
+        RestartSec=5
+        User=root
+        Group=suricata
+        AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+        CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        # Group=suricata: CapabilityBoundingSet drops CAP_DAC_OVERRIDE, so the
+        # confined process can only read suricata-group-owned config/rules.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        RestrictSUIDSGID=true
+        LockPersonality=true
+        ProtectClock=true
+        RestrictRealtime=true
+        SystemCallArchitectures=native
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+        UMask=0027
+        ReadWritePaths=/var/log/suricata /var/lib/suricata /run
+        LimitNOFILE=65535
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: suricata-rule-refresh.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Refresh Suricata free rules and validate before restart
+        Wants=network-online.target
+        After=network-online.target
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/suricata-rule-refresh
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/var/lib/suricata /var/log/suricata /run
+        UMask=0027
+        TimeoutStartSec=15m
+
+    - name: suricata-rule-refresh.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Weekly Suricata free rule refresh
+
+        [Timer]
+        OnCalendar=Sun *-*-* 03:30:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=suricata-rule-refresh.service
+
+        [Install]
+        WantedBy=timers.target

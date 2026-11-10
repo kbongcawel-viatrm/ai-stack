@@ -37,7 +37,7 @@ Podman and the user-level podman.socket are expected from the FCOS base image. D
 The current Butane profile configures:
 
 - Core user's SSH public key; password and keyboard-interactive SSH disabled, forwarding/tunneling disabled.
-- NetworkManager static IPv4 identity on the configured guest NIC (default enp1s0), gateway/DNS default 192.168.1.1.
+- NetworkManager static IPv4 identity on the guest NIC (interface-name agnostic), gateway/DNS default 192.168.1.1.
 - Firewalld public zone with inbound target DROP; SSH is the only inbound exception and is restricted to 192.168.1.0/24.
 - HOST -> ANY egress policy bound to the explicit FCOS source IP; HTTP/HTTPS, DNS and NTP are allowed. TCP 80/443 are explicit.
 - Suricata HOME_NET, EXTERNAL_NET, suricata.rules/local.rules, NFQ mode and EVE logging.
@@ -52,7 +52,7 @@ The current Butane profile configures:
 - First-boot fcos-package-layer.service oneshot that layers the RPM set above via rpm-ostree and reboots into the staged deployment.
 - Rootless application Quadlet directory at /var/home/core/.config/containers/systemd/ for *.container units generated as core user services.
 
-The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 192.168.1.201/24, gateway/DNS 192.168.1.1, LAN 192.168.1.0/24, NIC enp1s0. Change the Butane workflow inputs and Ansible inventory together.
+The static guest address must match the DHCP reservation and egress policy. Defaults are FCOS 192.168.1.201/24, gateway/DNS 192.168.1.1, LAN 192.168.1.0/24. The guest NIC name is auto-detected; no interface input is required.
 
 ## Firewalld behavior
 
@@ -65,7 +65,7 @@ The static guest address must match the DHCP reservation and egress policy. Defa
 
 ## Suricata NFQUEUE behavior
 
-- Interface: enp1s0 by default.
+- Interface: auto-detected (single guest NIC; name is hypervisor-dependent).
 - HOME_NET: 192.168.1.0/24 by default.
 - NFQUEUE number: 0.
 - Rule source: Emerging Threats Open (et/open).

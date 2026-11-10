@@ -31,12 +31,15 @@ The VM deployment playbook requires KVM, libvirt, a pre-existing bridge and dura
 ## FCOS
 ```bash
 cat /etc/os-release
-ip -br addr show enp1s0
+ip -br addr
+# or: ip route get 192.168.1.1   # shows the interface carrying the default route
 systemctl is-system-running
 systemctl --failed
 systemctl status firewalld suricata-nfq-rules.service suricata.service
 systemctl --user status podman.socket
 loginctl show-user core -p Linger
+systemctl list-units 'ssh-provision.service' 'firewalld-provision.service' 'suricata-prepare.service' 'clamav-provision.service' 'lynis-provision.service' 'aide-provision.service' --all
+journalctl -u '*provision*' -u suricata-prepare --since today
 systemctl list-timers --all | grep -E 'aide|clamav|lynis|suricata'
 firewall-cmd --get-active-zones
 firewall-cmd --info-policy fcos-host-egress

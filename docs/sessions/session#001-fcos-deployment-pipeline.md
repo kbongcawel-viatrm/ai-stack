@@ -5,7 +5,7 @@
 2026-11-09
 
 - **Linear issue:** not created yet
-- **Status:** in progress; `br0` bridge created and verified on the Secureblue hypervisor (host `10.1.29.100/24`, gateway `10.1.29.2`); host-prep playbook consolidated; ready for `deploy-host-vm` dispatch
+- **Status:** in progress; `br0` verified on the Secureblue hypervisor; `fcos-kasm-poc` VM running. **2026-11-10 update:** LAN renumbered to `192.168.1.0/24` (gw/DNS `192.168.1.1`, host bridge `192.168.1.100/24`, guest `192.168.1.201`); `10.1.29.x` retired — `10.1.29.x` references below are historical.
 - **Memory source:** Linear is the authoritative record for session progress, decisions, blockers, and handoffs. This file is a concise Git-linked snapshot.
 
 ## 1. Summary
@@ -33,6 +33,7 @@ Fixed and extended the orchestrated FCOS deployment pipeline (`.github/workflows
 - `.github/workflows/validate.yml`: validation envsubst values updated to `10.1.29.x`.
 - `diskless-os/ansible/playbooks/deploy-fcos-vm.yml`: `fcos_lan_ip` default `10.1.29.201`; xz decompressor ensure/install per host OS; `.xz` download → `unxz` → uncompressed sha256 verify; `smb://`/`ftp://`/`ftps://` download via `smbclient`/`curl` with root-only credential files (`no_log`), sha256 verify, credential cleanup.
 - Docs/examples updated: `diskless-os/README.md`, `ansible/README.md`, `butane/README.md`, `services/README.md`, `services/firewalld/README.md`, `docs/{architecture,deployment-plan,orchestrated-deployment}.md`, `ansible/inventory/{hosts,health}.yml.example`.
+- 2026-11-10 modularization: monolithic `fcos.bu` split into base fragment + per-service fragments `diskless-os/services/<svc>/<svc>.bu` (ssh, firewalld, suricata, clamav, lynis, aide). Payload scripts moved to `services/<svc>/` (`provision-<svc>.sh` oneshots + existing daily/prepare scripts); `diskless-os/butane/compose-bu.py` inlines them via `@@include` markers and generates `root.bu` for `ignition.config.merge`. `deploy-host-vm.yml` and `validate.yml` compose → envsubst → per-fragment `butane --strict` → merged `.ign`. Verified locally with butane 0.23.0: 7 fragments → 28 files / 32 units merged.
 - Commits: `5410ea3` (unsigned, superseded), `0d3a96d` (signed equivalent), `3e9168a` dynamic image + LAN renumbering, `e95cb28`/`7998dea` guest IP `.100`→`.201` correction (`.100` is the host NIC), `7ed7e05` NAS smb/ftp/ftps support.
 
 ## 4. Validation steps

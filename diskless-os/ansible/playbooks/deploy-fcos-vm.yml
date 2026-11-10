@@ -216,6 +216,11 @@
       no_log: true
       when: fcos_qcow2_url is match('^(ftp|ftps)://')
 
+    - name: Check whether decompressed base image already exists
+      ansible.builtin.stat:
+        path: "{{ fcos_image_dir }}/base/fcos-base.qcow2"
+      register: decompressed_base_image
+
     - name: Download pinned FCOS base QCOW2
       ansible.builtin.get_url:
         url: "{{ fcos_qcow2_url }}"
@@ -225,7 +230,9 @@
         group: root
         mode: "0644"
         timeout: 600
-      when: fcos_qcow2_url is not match('^(smb|ftp|ftps)://')
+      when:
+        - fcos_qcow2_url is not match('^(smb|ftp|ftps)://')
+        - not decompressed_base_image.stat.exists
 
     - name: Download FCOS base image from NAS
       ansible.builtin.shell: |
@@ -246,7 +253,9 @@
         esac
       args:
         executable: /bin/bash
-      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+      when:
+        - fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+        - not decompressed_base_image.stat.exists
 
     - name: Verify NAS-downloaded image checksum
       ansible.builtin.stat:
@@ -254,14 +263,18 @@
         get_checksum: true
         checksum_algorithm: sha256
       register: nas_image_checksum
-      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+      when:
+        - fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+        - not decompressed_base_image.stat.exists
 
     - name: Assert NAS image checksum matches
       ansible.builtin.assert:
         that:
           - nas_image_checksum.stat.checksum == fcos_qcow2_sha256
         fail_msg: "NAS-downloaded FCOS image checksum does not match FCOS_QCOW2_SHA256."
-      when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+      when:
+        - fcos_qcow2_url is match('^(smb|ftp|ftps)://')
+        - not decompressed_base_image.stat.exists
 
     - name: Remove NAS credential files
       ansible.builtin.file:
@@ -271,12 +284,6 @@
         - /root/.fcos-nas-smb.auth
         - /root/.fcos-nas.netrc
       when: fcos_qcow2_url is match('^(smb|ftp|ftps)://')
-
-    - name: Check whether decompressed base image already exists
-      ansible.builtin.stat:
-        path: "{{ fcos_image_dir }}/base/fcos-base.qcow2"
-      register: decompressed_base_image
-      when: fcos_qcow2_compressed | bool
 
     - name: Decompress FCOS base image
       ansible.builtin.command: "unxz {{ fcos_image_dir }}/base/fcos-base.qcow2.xz"

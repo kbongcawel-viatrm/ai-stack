@@ -1,0 +1,11 @@
+table inet suricata_nfq {
+  chain input {
+    type filter hook input priority -150; policy accept;
+    # Non-loopback only: the guest NIC name is hypervisor-dependent.
+    iifname != "lo" queue num 0 bypass
+  }
+  chain output {
+    type filter hook output priority -150; policy accept;
+    oifname != "lo" queue num 0 bypass
+  }
+}

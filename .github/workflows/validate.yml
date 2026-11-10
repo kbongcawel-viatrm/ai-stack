@@ -47,25 +47,42 @@ jobs:
 
           ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/fcos-validation-key"
           export FCOS_SSH_PUBLIC_KEY="$(cat "$RUNNER_TEMP/fcos-validation-key.pub")"
+          # Dummy hash: validation only checks that the placeholder renders.
+          export FCOS_CORE_PASSWORD_HASH='validation-placeholder-hash'
           export FCOS_LAN_IP=192.168.1.201
           export FCOS_LAN_CIDR=192.168.1.0/24
           export FCOS_GATEWAY=192.168.1.1
           export FCOS_INTERFACE=enp1s0
-          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < diskless-os/butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
 
-          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
+          # Compose per-service Butane fragments, render placeholders, transpile
+          # each fragment, then merge everything through ignition.config.merge.
+          python3 diskless-os/butane/compose-bu.py --out-dir "$RUNNER_TEMP/bu"
+          for bu in "$RUNNER_TEMP"/bu/*.bu; do
+            name="$(basename "$bu")"
+            if [ "$name" = "root.bu" ]; then continue; fi
+            stem="${name%.bu}"
+            envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_CORE_PASSWORD_HASH} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < "$bu" > "$RUNNER_TEMP/bu/$stem.rendered.bu"
+            "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/bu/$stem.ign" "$RUNNER_TEMP/bu/$stem.rendered.bu"
+          done
+          "$RUNNER_TEMP/butane" --strict --pretty --files-dir "$RUNNER_TEMP/bu" --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/bu/root.bu"
           python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
 
-          python3 - "$RUNNER_TEMP/fcos.bu" "$RUNNER_TEMP" <<'PY'
+          python3 - "$RUNNER_TEMP/bu" "$RUNNER_TEMP" <<'PY'
           from pathlib import Path
           import sys
           import configparser
           import xml.etree.ElementTree as ET
           import yaml
 
-          config = yaml.safe_load(Path(sys.argv[1]).read_text())
           output = Path(sys.argv[2])
-          files = config.get("storage", {}).get("files", [])
+          sbin_dir = output / "sbin"
+          sbin_dir.mkdir(exist_ok=True)
+          files = []
+          units = []
+          for rendered in sorted(Path(sys.argv[1]).glob("*.rendered.bu")):
+              config = yaml.safe_load(rendered.read_text())
+              files.extend(config.get("storage", {}).get("files", []))
+              units.extend(config.get("systemd", {}).get("units", []))
           nft_path = output / "suricata-nfq.nft"
           bootstrap_nft_path = output / "fcos-bootstrap.nft"
           for entry in files:
@@ -83,11 +100,10 @@ jobs:
                   assert "local.rules" in override["rule-files"]
                   assert "192.168.1.0/24" in override["vars"]["address-groups"]["HOME_NET"]
               if path.startswith("/usr/local/sbin/"):
-                  target = output / Path(path).name
+                  target = sbin_dir / Path(path).name
                   target.write_text(body)
                   target.chmod(0o700)
 
-          units = config.get("systemd", {}).get("units", [])
           for unit in units:
               body = unit.get("contents")
               if not body:
@@ -100,7 +116,7 @@ jobs:
           print(f"Parsed {len(files)} Butane files, {len(units)} systemd units and embedded XML/YAML assets.")
           PY
 
-          for script in "$RUNNER_TEMP"/fcos-services-preflight "$RUNNER_TEMP"/suricata-prepare "$RUNNER_TEMP"/clamav-daily-scan "$RUNNER_TEMP"/lynis-daily-audit "$RUNNER_TEMP"/aide-daily-check "$RUNNER_TEMP"/suricata-rule-refresh; do
+          for script in "$RUNNER_TEMP"/sbin/*; do
             bash -n "$script"
           done
           sudo nft -c -f "$RUNNER_TEMP/fcos-bootstrap.nft"

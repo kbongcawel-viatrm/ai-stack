@@ -1,0 +1,98 @@
+variant: fcos
+version: 1.6.0
+
+# lynis fragment: daily audit timer plus a first-boot environment check.
+storage:
+  directories:
+    - path: /var/log/lynis
+      mode: 0750
+
+  files:
+    - path: /usr/local/sbin/lynis-daily-audit
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/lynis/lynis-daily-audit.sh@@
+
+    - path: /usr/local/sbin/provision-lynis
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/lynis/provision-lynis.sh@@
+
+systemd:
+  units:
+    - name: lynis-audit.service
+      enabled: false
+      contents: |
+        [Unit]
+        Description=Daily Lynis system audit
+        ConditionFileIsExecutable=/usr/bin/lynis
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/lynis-daily-audit
+        Nice=15
+        IOSchedulingClass=best-effort
+        IOSchedulingPriority=7
+        CPUWeight=20
+        ProtectSystem=full
+        ProtectHome=read-only
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        UMask=0077
+        ReadWritePaths=/var/log/lynis
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        TimeoutStartSec=30m
+
+    - name: lynis-audit.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily Lynis system audit
+
+        [Timer]
+        OnCalendar=*-*-* 03:00:00
+        RandomizedDelaySec=20m
+        Persistent=true
+        Unit=lynis-audit.service
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: lynis-provision.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=First-boot Lynis environment check
+        After=fcos-package-layer.service fcos-services-preflight.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/provision-lynis
+        RemainAfterExit=yes
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX
+        ReadWritePaths=/var/lib/lynis /var/log/lynis
+        UMask=0077
+        TimeoutStartSec=5m
+
+        [Install]
+        WantedBy=multi-user.target

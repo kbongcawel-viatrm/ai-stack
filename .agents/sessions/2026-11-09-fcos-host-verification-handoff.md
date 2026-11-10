@@ -1,6 +1,7 @@
 # Session handoff: FCOS Secureblue host verification → br0 done, host-prep playbook added
 
 - Updated: 2026-11-09 21:40 +0800
+- **Update 2026-11-10:** LAN renumbered to `192.168.1.0/24` (gw/DNS `192.168.1.1`); `10.1.29.x` is dead. `br0` profile now holds `192.168.1.100/24` (secondary `10.1.29.100/24` removed). `fcos-kasm-poc` VM is running on the hypervisor. Repo defaults (workflows, playbooks, docs) already reflect `192.168.1.x`. Remaining `10.1.29` references below are historical.
 - Linear issue: not created yet
 - Branch / commit: main / see `git log` for the commit containing this handoff
 - Status: in progress — `br0` verified on the hypervisor; ready for `deploy-host-vm` dispatch pending become-path confirmation

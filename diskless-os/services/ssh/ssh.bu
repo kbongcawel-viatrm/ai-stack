@@ -1,0 +1,59 @@
+variant: fcos
+version: 1.6.0
+
+# ssh fragment: hardened sshd drop-in plus a first-boot validation oneshot.
+# Script/config sources live in this directory; compose-bu.py inlines them.
+storage:
+  directories:
+    - path: /etc/ssh/sshd_config.d
+      mode: 0700
+
+  files:
+    - path: /etc/ssh/sshd_config.d/00-local-security.conf
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/ssh/00-local-security.conf@@
+
+    - path: /usr/local/sbin/provision-ssh
+      mode: 0750
+      overwrite: true
+      contents:
+        inline: |
+          @@include diskless-os/services/ssh/provision-ssh.sh@@
+
+systemd:
+  units:
+    - name: sshd.service
+      enabled: true
+
+    - name: ssh-provision.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Validate FCOS sshd hardening configuration
+        After=sshd.service fcos-package-layer.service fcos-services-preflight.service
+        Wants=sshd.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/provision-ssh
+        RemainAfterExit=yes
+        # NoNewPrivileges omitted: SELinux domain transitions need it unset.
+        PrivateTmp=true
+        ProtectSystem=full
+        ProtectHome=read-only
+        ProtectKernelTunables=true
+        ProtectKernelModules=true
+        ProtectControlGroups=true
+        LockPersonality=true
+        RestrictSUIDSGID=true
+        ProtectClock=true
+        RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+        ReadWritePaths=/run
+        UMask=0077
+        TimeoutStartSec=5m
+
+        [Install]
+        WantedBy=multi-user.target

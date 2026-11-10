@@ -13,6 +13,12 @@
       "skillPath": "skills/github-actions/SKILL.md",
       "computedHash": "c90128be4f55bc8b6dbdcba75ba2a540f3fb89ba91be1ccbe487e01ea70be122"
     },
+    "security-audit": {
+      "source": "cloudflare/security-audit-skill",
+      "sourceType": "github",
+      "skillPath": "skills/security-audit/SKILL.md",
+      "computedHash": "98b97aad2873b3b9a8e064007c25e7827b493ba27fda8bfbdb41dab586767973"
+    },
     "tailscale": {
       "source": "tailscale/tailscale-skill",
       "sourceType": "github",

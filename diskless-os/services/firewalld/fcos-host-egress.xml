@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HOST -> ANY is host-originated OUTPUT traffic. The source address is
+     explicit so this policy only permits egress from the FCOS LAN address.
+     DNS and NTP are included for name resolution and time synchronization. -->
+<policy target="DROP" priority="-100">
+  <short>FCOS explicit host egress</short>
+  <description>Allow only declared IPv4 egress from ${FCOS_LAN_IP}.</description>
+  <ingress-zone name="HOST"/>
+  <egress-zone name="ANY"/>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_IP}"/>
+    <service name="http"/>
+    <accept/>
+  </rule>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_IP}"/>
+    <service name="https"/>
+    <accept/>
+  </rule>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_IP}"/>
+    <service name="dns"/>
+    <accept/>
+  </rule>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_IP}"/>
+    <service name="ntp"/>
+    <accept/>
+  </rule>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_IP}"/>
+    <port port="80" protocol="tcp"/>
+    <accept/>
+  </rule>
+  <rule family="ipv4">
+    <source address="${FCOS_LAN_IP}"/>
+    <port port="443" protocol="tcp"/>
+    <accept/>
+  </rule>
+</policy>

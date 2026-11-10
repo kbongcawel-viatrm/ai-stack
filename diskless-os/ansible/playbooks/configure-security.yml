@@ -25,13 +25,16 @@
           - ansible_facts.distribution == "Fedora"
           - ansible_facts.os_family == "RedHat"
           - ansible_facts.default_ipv4.address == fcos_lan_ip
-          - fcos_interface | length > 0
         fail_msg: >-
           Expected Fedora CoreOS reachable at {{ fcos_lan_ip }}.
           Confirm the FCOS static NetworkManager profile and inventory.
 
-    - name: Verify configured NIC exists
-      ansible.builtin.command: "ip link show dev {{ fcos_interface }}"
+    - name: Verify LAN address is assigned to a guest interface
+      ansible.builtin.shell: |
+        set -Eeuo pipefail
+        ip -o -4 addr show | grep -F "{{ fcos_lan_ip }}/"
+      args:
+        executable: /bin/bash
       changed_when: false
 
     - name: Verify required service binaries
