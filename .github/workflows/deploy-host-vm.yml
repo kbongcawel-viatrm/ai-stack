@@ -171,7 +171,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           sudo apt-get update
-          sudo apt-get install -y gettext-base
+          sudo apt-get install -y gettext-base jq
           python3 -m venv "$RUNNER_TEMP/ansible-venv"
           "$RUNNER_TEMP/ansible-venv/bin/pip" install --upgrade pip ansible-core
           echo "$RUNNER_TEMP/ansible-venv/bin" >> "$GITHUB_PATH"
@@ -183,14 +183,20 @@ jobs:
       - name: Render and validate FCOS Ignition
         env:
           FCOS_SSH_PUBLIC_KEY: ${{ secrets.FCOS_SSH_PUBLIC_KEY }}
+          FCOS_CORE_PASSWORD_HASH: ${{ secrets.FCOS_CORE_PASSWORD_HASH }}
+          KASM_ADMIN_PASSWORD: ${{ secrets.KASM_ADMIN_PASSWORD }}
           FCOS_LAN_IP: ${{ inputs.fcos_lan_ip }}
           FCOS_LAN_CIDR: ${{ inputs.fcos_lan_cidr }}
           FCOS_GATEWAY: ${{ inputs.fcos_gateway }}
           FCOS_INTERFACE: ${{ inputs.fcos_interface }}
         run: |
           set -Eeuo pipefail
-          envsubst '${FCOS_SSH_PUBLIC_KEY} ${FCOS_LAN_IP} ${FCOS_LAN_CIDR} ${FCOS_GATEWAY} ${FCOS_INTERFACE}' < ../butane/fcos.bu > "$RUNNER_TEMP/fcos.bu"
-          "$RUNNER_TEMP/butane" --strict --pretty --output "$RUNNER_TEMP/fcos.ign" "$RUNNER_TEMP/fcos.bu"
+          # vm-host/build.sh substitutes the environment variables across the
+          # modular fragments, transpiles config.bu with butane --strict and a
+          # files-dir, and validates the JSON. It fails on any missing var.
+          cd ../vm-host
+          ./build.sh
+          cp build/config.ign "$RUNNER_TEMP/fcos.ign"
           python3 -m json.tool "$RUNNER_TEMP/fcos.ign" >/dev/null
 
       - name: Configure SSH trust for the hypervisor
