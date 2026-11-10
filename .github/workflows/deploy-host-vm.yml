@@ -203,7 +203,7 @@ jobs:
 
   deploy:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
-    runs-on: [self-hosted, host-os]
+    runs-on: ubuntu-latest
     environment: host-vm-production
     defaults:
       run:
@@ -235,7 +235,7 @@ jobs:
       - name: Validate runner environment
         run: |
           set -Eeuo pipefail
-          # The self-hosted runner may be an immutable/rpm-ostree host (Secureblue),
+          # The runner may be GitHub-hosted or an immutable/rpm-ostree host (Secureblue),
           # Alpine, Arch, or Ubuntu. Do not assume sudo, apt-get, or gettext exist.
           for tool in python3 curl ssh-keygen git tar; do
             command -v "$tool" >/dev/null || { echo "Missing required runner tool: $tool" >&2; exit 1; }
