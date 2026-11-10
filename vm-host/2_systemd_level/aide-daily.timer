@@ -1,12 +1,9 @@
-# vm-host daily AIDE timer (inactive until a baseline db exists)
 [Unit]
-Description=vm-host: run daily AIDE integrity check at 04:00
+Description=Run aide-daily daily at 04:15
 
 [Timer]
-OnCalendar=*-*-* 04:00:00
-RandomizedDelaySec=20m
+OnCalendar=*-*-* 04:15:00
 Persistent=true
-Unit=vm-host-aide-daily.service
 
 [Install]
 WantedBy=timers.target

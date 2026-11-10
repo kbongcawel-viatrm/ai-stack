@@ -1,25 +1,10 @@
-# vm-host daily Lynis system audit
-# Installed as /etc/systemd/system/vm-host-lynis-daily.service
 [Unit]
-Description=vm-host: daily Lynis system audit
-ConditionFileIsExecutable=/usr/bin/lynis
-After=vm-host-security-setup.service
+Description=Daily Lynis security audit (quick profile)
+After=local-fs.target
 
 [Service]
 Type=oneshot
-Nice=15
-IOSchedulingClass=best-effort
-IOSchedulingPriority=7
-CPUWeight=20
-ProtectSystem=full
-ProtectHome=read-only
-# NNP intentionally omitted: Lynis probes need relaxed SELinux transitions.
-PrivateTmp=true
-LockPersonality=true
-ProtectClock=true
-ReadWritePaths=/var/log/lynis
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-TimeoutStartSec=30m
-ExecStartPre=/usr/bin/install -d -m 0750 /var/log/lynis
-ExecStart=/bin/bash -c '/usr/bin/lynis audit system --cronjob --quiet --no-colors --log-file "/var/log/lynis/lynis-$(date +%%F).log" --report-file "/var/log/lynis/report-$(date +%%F).dat"'
-UMask=0077
+ExecStart=/usr/bin/lynis audit system --quick --no-colors --logfile /var/log/lynis/lynis.log
+ExecStartPost=/usr/bin/tar -czf /var/log/lynis/lynis-$(date +%%Y%%m%%d).tar.gz -C /var/log lynis 2>/dev/null || true
+Nice=19
+IOSchedulingClass=idle

@@ -1,37 +1,21 @@
-# vm-host security setup (first-boot package layering + hardening apply)
-# Installed as /etc/systemd/system/vm-host-security-setup.service
 [Unit]
-Description=vm-host: layer security packages and apply host hardening
-Wants=network-online.target
+Description=VM host first-boot security setup (rpm-ostree layering)
+Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
 After=network-online.target
-Before=multi-user.target
-ConditionPathExists=!/var/lib/vm-host/vm-host-setup.stamp
+Wants=network-online.target
+Before=sshd.service firewalld.service suricata.service
+# Run once: stamp file prevents re-layering on subsequent boots.
+ConditionPathExists=!/var/lib/vm-host-packages.stamp
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=30m
-StandardOutput=journal+console
-StandardError=journal+console
-# Single-line ExecStart: systemd quote parsing mangles nested quotes.
-# Layer everything in one run, write the stamp, and trigger the single
-# post-layering reboot so package-owned /etc content becomes active.
-ExecStart=/bin/bash -c 'set -e; echo VMHOST-SETUP-START-$(date --iso-8601=seconds); /usr/bin/rpm-ostree install --idempotent --allow-inactive python3 firewalld nftables suricata suricata-update aide clamav clamav-update lynis docker-compose-plugin logrotate || { echo VMHOST-LAYER-INSTALL-FAILED >&2; exit 1; }; /usr/bin/systemd-sysctl /etc/sysctl.d/90-vm-host-kasm.conf || true; /usr/bin/systemctl reload-or-restart sshd.service || true; /usr/bin/install -d -m 0755 /var/lib/vm-host && /usr/bin/touch /var/lib/vm-host/vm-host-setup.stamp && echo VMHOST-SETUP-STAMP-WRITTEN-$(date --iso-8601=seconds) && echo VMHOST-REBOOTING-$(date --iso-8601=seconds) && /usr/bin/systemctl reboot'
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
-ProtectHome=read-only
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-LockPersonality=true
-RestrictSUIDSGID=true
-ProtectClock=true
-# NNP must stay off for nft/suricata SELinux transitions only; this unit
-# never execs them, so NNP is safe here.
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-ReadWritePaths=/ostree /etc /var/lib/vm-host
-UMask=0077
+ExecStart=/usr/bin/rpm-ostree install aide clamav clamav-update suricata firewalld lynis moby-engine docker-compose
+# Stamp BEFORE reboot so this unit never runs twice (prevents reboot loop).
+ExecStartPost=/usr/bin/touch /var/lib/vm-host-packages.stamp
+# Layering only applies on next boot; reboot once, then finalize takes over.
+ExecStartPost=/usr/bin/systemctl reboot
+TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target

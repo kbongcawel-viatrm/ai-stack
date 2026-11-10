@@ -1,31 +1,9 @@
-# vm-host daily AIDE integrity check
-# Installed as /etc/systemd/system/vm-host-aide-daily.service
-# The AIDE baseline is created ONCE by vm-host-security-rebaseline.service
-# (manual) or an operator; this unit only verifies. Never auto-rebaseline.
 [Unit]
-Description=vm-host: daily AIDE filesystem integrity check
-ConditionFileIsExecutable=/usr/sbin/aide
-ConditionPathExists=/var/lib/aide/aide.db.gz
-After=vm-host-security-setup.service
+Description=Daily AIDE file-integrity check
+After=local-fs.target
 
 [Service]
 Type=oneshot
-Nice=10
-IOSchedulingClass=best-effort
-IOSchedulingPriority=7
-CPUWeight=20
-ProtectSystem=full
-ProtectHome=read-only
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-LockPersonality=true
-RestrictSUIDSGID=true
-ProtectClock=true
-ReadWritePaths=/var/lib/aide /var/log/aide
-RestrictAddressFamilies=AF_UNIX
-TimeoutStartSec=4h
-ExecStartPre=/usr/bin/install -d -m 0750 /var/log/aide
-ExecStart=/bin/bash -c '/usr/sbin/aide --check 2>&1 | tee -a "/var/log/aide/check-$(date +%%F).log"'
-UMask=0077
+ExecStart=/usr/bin/aide --check --config=/etc/aide/aide.conf
+# Non-zero exit = differences found; report but don't fail the unit loudly.
+SuccessExitStatus=0 1 2

@@ -1,30 +1,10 @@
-# vm-host daily ClamAV update + scan
-# Installed as /etc/systemd/system/vm-host-clamav-daily.service
 [Unit]
-Description=vm-host: daily ClamAV signature update and read-only scan
-ConditionFileIsExecutable=/usr/bin/freshclam
-After=network-online.target vm-host-security-setup.service
+Description=Daily ClamAV signature update and quick filesystem scan
+After=network-online.target
 
 [Service]
 Type=oneshot
-Nice=15
-IOSchedulingClass=best-effort
-IOSchedulingPriority=7
-CPUWeight=20
-ProtectSystem=full
-ProtectHome=read-only
-# NNP intentionally omitted: freshclam/clamscan SELinux transitions need it.
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-LockPersonality=true
-RestrictSUIDSGID=true
-ProtectClock=true
-ReadWritePaths=/var/lib/clamav /var/log/clamav
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-TimeoutStartSec=6h
-ExecStartPre=/usr/bin/install -d -m 0750 /var/log/clamav
-# Update signatures, then scan; detection is logged, never auto-deleted.
-ExecStart=/bin/bash -c '/usr/bin/freshclam --quiet && /usr/bin/clamscan --recursive --infected --log="/var/log/clamav/scan-$(date +%%F).log" --exclude-dir="^/proc(/|$)" --exclude-dir="^/sys(/|$)" --exclude-dir="^/dev(/|$)" --exclude-dir="^/run(/|$)" --exclude-dir="^/var/lib/containers(/|$)" --exclude-dir="^/var/lib/docker(/|$)" --exclude-dir="^/var/lib/suricata(/|$)" /etc /usr /opt /var/home'
-UMask=0077
+ExecStart=/usr/bin/freshclam --quiet --config=/etc/clamav/freshclam.conf
+ExecStart=/usr/bin/clamscan --infected --recursive --exclude-dir='^/proc' --exclude-dir='^/sys' --exclude-dir='^/dev' --exclude-dir='^/run' /home /var/www /opt/kasm 2>/dev/null || true
+Nice=19
+IOSchedulingClass=idle

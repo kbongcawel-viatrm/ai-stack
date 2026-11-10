@@ -1,31 +1,21 @@
-# vm-host Kasm Workspaces lifecycle manager
-# Installed as /etc/systemd/system/vm-host-kasm-workspace.service
 [Unit]
-Description=vm-host: Kasm Workspaces lifecycle manager
-Wants=network-online.target docker.service
-After=network-online.target docker.service vm-host-security-setup.service
-ConditionPathExists=/var/lib/vm-host/vm-host-setup.stamp
+Description=Kasm workspace container lifecycle manager
+Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
+# Start after docker is available (installed via rpm-ostree layering).
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/opt/kasm/docker-compose.yaml
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=45m
-StandardOutput=journal+console
-StandardError=journal+console
-# Idempotent lifecycle:
-#  1. First boot: run the official Kasm installer (no swap on FCOS; ZRAM
-#     only, hence --no-swap-check; GPU-less host, no /dev/dri passthrough).
-#  2. Subsequent boots: start the installed Kasm compose stack.
-# Admin credentials are printed by the installer to the journal:
-#   journalctl -u vm-host-kasm-workspace.service | grep -A5 "admin@kasm.local"
-ExecStart=/bin/bash -c 'if [ -d /opt/kasm/current ]; then /usr/bin/docker compose -f /opt/kasm/current/docker-compose.yaml up -d; else cd /var/lib/vm-host && /usr/bin/curl -fsSL https://kasm-static-content.s3.amazonaws.com/kasm_release_edge.tar.gz -o kasm.tar.gz && /usr/bin/tar -xf kasm.tar.gz && cd kasm_release* && /bin/bash install.sh --accept-eula --no-swap-check --admin-password-or-hash ${KASM_ADMIN_PASSWORD}; fi; /usr/bin/docker compose -f /opt/vm-host/kasm/docker-compose.yaml pull --ignore-pull-failures || true; /usr/bin/docker compose -f /opt/vm-host/kasm/docker-compose.yaml up -d --no-deps || true'
-ExecStop=-/bin/bash -c '/usr/bin/docker compose -f /opt/kasm/current/docker-compose.yaml down || true'
-NoNewPrivileges=false
-PrivateTmp=true
-ProtectSystem=full
-ProtectHome=read-only
-ReadWritePaths=/var/lib/vm-host /opt /var/lib/docker
-UMask=0027
+WorkingDirectory=/opt/kasm
+# Pull latest pinned images, then (re)create the stack.
+ExecStartPre=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml pull
+ExecStart=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml down
+TimeoutStartSec=600
 
 [Install]
 WantedBy=multi-user.target

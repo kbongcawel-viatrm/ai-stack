@@ -1,12 +1,9 @@
-# vm-host daily ClamAV timer
 [Unit]
-Description=vm-host: run daily ClamAV update + scan at 02:00
+Description=Run clamav-daily daily at 03:30
 
 [Timer]
-OnCalendar=*-*-* 02:00:00
-RandomizedDelaySec=20m
+OnCalendar=*-*-* 03:30:00
 Persistent=true
-Unit=vm-host-clamav-daily.service
 
 [Install]
 WantedBy=timers.target
