@@ -1,0 +1,12 @@
+variant: fcos
+version: 1.5.0
+
+# 40-home-security — v2.home-security.uk stack (clone + docker compose up).
+# Toggle: ENABLE_HOME_SECURITY.
+# Runs as an independent compose project in /var/opt/home-security; the .env
+# and local image builds are a documented manual post-boot step.
+systemd:
+  units:
+    - name: home-security.service
+      enabled: false   # enabled by security-finalize when docker exists
+      contents_local: 2_systemd_level/home-security.service

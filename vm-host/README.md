@@ -8,33 +8,52 @@ config file lives as a **raw fragment** — edit the fragment, re-run
 
 ```text
 vm-host/
-├── build.sh                  # render fragments + butane --strict -> vm-host.ign (DEPLOY=1 runs Ansible)
-├── config.bu                 # root Butane config; pulls fragments via contents: local:
-├── 1_host_level/             # host hardening (files installed to /etc)
-│   ├── sshd-hardening.conf   # → /etc/ssh/sshd_config.d/00-hardening.conf
-│   ├── journald-hardening.conf
-│   ├── sysctl-kasm.conf      # kernel hardening + container/Kasm sysctls
-│   ├── zincati-updates.toml  # FCOS autoupdate window (Sun 04:00–06:00)
-│   └── files/
-│       ├── aide/aide.conf
-│       ├── clamav/freshclam.conf
-│       ├── suricata/suricata.yaml   # full Suricata config (readable by the suricata user)
-│       ├── suricata/suricata.rules
-│       └── firewalld/firewall-rules.xml  # fcos-workspace zone (SSH/443/80/6901/3101/3201/3389)
-├── 2_systemd_level/          # systemd units (installed verbatim)
-│   ├── security-setup.service    # 1st boot: rpm-ostree layer + stamp + one reboot
-│   ├── security-finalize.service # every boot after: zone bind, ET rules, freshclam,
-│   │                             # AIDE baseline, timer enablement (idempotent script)
-│   ├── security-finalize.sh      #   → /usr/local/sbin/security-finalize.sh
-│   ├── kasm-workspace.service    # Kasm install.sh once, then compose lifecycle
-│   ├── home-security.service     # v2.home-security.uk stack: clone + docker compose up
-│   ├── clamav-daily.{service,timer}   # freshclam + scan @03:30
-│   ├── aide-daily.{service,timer}     # integrity check @04:15 (baseline init in finalize)
-│   ├── container-update.{service,timer}  # image refresh, Sun @05:00
-│   └── lynis-daily.{service,timer}     # system audit @03:00
-└── 3_container_level/kasm/
-    └── docker-compose.yaml   # three standalone KasmVNC workspaces (see below)
+├── build.sh                  # composable pipeline: transpile modules → merge → vm-host.ign
+├── butane_modules/           # each module is a standalone valid Butane file
+│   ├── 00-base-system.bu     # always: core user, SSH keyfile, static NM network, sysctl/sshd/journald/zincati
+│   ├── 10-package-layer.bu   # always: security-setup (rpm-ostree via the toggles, stamp, one reboot) + security-finalize
+│   ├── 20-firewalld.bu       # ENABLE_FIREWALLD
+│   ├── 21-suricata.bu         # ENABLE_SURICATA
+│   ├── 22-clamav.bu           # ENABLE_CLAMAV
+│   ├── 23-aide.bu             # ENABLE_AIDE
+│   ├── 24-lynis.bu            # ENABLE_LYNIS
+│   ├── 30-kasm-workspaces.bu  # ENABLE_KASM
+│   └── 40-home-security.bu    # ENABLE_HOME_SECURITY
+├── 1_host_level/             # host hardening fragments (installed to /etc by the modules)
+│   ├── sshd-hardening.conf, journald-hardening.conf, sysctl-kasm.conf, zincati-updates.toml
+│   └── files/{aide,aide.conf, clamav/freshclam.conf, suricata/{suricata.yaml,suricata.rules}, firewalld/firewall-rules.xml}
+├── 2_systemd_level/          # unit fragments referenced by the modules (installed verbatim)
+│   ├── security-setup.service    # 1st boot: rpm-ostree layer (@VM_HOST_PACKAGES@) + stamp + one reboot
+│   ├── security-finalize.service + .sh  # every boot after: zone bind, ET rules, freshclam, AIDE baseline, .env, timers
+│   ├── kasm-workspace.service, container-update.{service,timer}
+│   ├── home-security.service
+│   └── {clamav,aide,lynis}-daily.{service,timer}
+└── 3_container_level/kasm/docker-compose.yaml   # three standalone KasmVNC workspaces
 ```
+
+## Build (composable Butane, no Ansible)
+
+Requires: `butane`, `python3`. The pipeline follows the fcos-kasm-platform
+skill: each `butane_modules/*.bu` transpiles standalone with
+`butane --strict --files-dir`, then a generated root config merges the
+selected fragments via `ignition.config.merge` (butane inlines them as
+gzip+base64 `data:` URLs, so the single output file is fully
+self-contained for `fw_cfg` / `coreos-installer ignition embed`).
+
+```bash
+export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
+export FCOS_CORE_PASSWORD_HASH='$6$...'        # openssl passwd -6
+export FCOS_INTERFACE=ens2                     # libvirt NIC at PCI slot 0x02 → ens2
+export FCOS_LAN_IP=192.168.1.201              # defaults: CIDR 192.168.1.0/24, gw 192.168.1.1
+./build.sh          # → vm-host.ign (all modules)
+ENABLE_SURICATA=0 ENABLE_AIDE=0 ./build.sh    # exclude modules + their packages
+```
+
+The package list layered by `security-setup.service` is derived from the
+same toggles (`@VM_HOST_PACKAGES@` is substituted by build.sh) — a module
+that is off is absent from both the Ignition merge and the rpm-ostree
+install. `vm-host.ign` is first-boot only (persistent overlay boots without
+Ignition afterwards, per the qemu_provisioner design).
 
 ## Deployment targets (plan)
 
@@ -64,23 +83,13 @@ systemd-run ... or: systemctl restart home-security.service
 Ports are published on `127.0.0.1` only; reach the dashboards over SSH
 tunnels or put them behind the Kasm-managed reverse proxy.
 
-## Build
+## Deployment (first boot)
 
-Requires: `butane`, `python3`. Defaults in parentheses.
-
-```bash
-export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
-export FCOS_CORE_PASSWORD_HASH='$6$...'        # openssl passwd -6
-export FCOS_INTERFACE=ens3                     # verify via DHCP diag boot (ens2)
-export FCOS_LAN_IP=192.168.1.201  FCOS_LAN_CIDR=192.168.1.0/24  FCOS_GATEWAY=192.168.1.1
-./build.sh          # → vm-host.ign
-DEPLOY=1 ./build.sh # also run diskless-os/ansible/playbooks/deploy-fcos-vm.yml
-```
-
-For full local deployment (inventory + run0 become on Secureblue) use
-`diskless-os/ansible/deploy-fcos-vm-local.sh`; `DRY_RUN=1` prints the
-generated files. `vm-host.ign` is fed to QEMU via `-fw_cfg` or
-`coreos-installer ignition embed` on **first boot only**.
+`vm-host.ign` is fed to QEMU via `-fw_cfg name=opt/com.coreos/config,file=...`
+or `coreos-installer ignition embed` on **first boot only** — a persistent
+overlay boots without Ignition afterwards (per the qemu_provisioner design).
+The Ansible playbook in `diskless-os/ansible/` remains available but is no
+longer part of the build path.
 
 ## Operational notes (from the fcos-kasm-platform design)
 

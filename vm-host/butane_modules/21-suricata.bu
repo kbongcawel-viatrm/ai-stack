@@ -1,0 +1,29 @@
+variant: fcos
+version: 1.5.0
+
+# 21-suricata — full config readable by the suricata service user, local rules
+# seeded into the rule path, ET Open fetched by security-finalize.
+# Toggle: ENABLE_SURICATA.
+storage:
+  directories:
+    - path: /etc/suricata
+      mode: 0755
+    - path: /var/lib/suricata/rules
+      mode: 0750
+    - path: /var/log/suricata
+      mode: 0750
+    - path: /var/run/suricata
+      mode: 0750
+  files:
+    - path: /etc/suricata/suricata.yaml
+      # 0644: the packaged suricata.service runs as user suricata and must
+      # be able to read its config.
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/files/suricata/suricata.yaml
+    - path: /var/lib/suricata/rules/local.rules
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/files/suricata/suricata.rules

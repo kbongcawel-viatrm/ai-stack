@@ -1,0 +1,12 @@
+variant: fcos
+version: 1.5.0
+
+# 24-lynis — daily system audit pair.
+# Toggle: ENABLE_LYNIS.
+systemd:
+  units:
+    - name: lynis-daily.service
+      contents_local: 2_systemd_level/lynis-daily.service
+    - name: lynis-daily.timer
+      enabled: true
+      contents_local: 2_systemd_level/lynis-daily.timer

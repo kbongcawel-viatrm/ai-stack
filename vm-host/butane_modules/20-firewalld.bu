@@ -1,0 +1,16 @@
+variant: fcos
+version: 1.5.0
+
+# 20-firewalld — fcos-workspace zone (default-deny inbound, workspace ports).
+# Toggle: ENABLE_FIREWALLD.
+# security-finalize binds the connected NIC to this zone at boot.
+storage:
+  directories:
+    - path: /etc/firewalld/zones
+      mode: 0750
+  files:
+    - path: /etc/firewalld/zones/fcos-workspace.xml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/files/firewalld/firewall-rules.xml

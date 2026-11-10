@@ -1,0 +1,80 @@
+variant: fcos
+version: 1.5.0
+
+# 00-base-system — core user, host identity, network, kernel/daemon hardening.
+# Toggles: always merged.
+passwd:
+  users:
+    - name: core
+      groups:
+        - wheel
+      password_hash: ${FCOS_CORE_PASSWORD_HASH}
+      ssh_authorized_keys:
+        - ${FCOS_SSH_PUBLIC_KEY}
+
+storage:
+  directories:
+    - path: /etc/ssh/sshd_config.d
+      mode: 0700
+    - path: /etc/systemd/journald.conf.d
+      mode: 0755
+    - path: /etc/NetworkManager/system-connections
+      mode: 0700
+    - path: /etc/sysctl.d
+      mode: 0755
+    - path: /etc/zincati/config.d
+      mode: 0755
+
+  files:
+    - path: /etc/ssh/sshd_config.d/00-hardening.conf
+      mode: 0600
+      overwrite: true
+      contents:
+        local: 1_host_level/sshd-hardening.conf
+    - path: /etc/systemd/journald.conf.d/50-hardening.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/journald-hardening.conf
+    - path: /etc/sysctl.d/90-kasm.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/sysctl-kasm.conf
+    - path: /etc/zincati/config.d/10-updates.toml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/zincati-updates.toml
+
+    # Static guest address: FCOS does not auto-configure NICs; without this
+    # keyfile the guest boots with no network at all.
+    - path: /etc/NetworkManager/system-connections/${FCOS_INTERFACE}.nmconnection
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          [connection]
+          id=${FCOS_INTERFACE}
+          type=ethernet
+          interface-name=${FCOS_INTERFACE}
+          autoconnect=true
+          autoconnect-priority=100
+
+          [ethernet]
+
+          [ipv4]
+          method=manual
+          address1=${FCOS_LAN_IP}/24,${FCOS_GATEWAY}
+          dns=${FCOS_GATEWAY};
+          ignore-auto-dns=true
+
+          [ipv6]
+          method=disabled
+
+systemd:
+  units:
+    - name: NetworkManager.service
+      enabled: true
+    - name: sshd.service
+      enabled: true
