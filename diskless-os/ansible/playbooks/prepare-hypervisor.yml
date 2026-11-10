@@ -185,14 +185,14 @@
               when: prep_slave_profile.rc == 0
 
             - name: Deactivate the old direct connection on the slave interface
-              ansible.builtin.command: "nmcli con down {{ prep_old_conn.stdout }}"
+              ansible.builtin.command: "nmcli con down \"{{ prep_old_conn.stdout }}\""
               when:
                 - prep_old_conn.stdout | length > 0
                 - prep_old_conn.stdout != (prep_slave_interface ~ "-slave")
 
             - name: Prevent the old connection racing the bridge on reboot
               ansible.builtin.command: >-
-                nmcli con mod {{ prep_old_conn.stdout }} connection.autoconnect no
+                nmcli con mod "{{ prep_old_conn.stdout }}" connection.autoconnect no
               when:
                 - prep_old_conn.stdout | length > 0
                 - prep_old_conn.stdout != (prep_slave_interface ~ "-slave")
@@ -238,7 +238,7 @@
               failed_when: false
 
             - name: Restore previous connection
-              ansible.builtin.command: "nmcli con up {{ prep_old_conn.stdout }}"
+              ansible.builtin.command: "nmcli con up \"{{ prep_old_conn.stdout }}\""
               when: prep_old_conn.stdout | length > 0
               failed_when: false
 

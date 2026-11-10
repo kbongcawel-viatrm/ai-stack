@@ -1,0 +1,21 @@
+[Unit]
+Description=VM host first-boot security setup (rpm-ostree layering)
+Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
+After=network-online.target
+Wants=network-online.target
+Before=sshd.service firewalld.service suricata.service
+# Run once: stamp file prevents re-layering on subsequent boots.
+ConditionPathExists=!/var/lib/vm-host-packages.stamp
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/rpm-ostree install aide clamav clamav-update suricata firewalld lynis moby-engine docker-compose
+# Stamp BEFORE reboot so this unit never runs twice (prevents reboot loop).
+ExecStartPost=/usr/bin/touch /var/lib/vm-host-packages.stamp
+# Layering only applies on next boot; reboot once, then finalize takes over.
+ExecStartPost=/usr/bin/systemctl reboot
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

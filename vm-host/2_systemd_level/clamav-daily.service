@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily ClamAV signature update and quick filesystem scan
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/freshclam --quiet --config=/etc/clamav/freshclam.conf
+ExecStart=/usr/bin/clamscan --infected --recursive --exclude-dir='^/proc' --exclude-dir='^/sys' --exclude-dir='^/dev' --exclude-dir='^/run' /home /var/www /opt/kasm 2>/dev/null || true
+Nice=19
+IOSchedulingClass=idle

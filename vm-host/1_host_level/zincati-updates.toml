@@ -1,0 +1,7 @@
+# Applied to /etc/zincati/config.d/10-updates.toml
+# Track the stable stream; security/bugfix updates apply automatically.
+[updates]
+url = "https://fedoraproject.org/static/hypervisor/update"
+
+[metrics]
+reporting.server = "https://updates.fedoraproject.org/metrics"

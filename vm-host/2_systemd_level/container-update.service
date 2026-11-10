@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily container image update for /opt/kasm stack
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/kasm
+ExecStart=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml pull
+ExecStart=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml up -d
+TimeoutStartSec=900

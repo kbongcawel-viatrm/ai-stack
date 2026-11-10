@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Lynis security audit (quick profile)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/lynis audit system --quick --no-colors --logfile /var/log/lynis/lynis.log
+ExecStartPost=/usr/bin/tar -czf /var/log/lynis/lynis-$(date +%%Y%%m%%d).tar.gz -C /var/log lynis 2>/dev/null || true
+Nice=19
+IOSchedulingClass=idle
