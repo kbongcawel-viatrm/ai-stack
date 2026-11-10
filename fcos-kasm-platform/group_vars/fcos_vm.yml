@@ -1,7 +1,0 @@
----
-# Connection vars for the provisioned FCOS guest (user 'core').
-ansible_host: "{{ fcos_lan_ip }}"
-ansible_user: "{{ fcos_ssh_user | default('core') }}"
-ansible_become_method: "{{ fcos_become_method | default('run0') }}"
-# Point at a passphrase-less deploy key, or rely on ssh-agent:
-# ansible_ssh_private_key: "{{ lookup('env', 'FCOS_SSH_PRIVATE_KEY') | default(omit, true) }}"

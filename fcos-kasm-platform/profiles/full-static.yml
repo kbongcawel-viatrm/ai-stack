@@ -1,3 +1,0 @@
----
-# Profile: full stack, static IP (defaults in group_vars/all.yml).
-use_static_ip: true
