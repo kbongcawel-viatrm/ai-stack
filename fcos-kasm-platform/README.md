@@ -5,10 +5,52 @@ Kasm workspace containers. Composable Butane fragments are transpiled and
 merged via `ignition.config.merge`; Ansible roles handle rendering, VM
 provisioning, and post-boot configuration.
 
+## Quickstart
+
+Run on the hypervisor host (Secureblue), from the repo root:
+
+```bash
+cd fcos-kasm-platform
+
+# one-time setup
+ansible-galaxy collection install -r requirements.yml
+# pin fcos_coreos_build in roles/qemu_provisioner/defaults/main.yml
+# ensure br0 has a carrier:  bridge link
+
+# credentials (never committed)
+export FCOS_SSH_PUBLIC_KEY="$(cat ~/.ssh/core.pub)"
+export FCOS_CORE_PASSWORD_HASH="$(openssl passwd -6)"
+
+# provision end-to-end
+./build.sh all
+```
+
+`./build.sh all` renders the Ignition config, downloads the FCOS image,
+creates the VM overlay, boots it, waits through the first-boot package
+layering reboot, and fetches the Kasm credentials. Step-by-step:
+
+```bash
+./build.sh render       # butane -> build/config.ign
+./build.sh provision    # qcow2 overlay + libvirt domain + boot
+./build.sh configure    # post-boot SSH setup
+./build.sh clean        # remove build/ artifacts
+```
+
+Or via make: `make all`, `make render`, `make provision`, `make configure`,
+`make clean`, `PROFILE=kasm-only make render`.
+
+Result: KasmVNC workspaces on `https://192.168.1.201:{6901,3101,3201}`
+(Ubuntu desktop, LibreWolf, Arch Linux). Password in
+`/var/opt/kasm/.env` on the guest.
+
+Everything below is reference detail — you can stop reading here.
+
 ## Layout
 
 ```text
 fcos-kasm-platform/
+├── build.sh                  # host-level driver: render/provision/configure/all/clean
+├── Makefile                  # same targets via make
 ├── site.yml                  # tag-driven orchestrator (render → provision → configure)
 ├── inventory.ini             # hypervisor (localhost) + fcos_vm groups
 ├── ansible.cfg
