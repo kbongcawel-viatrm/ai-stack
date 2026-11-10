@@ -18,7 +18,7 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")"
 
-: "${FCOS_SSH_PUBLIC_KEY:?set FCOS_SSH_PUBLIC_KEY to the core user's pubkey}"
+: "${FCOS_SSH_PUBLIC_KEY:?set FCOS_SSH_PUBLIC_KEY to the core user pubkey}"
 : "${FCOS_CORE_PASSWORD_HASH:?set FCOS_CORE_PASSWORD_HASH (openssl passwd -6)}"
 FCOS_LAN_IP="${FCOS_LAN_IP:-192.168.1.201}"
 FCOS_LAN_CIDR="${FCOS_LAN_CIDR:-192.168.1.0/24}"
