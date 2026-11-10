@@ -72,7 +72,7 @@ jobs:
 
   provision:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
-    runs-on: [self-hosted, host-os]
+    runs-on: ubuntu-latest
     environment: fcos-production
     defaults:
       run:
