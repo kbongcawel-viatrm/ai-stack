@@ -5,16 +5,18 @@ Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
-ConditionPathExists=/opt/kasm/docker-compose.yaml
+# security-finalize copies the Ignition-provisioned compose from read-only
+# /opt/kasm into /var/opt/kasm together with a generated .env.
+ConditionPathExists=/var/opt/kasm/docker-compose.yaml
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/kasm
+WorkingDirectory=/var/opt/kasm
 # Pull latest pinned images, then (re)create the stack.
-ExecStartPre=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml pull
-ExecStart=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml up -d
-ExecStop=/usr/bin/docker compose -f /opt/kasm/docker-compose.yaml down
+ExecStartPre=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml pull
+ExecStart=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f /var/opt/kasm/docker-compose.yaml down
 TimeoutStartSec=600
 
 [Install]

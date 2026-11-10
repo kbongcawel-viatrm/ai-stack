@@ -43,6 +43,16 @@ systemctl enable --now lynis-daily.timer || true
 systemctl enable --now container-update.timer || true
 
 # --- kasm workspace lifecycle -------------------------------------------------
+# /opt is read-only after first boot: stage the compose file in /var/opt/kasm
+# and generate the compose .env (KASM_VNC_PASSWORD) exactly once.
+if [[ -f /opt/kasm/docker-compose.yaml ]]; then
+  install -d -m 0755 /var/opt/kasm
+  install -m 0644 /opt/kasm/docker-compose.yaml /var/opt/kasm/docker-compose.yaml
+  if [[ ! -f /var/opt/kasm/.env ]]; then
+    ( umask 077; printf 'KASM_VNC_PASSWORD=%s\n' "$(head -c18 /dev/urandom | base64)" > /var/opt/kasm/.env )
+    echo "Kasm VNC password generated in /var/opt/kasm/.env" >&2
+  fi
+fi
 systemctl enable kasm-workspace.service || true
 systemctl start kasm-workspace.service || true
 systemctl enable home-security.service || true
