@@ -4,6 +4,9 @@ Modular, repeatable FCOS provisioning split across three levels. Every
 config file lives as a **raw fragment** — edit the fragment, re-run
 `build.sh`, boot the result. Nothing is embedded in a monolith.
 
+**New here? Read [GUIDE.md](GUIDE.md)** — the step-by-step usage guide
+(prerequisites → build → deploy → workspaces).
+
 ## Layout
 
 ```text
