@@ -36,7 +36,7 @@ vm-host/
 4. Second boot: `security-finalize.service` applies the firewall, IDS rules
    and starting points, then `kasm-workspace.service` starts the workspaces.
 
-Workspaces (on the VM, default `10.1.29.201`, standalone KasmVNC containers):
+Workspaces (on the VM, default `192.168.1.201`, standalone KasmVNC containers):
 Ubuntu desktop `:6901`, LibreWolf `:3101`, Arch XFCE `:3201`. Login is the
 VNC password generated on first boot — `sudo cat /var/opt/kasm/.env` on the
 VM. The home-security.uk stack publishes on `127.0.0.1` only — reach it over

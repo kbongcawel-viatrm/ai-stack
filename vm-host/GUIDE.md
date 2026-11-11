@@ -5,15 +5,15 @@ the hypervisor. No GitHub Actions, no Ansible.
 
 ## What you get
 
-A VM (`10.1.29.201`) that on first boot installs and configures itself:
+A VM (`192.168.1.201`) that on first boot installs and configures itself:
 firewall, Suricata, ClamAV, AIDE, Lynis, and three browser workspaces
 (standalone KasmVNC containers — no Kasm server needed):
 
 | Workspace | Address | Login |
 |---|---|---|
-| Ubuntu desktop | `https://10.1.29.201:6901` | VNC password (below) |
-| LibreWolf browser | `https://10.1.29.201:3101` | VNC password (below) |
-| Arch XFCE | `https://10.1.29.201:3201` | VNC password (below) |
+| Ubuntu desktop | `https://192.168.1.201:6901` | VNC password (below) |
+| LibreWolf browser | `https://192.168.1.201:3101` | VNC password (below) |
+| Arch XFCE | `https://192.168.1.201:3201` | VNC password (below) |
 
 The VNC password is generated once on first boot and stored on the VM at
 `/var/opt/kasm/.env`:
@@ -83,7 +83,7 @@ Done. Open the workspace URLs above in your browser.
 Everything is set with environment variables before `make deploy`:
 
 ```bash
-FCOS_LAN_IP=10.1.29.201   # guest IP        FCOS_GATEWAY=10.1.29.2
+FCOS_LAN_IP=192.168.1.201   # guest IP        FCOS_GATEWAY=192.168.1.1
 VM_NAME=fcos-kasm          # domain name     VM_DISK_GB=75
 VM_RAM_MB=4096             # memory          VM_VCPUS=2
 ```

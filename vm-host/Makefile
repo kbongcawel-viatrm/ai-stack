@@ -10,7 +10,7 @@
 
 SHELL := /bin/bash
 VM_NAME    ?= fcos-kasm
-FCOS_LAN_IP ?= 10.1.29.201
+FCOS_LAN_IP ?= 192.168.1.201
 LIBVIRT_URI ?= qemu:///system
 
 .PHONY: deploy ignition status console ssh logs clean help

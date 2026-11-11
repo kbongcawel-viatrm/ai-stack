@@ -38,11 +38,11 @@ The workflows above are the optional CI path. The default deployment path runs d
 
 ## Network defaults
 
-- LAN: 10.1.29.0/24
-- FCOS VM: 10.1.29.201/24
-- Gateway/DNS: 10.1.29.2
+- LAN: 192.168.1.0/24
+- FCOS VM: 192.168.1.201/24
+- Gateway/DNS: 192.168.1.1
 - FCOS NIC: ens2 (libvirt PCI slot 0x02)
-- Hypervisor bridge: br0 at 10.1.29.100/24 (the physical NIC is enslaved to it; Alpine's enp1s0 default carries the same role on the Alpine path)
+- Hypervisor bridge: br0 at 192.168.1.100/24 (the physical NIC is enslaved to it; Alpine's enp1s0 default carries the same role on the Alpine path)
 - FCOS SSH: public-key only, allowed from the trusted LAN
 - Firewalld inbound: default DROP with a LAN-only SSH exception; Kasm workspace ports 6901/3101/3201 and HTTPS are opened by the vm-host zone
 

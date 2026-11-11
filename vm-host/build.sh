@@ -8,9 +8,9 @@
 #   FCOS_SSH_PUBLIC_KEY      pubkey authorized for user core
 #   FCOS_CORE_PASSWORD_HASH  sha512-crypt hash for console login fallback
 # Optional env:
-#   FCOS_LAN_IP              guest static IP        (default 10.1.29.201)
-#   FCOS_LAN_CIDR            guest LAN CIDR         (default 10.1.29.0/24)
-#   FCOS_GATEWAY             guest gateway          (default 10.1.29.2)
+#   FCOS_LAN_IP              guest static IP        (default 192.168.1.201)
+#   FCOS_LAN_CIDR            guest LAN CIDR         (default 192.168.1.0/24)
+#   FCOS_GATEWAY             guest gateway          (default 192.168.1.1)
 #   FCOS_INTERFACE           guest NIC name         (default ens2)
 #   BUTANE                   butane binary          (default: butane|~/.local/bin/butane)
 set -Eeuo pipefail
@@ -18,9 +18,9 @@ cd "$(dirname "$0")"
 
 : "${FCOS_SSH_PUBLIC_KEY:?set FCOS_SSH_PUBLIC_KEY to the core user pubkey}"
 : "${FCOS_CORE_PASSWORD_HASH:?set FCOS_CORE_PASSWORD_HASH (openssl passwd -6)}"
-FCOS_LAN_IP="${FCOS_LAN_IP:-10.1.29.201}"
-FCOS_LAN_CIDR="${FCOS_LAN_CIDR:-10.1.29.0/24}"
-FCOS_GATEWAY="${FCOS_GATEWAY:-10.1.29.2}"
+FCOS_LAN_IP="${FCOS_LAN_IP:-192.168.1.201}"
+FCOS_LAN_CIDR="${FCOS_LAN_CIDR:-192.168.1.0/24}"
+FCOS_GATEWAY="${FCOS_GATEWAY:-192.168.1.1}"
 FCOS_INTERFACE="${FCOS_INTERFACE:-ens2}"
 
 BUTANE="${BUTANE:-}"
