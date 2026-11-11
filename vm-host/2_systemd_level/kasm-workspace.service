@@ -5,8 +5,8 @@ Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
-# security-finalize copies the Ignition-provisioned compose from read-only
-# /opt/kasm into /var/opt/kasm together with a generated .env.
+# security-finalize generates the compose .env (KASM_VNC_PASSWORD) next to
+# the Ignition-provisioned compose file under /var/opt/kasm.
 ConditionPathExists=/var/opt/kasm/docker-compose.yaml
 
 [Service]

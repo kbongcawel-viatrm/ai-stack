@@ -24,14 +24,8 @@ swapon -a || true
 # Only act after rpm-ostree layering has been applied (i.e., packages exist).
 [[ -f "$PKG_STAMP" ]] || exit 0
 
-# --- firewalld: bind the workspace zone to the guest NIC -------------------
-# NM may not be up yet on early boots; || true keeps pipefail+set -e from
-# aborting the unit — the binding is retried on every subsequent boot.
-IFACE="$(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: '$2=="connected" && $1!="lo" {print $1; exit}' || true)"
-if [[ -n "$IFACE" ]]; then
-  firewall-cmd --permanent --zone=fcos-workspace --change-interface="$IFACE" || true
-  firewall-cmd --reload || true
-fi
+# Priority order: SSH hardening is applied by Ignition before this unit
+# ever runs; then Suricata, Firewall, Kasm; everything else last.
 
 # --- suricata: fetch ET Open rules once, then enable ------------------------
 # Dedicated stamp: a glob on *.rules would match the provisioned local.rules
@@ -44,6 +38,30 @@ if [[ ! -f "$SURICATA_STAMP" ]] \
 fi
 chown -R suricata:suricata /etc/suricata /var/lib/suricata/rules /var/log/suricata 2>/dev/null || true
 systemctl enable --now suricata.service || true
+
+# --- firewalld: bind the workspace zone to the guest NIC -------------------
+# NM may not be up yet on early boots; || true keeps pipefail+set -e from
+# aborting the unit — the binding is retried on every subsequent boot.
+IFACE="$(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: '$2=="connected" && $1!="lo" {print $1; exit}' || true)"
+if [[ -n "$IFACE" ]]; then
+  firewall-cmd --permanent --zone=fcos-workspace --change-interface="$IFACE" || true
+  firewall-cmd --reload || true
+fi
+
+# --- kasm workspace lifecycle -------------------------------------------------
+# /opt is a symlink to /var/opt on FCOS, so the Ignition-provisioned compose
+# file is already at the runtime path — only the compose .env
+# (KASM_VNC_PASSWORD) needs generating, exactly once.
+# --no-block: the units' ExecStartPre does a synchronous `compose pull`
+# (TimeoutStartSec=600); detaching lets the multi-GB image pulls run in the
+# background while the remaining tooling below proceeds.
+if [[ -f /var/opt/kasm/docker-compose.yaml && ! -f /var/opt/kasm/.env ]]; then
+  ( umask 077; printf 'KASM_VNC_PASSWORD=%s\n' "$(head -c18 /dev/urandom | base64)" > /var/opt/kasm/.env )
+  echo "Kasm VNC password generated in /var/opt/kasm/.env" >&2
+fi
+systemctl enable kasm-workspace.service || true
+systemctl start --no-block kasm-workspace.service || true
+systemctl enable --now container-update.timer || true
 
 # --- clamav: initial definition download ------------------------------------
 [[ -f /var/lib/clamav/main.cvd ]] || freshclam --quiet --config=/etc/clamav/freshclam.conf || true
@@ -62,21 +80,11 @@ if [[ ! -f "$AIDE_STAMP" ]]; then
 fi
 systemctl enable --now aide-daily.timer || true
 
-# --- lynis + container updates ----------------------------------------------
+# --- lynis -------------------------------------------------------------------
 systemctl enable --now lynis-daily.timer || true
-systemctl enable --now container-update.timer || true
 
-# --- kasm workspace lifecycle -------------------------------------------------
-# /opt is a symlink to /var/opt on FCOS, so the Ignition-provisioned compose
-# file is already at the runtime path — only the compose .env
-# (KASM_VNC_PASSWORD) needs generating, exactly once.
-if [[ -f /var/opt/kasm/docker-compose.yaml && ! -f /var/opt/kasm/.env ]]; then
-  ( umask 077; printf 'KASM_VNC_PASSWORD=%s\n' "$(head -c18 /dev/urandom | base64)" > /var/opt/kasm/.env )
-  echo "Kasm VNC password generated in /var/opt/kasm/.env" >&2
-fi
-systemctl enable kasm-workspace.service || true
-systemctl start kasm-workspace.service || true
+# --- home-security.uk stack (lowest priority) --------------------------------
 systemctl enable home-security.service || true
-systemctl start home-security.service || true
+systemctl start --no-block home-security.service || true
 
 exit 0
