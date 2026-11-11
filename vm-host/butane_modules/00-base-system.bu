@@ -24,6 +24,8 @@ storage:
       mode: 0755
     - path: /etc/zincati/config.d
       mode: 0755
+    - path: /etc/vm-host
+      mode: 0755
 
   files:
     - path: /etc/ssh/sshd_config.d/00-hardening.conf
@@ -41,6 +43,18 @@ storage:
       overwrite: true
       contents:
         local: 1_host_level/sysctl-kasm.conf
+    - path: /etc/sysctl.d/80-hardening.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/sysctl-hardening.conf
+    # CIS-style baseline script + oneshot unit (masks unwanted units,
+    # locks system accounts, asserts perms, blacklists kernel modules).
+    - path: /etc/vm-host/security-baseline.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: 2_systemd_level/security-baseline.sh
     - path: /etc/zincati/config.d/10-updates.toml
       mode: 0644
       overwrite: true
@@ -78,3 +92,6 @@ systemd:
       enabled: true
     - name: sshd.service
       enabled: true
+    - name: security-baseline.service
+      enabled: true
+      contents_local: 2_systemd_level/security-baseline.service

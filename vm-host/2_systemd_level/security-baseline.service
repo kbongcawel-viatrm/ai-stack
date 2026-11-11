@@ -1,0 +1,17 @@
+[Unit]
+Description=VM host security baseline (CIS-style hardening, idempotent)
+Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
+# Runs late enough that NM/sshd/firewalld are up but before multi-user
+# target completes; safe to re-run manually.
+After=network-online.target sshd.service
+Wants=network-online.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/etc/vm-host/security-baseline.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
