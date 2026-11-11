@@ -13,26 +13,21 @@ vm-host/
 ├── deploy.sh                 # provision the VM on host libvirt (no CI, no Ansible)
 ├── container/                # disposable provisioning runner: Containerfile, entrypoint.sh, up.sh
 ├── butane_modules/           # each module is a standalone valid Butane file
-│   ├── 00-base-system.bu     # always: core user, SSH keyfile, static NM network, sysctl/sshd/journald/zincati
+│   ├── 00-base-system.bu     # always: core user, SSH keyfile, static NM network, sshd/journald/sysctl/zincati + security-baseline
 │   ├── 05-zincati-maintenance.bu # always: weekly reboot window — updates stage anytime, reboot only inside it
-│   ├── 10-package-layer.bu   # always: security-setup (rpm-ostree via the toggles, stamp, one reboot) + security-finalize
-│   ├── 20-firewalld.bu       # ENABLE_FIREWALLD
-│   ├── 21-suricata.bu         # ENABLE_SURICATA
-│   ├── 22-clamav.bu           # ENABLE_CLAMAV
-│   ├── 23-aide.bu             # ENABLE_AIDE
-│   ├── 24-lynis.bu            # ENABLE_LYNIS
-│   ├── 30-kasm-workspaces.bu  # ENABLE_KASM
+│   ├── 50-container-stack.bu # always: /opt/stack compose stack + systemd units (edge/kasm/audit profiles)
 │   └── 40-home-security.bu    # ENABLE_HOME_SECURITY
-├── 1_host_level/             # host hardening fragments (installed to /etc by the modules)
-│   ├── sshd-hardening.conf, journald-hardening.conf, sysctl-kasm.conf, zincati-updates.toml
-│   └── files/{aide,aide.conf, clamav/freshclam.conf, suricata/{suricata.yaml,suricata.rules}, firewalld/firewall-rules.xml}
-├── 2_systemd_level/          # unit fragments referenced by the modules (installed verbatim)
-│   ├── security-setup.service    # 1st boot: rpm-ostree layer (@VM_HOST_PACKAGES@) + stamp + one reboot
-│   ├── security-finalize.service + .sh  # every boot after: zone bind, ET rules, freshclam, AIDE baseline, .env, timers
-│   ├── kasm-workspace.service, container-update.{service,timer}
-│   ├── home-security.service
-│   └── {clamav,aide,lynis}-daily.{service,timer}
-└── 3_container_level/kasm/docker-compose.yaml   # three standalone KasmVNC workspaces
+├── 1_host_level/             # host hardening fragments (installed to /etc by Ignition)
+│   ├── sshd-hardening.conf, journald-hardening.conf, sysctl-kasm.conf,
+│   │   sysctl-hardening.conf (CIS-style kernel/net params), zincati-*.toml
+├── 2_systemd_level/          # unit/script fragments referenced by the modules
+│   ├── security-baseline.{service,sh}  # masks unwanted units, locks accounts, kernel module blacklist
+│   ├── security-finalize.{service,sh}  # swap, podman-compose layer, .env, ET rules, aide init
+│   └── home-security.service
+└── 3_container_level/stack/  # the containerized service stack
+    ├── compose.yaml          # profiles: edge (firewalld+suricata), kasm (3 workspaces), audit (aide/lynis/clamav)
+    ├── containers/           # Containerfiles: firewalld, aide, lynis, clamav
+    └── {suricata,firewalld,clamav,aide,lynis}/  # per-service configs
 ```
 
 ## Build (composable Butane, no Ansible)
@@ -50,14 +45,16 @@ export FCOS_CORE_PASSWORD_HASH='$6$...'        # openssl passwd -6
 export FCOS_INTERFACE=ens2                     # libvirt NIC at PCI slot 0x02 → ens2
 export FCOS_LAN_IP=192.168.1.201              # defaults: CIDR 192.168.1.0/24, gw 192.168.1.1
 ./build.sh          # → vm-host.ign (all modules)
-ENABLE_SURICATA=0 ENABLE_AIDE=0 ./build.sh    # exclude modules + their packages
+ENABLE_HOME_SECURITY=0 ./build.sh   # only remaining build-time toggle
 ```
 
-The package list layered by `security-setup.service` is derived from the
-same toggles (`@VM_HOST_PACKAGES@` is substituted by build.sh) — a module
-that is off is absent from both the Ignition merge and the rpm-ostree
-install. `vm-host.ign` is first-boot only (persistent overlay boots without
-Ignition afterwards, per the qemu_provisioner design).
+There is **no rpm-ostree package layering** for services anymore — podman
+is in the FCOS base and everything runs as containers. The only layering
+is a tiny `python3 podman-compose` install inside `security-finalize.sh`
+(`--apply-live`, stamped, no reboot), because FCOS excludes python3.
+Per-service selection happens at runtime via compose profiles
+(`edge`/`kasm`/`audit`), not at build time. `vm-host.ign` is first-boot
+only (persistent overlay boots without Ignition afterwards).
 
 ## Deployment targets (plan)
 
@@ -132,30 +129,31 @@ validates it host-side). The Ansible playbooks in
 `diskless-os/ansible/` remain available but are not part of the build path,
 and no GitHub Actions workflow is involved.
 
-Workspaces land on the Kasm ports listed above after
-`security-setup.service` live-layers the rpm-ostree packages
-(`--apply-live`, no reboot) and `security-finalize.service` completes;
-`make logs` tails those units.
+Workspaces land on the Kasm ports listed above once `security-finalize`
+has applied the podman-compose layer, generated `/var/opt/stack/.env`,
+fetched the Suricata ET bundle, and `stack-kasm.service` has pulled the
+images; `make logs` tails the finalize unit and `journalctl -u
+stack-*.service` shows the stack units.
 
 ## Operational notes (from the fcos-kasm-platform design)
 
-- **Live layering, no reboot**: `security-setup.service` runs
-  `rpm-ostree install --apply-live` and owns `/var/lib/vm-host-packages.stamp`;
-  `security-finalize.service` gates on it. If the dep closure isn't
-  live-upgradeable the unit fails visibly — check `journalctl -u
-  security-setup.service` and retry or reboot manually.
+- **Containerized services, podman runtime**: the stack lives at
+  `/var/opt/stack` (`/opt/stack`); `/var/opt/stack/bin/docker-compose` is a
+  shim exec'ing `podman-compose` so units keep the `docker compose` call
+  shape. Manage it with
+  `cd /var/opt/stack && ./bin/docker-compose --profile <edge|kasm|audit> ...`.
+- **Security baseline runs every boot**: `security-baseline.service`
+  (CIS-style masking/account/module assertions) and
+  `security-finalize.service` (swap, pytools layer, .env, ET rules, aide
+  init) are both idempotent; audit results land in `/var/log/{aide,lynis,
+  clamav}` and Lynis reports feed the daily `stack-lynis-scan.timer`.
 - **Runtime writes go to /var only** (FCOS root is read-only outside /etc);
-  `/opt/kasm` is Ignition-provisioned first boot, stack clones live under
-  `/var/opt/...`.
+  the stack lives under `/var/opt/stack`, state under `/var/lib/*`.
 - **No GPU / no `/dev/dri` passthrough** — KasmVNC falls back to MESA
   llvmpipe; forcing DRI3 breaks workspace launches.
-- **Kasm install**: `install.sh --accept-eula --no-swap-check` (FCOS has no
-  swap; ZRAM only). Admin creds land in the journal:
-  `journalctl -u kasm-workspace.service | grep -A5 "admin@kasm.local"`.
-- **Suricata** needs `Group=suricata`-readable config (0644), traversable
-  `/etc/suricata`, suricata-owned rules and writable log/run dirs, and a
-  complete `vars` block (fetched ET Open rules are validated in finalize).
-  `NoNewPrivileges` must stay off units exec'ing `nft`/`suricata`.
+- **Suricata** runs as a container with `network_mode: host` + AF_PACKET;
+  ET Open rules are fetched once by `security-finalize` via
+  `podman run ... suricata-update`, then the container is restarted.
 - **Windows workspaces are not containers**: register the Windows host as a
   Kasm *Server* (RDP) under Infrastructure → Servers; TCP 3389 outbound is
   allowed from the LAN in the firewalld zone.
