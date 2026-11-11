@@ -1,6 +1,6 @@
 [Unit]
 Description=Kasm workspace container lifecycle manager
-Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/main/vm-host
+Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
 # Start after docker is available (installed via rpm-ostree layering).
 After=network-online.target docker.service
 Wants=network-online.target

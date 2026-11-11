@@ -1,0 +1,25 @@
+variant: fcos
+version: 1.5.0
+
+# 10-package-layer — first-boot rpm-ostree layering + the single post-layer
+# reboot, then the idempotent security-finalize on every later boot.
+# Toggles: always merged (all other modules gate on the stamp it writes).
+#
+# The @VM_HOST_PACKAGES@ marker is replaced by vm-host/build.sh from the
+# ENABLE_* toggles; always render through build.sh.
+storage:
+  files:
+    - path: /usr/local/sbin/security-finalize.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: 2_systemd_level/security-finalize.sh
+
+systemd:
+  units:
+    - name: security-setup.service
+      enabled: true
+      contents_local: 2_systemd_level/security-setup.service
+    - name: security-finalize.service
+      enabled: true
+      contents_local: 2_systemd_level/security-finalize.service
