@@ -54,7 +54,14 @@ DOMAIN_XML="$IMAGE_DIR/domains/$VM_NAME.xml"
 for bin in virsh virt-install qemu-img curl xz sha256sum python3; do
   command -v "$bin" >/dev/null 2>&1 || die "missing tool: $bin"
 done
-[[ -c /dev/kvm ]]              || die "/dev/kvm not present (enable VT-x)"
+if [[ -c /dev/kvm ]]; then
+  : # local KVM visible (host-direct runs)
+else
+  # No local /dev/kvm (e.g. container in a podman machine): validate via
+  # the hypervisor we're about to use instead.
+  virsh -c "$LIBVIRT_URI" capabilities 2>/dev/null | grep -Eq "domain type=.kvm." \
+    || die "$LIBVIRT_URI does not report KVM acceleration (enable VT-x on the host)"
+fi
 [[ -e $IGN_FILE ]]              || die "Ignition config not found: $IGN_FILE (run ./build.sh first)"
 virsh -c "$LIBVIRT_URI" uri >/dev/null 2>&1 \
   || die "cannot connect to $LIBVIRT_URI"
