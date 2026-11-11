@@ -34,6 +34,9 @@ services:
     container_name: vm-host-firewalld
     restart: unless-stopped
     network_mode: host
+    # Host-net firewall needs netlink/nft access SELinux would mediate.
+    security_opt:
+      - label=disable
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -46,6 +49,12 @@ services:
     container_name: vm-host-suricata
     restart: unless-stopped
     network_mode: host
+    # Root: the image entrypoint materializes default configs into the
+    # bind-mounted /etc/suricata; also needs AF_PACKET on host net.
+    user: "0:0"
+    # SELinux would otherwise block raw packet capture + host fs access.
+    security_opt:
+      - label=disable
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -131,6 +140,8 @@ services:
     image: localhost/vm-host-aide:latest
     profiles: ["audit"]
     restart: "no"
+    security_opt:
+      - label=disable
     volumes:
       - <<: *host-root
       - /var/lib/aide:/var/lib/aide
@@ -147,6 +158,8 @@ services:
     image: localhost/vm-host-aide:latest
     profiles: ["audit"]
     restart: "no"
+    security_opt:
+      - label=disable
     volumes:
       - <<: *host-root
       - /var/lib/aide:/var/lib/aide
@@ -165,6 +178,8 @@ services:
     image: localhost/vm-host-lynis:latest
     profiles: ["audit"]
     restart: "no"
+    security_opt:
+      - label=disable
     volumes:
       - <<: *host-root
       - /var/log/lynis:/var/log/lynis
@@ -182,6 +197,8 @@ services:
     image: localhost/vm-host-clamav:latest
     profiles: ["audit"]
     restart: "no"
+    security_opt:
+      - label=disable
     volumes:
       - <<: *host-root
       - /var/lib/clamav:/var/lib/clamav
