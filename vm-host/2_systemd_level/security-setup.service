@@ -1,6 +1,6 @@
 [Unit]
 Description=VM host first-boot security setup (rpm-ostree layering)
-Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
+Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/main/vm-host
 After=network-online.target
 Wants=network-online.target
 Before=sshd.service firewalld.service suricata.service
