@@ -50,10 +50,15 @@ systemctl enable --now suricata.service || true
 systemctl enable --now clamav-daily.timer || true
 
 # --- aide: one-time baseline, then daily checks ------------------------------
+# aide --init writes database_out (.new.gz); promote it to database_in or
+# every later --check finds no baseline. Stamp only on success so a failed
+# init retries on the next boot.
 if [[ ! -f "$AIDE_STAMP" ]]; then
   install -d -m 0750 /var/lib/aide /var/log/aide
-  aide --init --config=/etc/aide/aide.conf || true
-  touch "$AIDE_STAMP"
+  if aide --init --config=/etc/aide/aide.conf \
+     && mv -f /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz; then
+    touch "$AIDE_STAMP"
+  fi
 fi
 systemctl enable --now aide-daily.timer || true
 
@@ -62,15 +67,12 @@ systemctl enable --now lynis-daily.timer || true
 systemctl enable --now container-update.timer || true
 
 # --- kasm workspace lifecycle -------------------------------------------------
-# /opt is read-only after first boot: stage the compose file in /var/opt/kasm
-# and generate the compose .env (KASM_VNC_PASSWORD) exactly once.
-if [[ -f /opt/kasm/docker-compose.yaml ]]; then
-  install -d -m 0755 /var/opt/kasm
-  install -m 0644 /opt/kasm/docker-compose.yaml /var/opt/kasm/docker-compose.yaml
-  if [[ ! -f /var/opt/kasm/.env ]]; then
-    ( umask 077; printf 'KASM_VNC_PASSWORD=%s\n' "$(head -c18 /dev/urandom | base64)" > /var/opt/kasm/.env )
-    echo "Kasm VNC password generated in /var/opt/kasm/.env" >&2
-  fi
+# /opt is a symlink to /var/opt on FCOS, so the Ignition-provisioned compose
+# file is already at the runtime path — only the compose .env
+# (KASM_VNC_PASSWORD) needs generating, exactly once.
+if [[ -f /var/opt/kasm/docker-compose.yaml && ! -f /var/opt/kasm/.env ]]; then
+  ( umask 077; printf 'KASM_VNC_PASSWORD=%s\n' "$(head -c18 /dev/urandom | base64)" > /var/opt/kasm/.env )
+  echo "Kasm VNC password generated in /var/opt/kasm/.env" >&2
 fi
 systemctl enable kasm-workspace.service || true
 systemctl start kasm-workspace.service || true
