@@ -10,7 +10,7 @@ ConditionPathExists=/var/lib/vm-host-packages.stamp
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/security-finalize.sh
+ExecStart=/etc/vm-host/security-finalize.sh
 TimeoutStartSec=900
 
 [Install]

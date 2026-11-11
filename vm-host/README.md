@@ -133,13 +133,17 @@ validates it host-side). The Ansible playbooks in
 and no GitHub Actions workflow is involved.
 
 Workspaces land on the Kasm ports listed above after
-`security-setup.service` reboots once for rpm-ostree layering and
-`security-finalize.service` completes; `make logs` tails those units.
+`security-setup.service` live-layers the rpm-ostree packages
+(`--apply-live`, no reboot) and `security-finalize.service` completes;
+`make logs` tails those units.
 
 ## Operational notes (from the fcos-kasm-platform design)
 
-- **Single layering reboot**: `security-setup.service` owns
-  `/var/lib/vm-host-packages.stamp`; `security-finalize.service` gates on it.
+- **Live layering, no reboot**: `security-setup.service` runs
+  `rpm-ostree install --apply-live` and owns `/var/lib/vm-host-packages.stamp`;
+  `security-finalize.service` gates on it. If the dep closure isn't
+  live-upgradeable the unit fails visibly — check `journalctl -u
+  security-setup.service` and retry or reboot manually.
 - **Runtime writes go to /var only** (FCOS root is read-only outside /etc);
   `/opt/kasm` is Ignition-provisioned first boot, stack clones live under
   `/var/opt/...`.

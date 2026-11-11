@@ -11,11 +11,12 @@ ConditionPathExists=!/var/lib/vm-host-packages.stamp
 Type=oneshot
 RemainAfterExit=yes
 # @VM_HOST_PACKAGES@ is substituted by vm-host/build.sh from the ENABLE_* toggles.
-ExecStart=/usr/bin/rpm-ostree install @VM_HOST_PACKAGES@
-# Stamp BEFORE reboot so this unit never runs twice (prevents reboot loop).
+# --apply-live layers AND activates the deployment in the running boot — no
+# reboot needed. If the dep closure isn't live-upgradeable the unit fails
+# visibly (check journalctl) rather than looping reboots.
+ExecStart=/usr/bin/rpm-ostree install --apply-live @VM_HOST_PACKAGES@
+# Stamp so this unit never runs twice.
 ExecStartPost=/usr/bin/touch /var/lib/vm-host-packages.stamp
-# Layering only applies on next boot; reboot once, then finalize takes over.
-ExecStartPost=/usr/bin/systemctl reboot
 TimeoutStartSec=600
 
 [Install]

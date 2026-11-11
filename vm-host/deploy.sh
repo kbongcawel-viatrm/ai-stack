@@ -169,7 +169,7 @@ log "domain XML persisted: $DOMAIN_XML"
 
 # --- 5. Wait for guest SSH ----------------------------------------------------
 if [[ $WAIT_SSH == 1 ]]; then
-  log "waiting for SSH at $FCOS_LAN_IP (first boot reboots once for rpm-ostree layering)…"
+  log "waiting for SSH at $FCOS_LAN_IP (first boot live-layers packages, no reboot)…"
   for _ in $(seq 1 90); do
     if (echo > /dev/tcp/"$FCOS_LAN_IP"/22) >/dev/null 2>&1; then
       log "VM '$VM_NAME' up: ssh core@$FCOS_LAN_IP (Kasm web on https://$FCOS_LAN_IP after finalize)"

@@ -69,7 +69,9 @@ PY
 # --- 2. Toggle-driven rpm-ostree package list -------------------------------
 pkgs=()
 [[ "$ENABLE_FIREWALLD" == 1 ]] && pkgs+=(firewalld nftables)
-[[ "$ENABLE_SURICATA" == 1 ]] && pkgs+=(suricata suricata-update)
+# NOTE: no separate suricata-update package in Fedora — the suricata RPM
+# ships the suricata-update binary but does not Provide: that name.
+[[ "$ENABLE_SURICATA" == 1 ]] && pkgs+=(suricata)
 [[ "$ENABLE_CLAMAV" == 1 ]] && pkgs+=(clamav clamav-update)
 [[ "$ENABLE_AIDE" == 1 ]] && pkgs+=(aide)
 [[ "$ENABLE_LYNIS" == 1 ]] && pkgs+=(lynis)

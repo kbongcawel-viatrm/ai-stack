@@ -36,7 +36,7 @@ if [[ ! -f "$SURICATA_STAMP" ]] \
   && suricata-update; then
   touch "$SURICATA_STAMP"
 fi
-chown -R suricata:suricata /etc/suricata /var/lib/suricata/rules /var/log/suricata /var/run/suricata 2>/dev/null || true
+chown -R suricata:suricata /etc/suricata /var/lib/suricata/rules /var/log/suricata 2>/dev/null || true
 systemctl enable --now suricata.service || true
 
 # --- clamav: initial definition download ------------------------------------

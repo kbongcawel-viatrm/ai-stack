@@ -12,8 +12,8 @@ storage:
       mode: 0750
     - path: /var/log/suricata
       mode: 0750
-    - path: /var/run/suricata
-      mode: 0750
+    # /var/run -> /run is tmpfs: Ignition cannot provision it. The packaged
+    # suricata.service uses RuntimeDirectory=suricata to create /run/suricata.
   files:
     - path: /etc/suricata/suricata.yaml
       # 0644: the packaged suricata.service runs as user suricata and must
