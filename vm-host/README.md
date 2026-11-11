@@ -1,57 +1,137 @@
-# vm-host — Fedora CoreOS VM with Kasm Workspaces
+# vm-host — Provision & Harden Fedora CoreOS with Kasm Workspaces
 
-Builds a hardened Fedora CoreOS VM with Kasm workspaces, straight from the
-hypervisor. No CI, no Ansible.
-
-**→ Run it: see [GUIDE.md](GUIDE.md)** (3 commands, from zero to workspaces.)
-
-```bash
-export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
-export FCOS_CORE_PASSWORD_HASH="$6$..."   # openssl passwd -6
-run0 make deploy
-```
+Modular, repeatable FCOS provisioning split across three levels. Every
+config file lives as a **raw fragment** — edit the fragment, re-run
+`build.sh`, boot the result. Nothing is embedded in a monolith.
 
 ## Layout
 
 ```text
 vm-host/
-├── GUIDE.md                 # start here — quick guide
-├── Makefile                 # deploy, status, ssh, console, logs, clean
-├── build.sh                 # render config.bu → vm-host.ign (butane --strict)
-├── deploy.sh                # fetch FCOS image, create disk, boot VM (fw_cfg Ignition)
-├── config.bu                # root Butane config
-├── 1_host_level/            # /etc drop-ins (sshd, journald, sysctl, suricata, clamav, aide, firewalld)
-├── 2_systemd_level/         # first-boot units: security-setup (layers pkgs + 1 reboot) → security-finalize
-└── 3_container_level/kasm/  # docker-compose.yaml for the workspaces
+├── Makefile                  # direct host-side driver: deploy, status, console, clean
+├── build.sh                  # composable pipeline: transpile modules → merge → vm-host.ign
+├── deploy.sh                 # provision the VM directly on the hypervisor (no CI, no Ansible)
+├── butane_modules/           # each module is a standalone valid Butane file
+│   ├── 00-base-system.bu     # always: core user, SSH keyfile, static NM network, sysctl/sshd/journald/zincati
+│   ├── 10-package-layer.bu   # always: security-setup (rpm-ostree via the toggles, stamp, one reboot) + security-finalize
+│   ├── 20-firewalld.bu       # ENABLE_FIREWALLD
+│   ├── 21-suricata.bu         # ENABLE_SURICATA
+│   ├── 22-clamav.bu           # ENABLE_CLAMAV
+│   ├── 23-aide.bu             # ENABLE_AIDE
+│   ├── 24-lynis.bu            # ENABLE_LYNIS
+│   ├── 30-kasm-workspaces.bu  # ENABLE_KASM
+│   └── 40-home-security.bu    # ENABLE_HOME_SECURITY
+├── 1_host_level/             # host hardening fragments (installed to /etc by the modules)
+│   ├── sshd-hardening.conf, journald-hardening.conf, sysctl-kasm.conf, zincati-updates.toml
+│   └── files/{aide,aide.conf, clamav/freshclam.conf, suricata/{suricata.yaml,suricata.rules}, firewalld/firewall-rules.xml}
+├── 2_systemd_level/          # unit fragments referenced by the modules (installed verbatim)
+│   ├── security-setup.service    # 1st boot: rpm-ostree layer (@VM_HOST_PACKAGES@) + stamp + one reboot
+│   ├── security-finalize.service + .sh  # every boot after: zone bind, ET rules, freshclam, AIDE baseline, .env, timers
+│   ├── kasm-workspace.service, container-update.{service,timer}
+│   ├── home-security.service
+│   └── {clamav,aide,lynis}-daily.{service,timer}
+└── 3_container_level/kasm/docker-compose.yaml   # three standalone KasmVNC workspaces
 ```
 
-## What happens when you deploy
+## Build (composable Butane, no Ansible)
 
-1. `build.sh` renders `config.bu` + fragments into a single Ignition file.
-2. `deploy.sh` downloads the FCOS stable image (sha256-verified), creates a
-   writable overlay disk, and boots the VM with the Ignition file attached
-   (**first boot only** — later boots use the disk).
-3. First boot: `security-setup.service` installs the packages
-   (firewalld, suricata, clamav, aide, lynis, docker) and reboots once.
-4. Second boot: `security-finalize.service` applies the firewall, IDS rules
-   and starting points, then `kasm-workspace.service` starts the workspaces.
+Requires: `butane`, `python3`. The pipeline follows the fcos-kasm-platform
+skill: each `butane_modules/*.bu` transpiles standalone with
+`butane --strict --files-dir`, then a generated root config merges the
+selected fragments via `ignition.config.merge` (butane inlines them as
+gzip+base64 `data:` URLs, so the single output file is fully
+self-contained for `fw_cfg` / `coreos-installer ignition embed`).
 
-Workspaces (on the VM, default `192.168.1.201`, standalone KasmVNC containers):
-Ubuntu desktop `:6901`, LibreWolf `:3101`, Arch XFCE `:3201`. Login is the
-VNC password generated on first boot — `sudo cat /var/opt/kasm/.env` on the
-VM. The home-security.uk stack publishes on `127.0.0.1` only — reach it over
-an SSH tunnel.
+```bash
+export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
+export FCOS_CORE_PASSWORD_HASH='$6$...'        # openssl passwd -6
+export FCOS_INTERFACE=ens2                     # libvirt NIC at PCI slot 0x02 → ens2
+export FCOS_LAN_IP=192.168.1.201              # defaults: CIDR 192.168.1.0/24, gw 192.168.1.1
+./build.sh          # → vm-host.ign (all modules)
+ENABLE_SURICATA=0 ENABLE_AIDE=0 ./build.sh    # exclude modules + their packages
+```
 
-## Notes worth knowing
+The package list layered by `security-setup.service` is derived from the
+same toggles (`@VM_HOST_PACKAGES@` is substituted by build.sh) — a module
+that is off is absent from both the Ignition merge and the rpm-ostree
+install. `vm-host.ign` is first-boot only (persistent overlay boots without
+Ignition afterwards, per the qemu_provisioner design).
 
-- **Never destructive**: `deploy.sh` refuses to overwrite an existing VM;
-  removal is always the explicit `make clean`.
+## Deployment targets (plan)
+
+Provisioning ships three browser-reachable workspaces plus one security
+monitoring stack:
+
+| Workload | Source | Endpoint | Notes |
+|---|---|---|---|
+| **Ubuntu desktop** | `kasmweb/ubuntu-noble-desktop` | `https://<vm>:6901` | general workspace |
+| **LibreWolf browser** | [librewolf.net](https://librewolf.net/) via `lscr.io/linuxserver/librewolf` | `https://<vm>:3101` | privacy-hardened Firefox workspace |
+| **Linux OS (Arch XFCE)** | [bolens/kasm-workspace-images](https://github.com/bolens/kasm-workspace-images) → `ghcr.io/bolens/kasm-workspace-images/archlinux` (also `cachyos`, `bazzite`) | `https://<vm>:3201` | digest-pin via `sha-<commit>` tags (SBOMs published per build) |
+| **home-security.uk v2** | [kbongcawel-viatrm/v2.home-security.uk](https://github.com/kbongcawel-viatrm/v2.home-security.uk) | dashboard on `127.0.0.1:5080` (OpenObserve) | cloned to `/var/opt/home-security` by `home-security.service`; see below |
+
+### home-security.uk v2 prerequisites (manual, once)
+
+The stack's `compose.yaml` expects an `.env` (OpenObserve user/password,
+Ollama model, TZ) and builds `local/*` images on-host (openobserve-with-curl,
+fluent-bit-hardened; worker images come from Harbor). After first boot:
+
+```bash
+cd /var/opt/home-security/v2.home-security.uk
+cp .env.example .env && edit .env
+docker compose build openobserve fluent-bit
+systemd-run ... or: systemctl restart home-security.service
+```
+
+Ports are published on `127.0.0.1` only; reach the dashboards over SSH
+tunnels or put them behind the Kasm-managed reverse proxy.
+
+## Deployment (direct on the hypervisor — no GitHub Actions, no Ansible)
+
+Run `deploy.sh` on the host OS itself (Secureblue: prefix `run0`). It fetches
+and sha256-verifies the FCOS stable qcow2 (or a pinned pair via
+`FCOS_QCOW2_URL` + `FCOS_QCOW2_SHA256`), creates the writable overlay, and
+defines/starts the domain with Ignition injected via `fw_cfg` on **first boot
+only** — a persistent overlay boots without Ignition afterwards.
+
+```bash
+# on the hypervisor, inside vm-host/ (br0 must already exist):
+run0 make deploy                    # render vm-host.ign + provision the VM
+make status                         # virsh dominfo
+make console                        # serial console of first boot
+make ssh                            # ssh core@192.168.1.201
+make clean                          # remove the domain + overlay (base image kept)
+```
+
+Reusable: `make deploy` skips the (already-verified) base download and the
+existing overlay; set `RECREATE_OVERLAY=1 ./deploy.sh` for a fresh disk. It
+never destroys an existing domain — removal is the explicit `make clean`.
+Host requirements: libvirt (`virsh`, `virt-install`), `qemu-img`, `curl`,
+`xz`, `/dev/kvm`, bridge `br0`. The Ansible playbooks in
+`diskless-os/ansible/` remain available but are not part of the build path,
+and no GitHub Actions workflow is involved.
+
+Workspaces land on the Kasm ports listed above after
+`security-setup.service` reboots once for rpm-ostree layering and
+`security-finalize.service` completes; `make logs` tails those units.
+
+## Operational notes (from the fcos-kasm-platform design)
+
+- **Single layering reboot**: `security-setup.service` owns
+  `/var/lib/vm-host-packages.stamp`; `security-finalize.service` gates on it.
+- **Runtime writes go to /var only** (FCOS root is read-only outside /etc);
+  `/opt/kasm` is Ignition-provisioned first boot, stack clones live under
+  `/var/opt/...`.
+- **No GPU / no `/dev/dri` passthrough** — KasmVNC falls back to MESA
+  llvmpipe; forcing DRI3 breaks workspace launches.
 - **Kasm install**: `install.sh --accept-eula --no-swap-check` (FCOS has no
-  swap; ZRAM only).
-- **No GPU passthrough** — KasmVNC falls back to software rendering (MESA
-  llvmpipe); forcing DRI3 breaks workspace launches.
-- **Windows workspaces are not containers** — register the Windows host in
-  Kasm as a Server (RDP); TCP 3389 outbound is allowed on the LAN.
-- **DNS**: use the host bridge (`br0`) for the guest network — SLIRP DNS is
-  unreliable on this host.
-- Edit any fragment/unit, then `make clean && run0 make deploy` to rebuild.
+  swap; ZRAM only). Admin creds land in the journal:
+  `journalctl -u kasm-workspace.service | grep -A5 "admin@kasm.local"`.
+- **Suricata** needs `Group=suricata`-readable config (0644), traversable
+  `/etc/suricata`, suricata-owned rules and writable log/run dirs, and a
+  complete `vars` block (fetched ET Open rules are validated in finalize).
+  `NoNewPrivileges` must stay off units exec'ing `nft`/`suricata`.
+- **Windows workspaces are not containers**: register the Windows host as a
+  Kasm *Server* (RDP) under Infrastructure → Servers; TCP 3389 outbound is
+  allowed from the LAN in the firewalld zone.
+- Host DNS quirk: SLIRP DNS is unreliable (host resolv.conf is 127.0.0.1 via
+  dnsconfd); use the libvirt bridge (`br0`) for the guest network.
