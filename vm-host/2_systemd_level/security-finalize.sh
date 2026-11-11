@@ -7,21 +7,27 @@ set -Eeuo pipefail
 PKG_STAMP=/var/lib/vm-host-packages.stamp
 AIDE_STAMP=/var/lib/vm-host-aide-init.stamp
 SURICATA_STAMP=/var/lib/suricata-rules.stamp
+SWAP_FILE=/var/swap/swapfile
 SWAP_SIZE="${SWAP_SIZE:-8G}"
 
 # --- swap: FCOS ships without swap (ZRAM only); Kasm needs burst headroom --
 # Runs before the package-stamp gate: swap is independent of rpm-ostree.
-if [[ ! -f /swap ]]; then
-  fallocate -l "$SWAP_SIZE" /swap && chmod 0600 /swap && mkswap /swap
+# / is read-only on FCOS — the swapfile must live under /var.
+if [[ ! -f $SWAP_FILE ]]; then
+  install -d -m 0750 /var/swap
+  fallocate -l "$SWAP_SIZE" "$SWAP_FILE" && chmod 0600 "$SWAP_FILE" && mkswap "$SWAP_FILE" \
+    || echo "[finalize] WARN: swap setup failed; continuing without swap" >&2
 fi
-grep -q '^/swap ' /etc/fstab || echo '/swap none swap defaults 0 0' >> /etc/fstab
+grep -q "^$SWAP_FILE " /etc/fstab 2>/dev/null || echo "$SWAP_FILE none swap defaults 0 0" >> /etc/fstab
 swapon -a || true
 
 # Only act after rpm-ostree layering has been applied (i.e., packages exist).
 [[ -f "$PKG_STAMP" ]] || exit 0
 
 # --- firewalld: bind the workspace zone to the guest NIC -------------------
-IFACE="$(nmcli -t -f DEVICE,STATE device | awk -F: '$2=="connected" && $1!="lo" {print $1; exit}')"
+# NM may not be up yet on early boots; || true keeps pipefail+set -e from
+# aborting the unit — the binding is retried on every subsequent boot.
+IFACE="$(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: '$2=="connected" && $1!="lo" {print $1; exit}' || true)"
 if [[ -n "$IFACE" ]]; then
   firewall-cmd --permanent --zone=fcos-workspace --change-interface="$IFACE" || true
   firewall-cmd --reload || true
