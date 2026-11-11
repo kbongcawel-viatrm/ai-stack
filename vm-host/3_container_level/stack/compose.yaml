@@ -30,9 +30,6 @@ services:
   firewalld:
     build:
       context: ./containers/firewalld
-      # host net: FCOS resolv.conf is a 127.0.0.53 stub unreachable from
-      # bridged build containers; host net makes apt/dnf DNS work.
-      network: host
     image: localhost/vm-host-firewalld:latest
     container_name: vm-host-firewalld
     restart: unless-stopped
