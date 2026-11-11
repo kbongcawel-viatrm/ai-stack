@@ -2,6 +2,22 @@
 
 A provider/model-modular AI development workflow. GitHub stores code and curated shared agent context; Cline is the primary terminal/IDE coding agent; provider credentials stay local or in secret management; Linear tracks planning, decisions, and work handoffs.
 
+## Infrastructure deployment (FCOS VM + Kasm workspaces)
+
+To build and run the Fedora CoreOS security VM with Kasm workspaces directly
+on the hypervisor, see **[`vm-host/GUIDE.md`](vm-host/GUIDE.md)** — the
+step-by-step runbook (3 commands, no CI, no Ansible):
+
+```bash
+cd vm-host
+export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
+export FCOS_CORE_PASSWORD_HASH="$6$..."   # openssl passwd -6
+run0 make deploy
+```
+
+Network background lives in [diskless-os/README.md](diskless-os/README.md).
+
+
 ## Architecture
 1. **Provider/API:** Cline API, Anthropic, OpenAI, AWS Bedrock, OpenRouter, or local Ollama. Select based on capability, cost, privacy, and runtime requirements.
 2. **Agent runtime:** Cline CLI and/or IDE extension; configure authentication separately.
