@@ -43,7 +43,7 @@ chmod 0755 "$STATE_DIR"
 # srw------- root:root and the connecting uid mapped to the host user.
 # NOTE: no :z/:Z relabel — qemu on the host must still be able to read the
 # disks/ignition files written here (deploy.sh falls back to world-readable).
-exec podman run --rm --name "$NAME" --env-host \
+exec podman run --rm --replace --name "$NAME" --env-host \
   -e IMAGE_DIR="$STATE_DIR" \
   -v "$PWD:/work" \
   -v "$STATE_DIR:$STATE_DIR" \

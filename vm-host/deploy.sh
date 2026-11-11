@@ -110,7 +110,10 @@ fi
   || die "$BASE_QCOW2 is not a qcow2 image"
 # Public FCOS image — world-readable so the host qemu user can use it as a
 # backing file even when it was fetched by an unprivileged container.
-chmod 0644 "$BASE_QCOW2"
+# libvirt's dynamic ownership may have left files chowned to qemu:qemu after an
+# aborted domain start — chmod then fails for us; file readability is what
+# matters here, so tolerate it.
+chmod 0644 "$BASE_QCOW2" 2>/dev/null || log "cannot chmod $BASE_QCOW2 (not owner; continuing)"
 
 # --- 3. Writable overlay ------------------------------------------------------
 if [[ ! -f $OVERLAY || $RECREATE_OVERLAY == 1 ]]; then
