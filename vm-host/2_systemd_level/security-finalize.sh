@@ -61,6 +61,8 @@ fi
 if [[ ! -f "$SURICATA_STAMP" ]]; then
   if podman run --rm --network host \
        --security-opt label=disable \
+       --cap-add NET_ADMIN --cap-add NET_RAW \
+       --cap-add SYS_NICE --cap-add SYS_PTRACE \
        -v /var/lib/suricata:/var/lib/suricata \
        -v "$STACK/suricata:/etc/suricata" \
        --entrypoint suricata-update \
