@@ -10,13 +10,16 @@
 
 SHELL := /bin/bash
 VM_NAME    ?= fcos-kasm
-FCOS_LAN_IP ?= 10.1.29.201
+FCOS_LAN_IP ?= 192.168.1.201
 LIBVIRT_URI ?= qemu:///system
 
-.PHONY: deploy ignition status console ssh logs clean help
+.PHONY: deploy up ignition status console ssh logs clean help
 
 deploy: ignition ## Render Ignition, then provision the VM on this host
 	./deploy.sh
+
+up: ## Provision inside a disposable container (recommended; auto-cleans)
+	./container/up.sh
 
 ignition: ## Render vm-host.ign from the butane modules
 	./build.sh

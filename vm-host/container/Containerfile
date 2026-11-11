@@ -1,0 +1,20 @@
+# vm-host/container/Containerfile — disposable provisioning environment.
+#
+# Contains ONLY the tools deploy.sh needs (butane render + libvirt client +
+# image fetch). The FCOS VM itself runs on the HOST libvirt — this container
+# is the runner, not the guest host. `podman rm` wipes everything it created.
+FROM registry.fedoraproject.org/fedora:42
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+      butane \
+      qemu-img \
+      libvirt-client \
+      virt-install \
+      curl \
+      xz \
+      python3 \
+      iproute \
+    && dnf clean all
+
+WORKDIR /work
+ENTRYPOINT ["/bin/bash"]

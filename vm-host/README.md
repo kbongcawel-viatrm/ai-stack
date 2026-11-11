@@ -46,7 +46,7 @@ self-contained for `fw_cfg` / `coreos-installer ignition embed`).
 export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
 export FCOS_CORE_PASSWORD_HASH='$6$...'        # openssl passwd -6
 export FCOS_INTERFACE=ens2                     # libvirt NIC at PCI slot 0x02 → ens2
-export FCOS_LAN_IP=10.1.29.201              # defaults: CIDR 10.1.29.0/24, gw 10.1.29.2
+export FCOS_LAN_IP=192.168.1.201              # defaults: CIDR 192.168.1.0/24, gw 192.168.1.1
 ./build.sh          # → vm-host.ign (all modules)
 ENABLE_SURICATA=0 ENABLE_AIDE=0 ./build.sh    # exclude modules + their packages
 ```
@@ -98,7 +98,7 @@ only** — a persistent overlay boots without Ignition afterwards.
 run0 make deploy                    # render vm-host.ign + provision the VM
 make status                         # virsh dominfo
 make console                        # serial console of first boot
-make ssh                            # ssh core@10.1.29.201
+make ssh                            # ssh core@192.168.1.201
 make clean                          # remove the domain + overlay (base image kept)
 ```
 
