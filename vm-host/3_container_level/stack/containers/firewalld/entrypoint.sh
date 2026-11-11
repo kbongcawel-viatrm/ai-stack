@@ -1,8 +1,7 @@
 #!/bin/sh
 # firewalld is a dbus-activated service — the container must run its own
-# system bus first. Fedora ships dbus-broker (no dbus-daemon binary).
-# Host netns is shared (network_mode: host), so the nftables ruleset
-# firewalld programs applies to the VM host.
+# system bus first. Host netns is shared (network_mode: host), so the
+# nftables ruleset firewalld programs applies to the VM host.
 set -e
 
 # machine-id for the bus
@@ -11,17 +10,9 @@ if [ ! -f /etc/machine-id ] || [ "$(cat /etc/machine-id)" = "uninitialized" ]; t
 fi
 
 # Start the system bus if it isn't already (idempotent).
-# dbus-broker-launch expects its listen socket via LISTEN_FDS (normally
-# supplied by systemd); systemd-socket-activate bridges that gap.
 if ! dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
     mkdir -p /run/dbus
-    systemd-socket-activate \
-        -l /run/dbus/system_bus_socket \
-        dbus-broker-launch --scope system &
-    i=0
-    while [ ! -S /run/dbus/system_bus_socket ] && [ $i -lt 50 ]; do
-        sleep 0.1; i=$((i+1))
-    done
+    dbus-daemon --system --fork
 fi
 
 exec /usr/sbin/firewalld --nofork --nopid "$@"

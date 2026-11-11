@@ -1,7 +1,9 @@
-# vm-host firewalld container — Fedora base + firewalld/nftables/dbus.
-FROM registry.fedoraproject.org/fedora:44
-RUN dnf install -y --setopt=install_weak_deps=False firewalld nftables dbus dbus-tools \
-    && dnf clean all
+# vm-host firewalld container — Debian base: classic dbus-daemon (Fedora
+# ships only dbus-broker, which needs systemd socket activation).
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends firewalld nftables dbus \
+    && rm -rf /var/lib/apt/lists/*
 COPY entrypoint.sh /usr/local/bin/vm-host-firewalld-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/vm-host-firewalld-entrypoint.sh
 # Runs with network_mode: host + NET_ADMIN; firewalld manages the host
