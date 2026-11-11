@@ -107,7 +107,7 @@ outputs:
       append: yes
       totals: yes
       threads: no
-afp-devices:
+af-packet:
   - interface: ${FCOS_INTERFACE}
     cluster-id: 99
     cluster-type: cluster_flow

@@ -1,7 +1,10 @@
-# vm-host firewalld container — Fedora base + firewalld/nftables only.
+# vm-host firewalld container — Fedora base + firewalld/nftables/dbus.
 FROM registry.fedoraproject.org/fedora:44
-RUN dnf install -y --setopt=install_weak_deps=False firewalld nftables \
+RUN dnf install -y --setopt=install_weak_deps=False firewalld nftables dbus dbus-tools \
     && dnf clean all
+COPY entrypoint.sh /usr/local/bin/vm-host-firewalld-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/vm-host-firewalld-entrypoint.sh
 # Runs with network_mode: host + NET_ADMIN; firewalld manages the host
-# nftables ruleset through the shared netns.
-ENTRYPOINT ["/usr/sbin/firewalld", "--nofork", "--nopid"]
+# nftables ruleset through the shared netns. entrypoint.sh starts the
+# container's own dbus-daemon first (firewalld requires the system bus).
+ENTRYPOINT ["/usr/local/bin/vm-host-firewalld-entrypoint.sh"]

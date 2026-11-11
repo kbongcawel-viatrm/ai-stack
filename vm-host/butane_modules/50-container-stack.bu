@@ -47,6 +47,11 @@ storage:
       overwrite: true
       contents:
         local: 3_container_level/stack/containers/firewalld/Containerfile
+    - path: /opt/stack/containers/firewalld/entrypoint.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/containers/firewalld/entrypoint.sh
     - path: /opt/stack/containers/aide/Containerfile
       mode: 0644
       overwrite: true
