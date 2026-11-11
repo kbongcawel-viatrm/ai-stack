@@ -60,6 +60,7 @@ fi
 # bundle lands so it picks up ET rules without a reboot.
 if [[ ! -f "$SURICATA_STAMP" ]]; then
   if podman run --rm --network host \
+       --security-opt label=disable \
        -v /var/lib/suricata:/var/lib/suricata \
        -v "$STACK/suricata:/etc/suricata" \
        --entrypoint suricata-update \
