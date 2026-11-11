@@ -8,10 +8,10 @@ The Host VM workflow is deliberately independent of the Host OS workflow. The hy
 
 - **Host OS (default Alpine diskless):** iPXE boot, OpenRC, KVM/QEMU/libvirt, br0 bridge and optional persistent local NVMe mount.
 - **Alternative hypervisors:** Fedora Secureblue, Arch Linux or Ubuntu. These are deployment targets only; the VM workflow does not install or reimage them.
-- **FCOS VM:** Butane/Ignition configures SSH, static networking, Firewalld, Suricata NFQUEUE, rootless Podman and daily systemd scan services. Ansible layers missing RPMs, validates IDS/IPS and tests Compose.
-- **Kasm:** separate fail-closed compatibility POC on an isolated FCOS test VM. It does not install Kasm automatically.
+- **FCOS VM:** Butane/Ignition configures SSH, static networking, Firewalld, Suricata, Kasm workspaces and daily systemd scan services. The primary provisioning path is the direct host-side driver in `../vm-host/` (`make deploy`: render Ignition → provision the VM on the hypervisor). Ansible playbooks and GitHub Actions workflows remain available as an alternative.
+- **Kasm:** three standalone KasmVNC workspaces and a security monitoring stack, provisioned by the VM's first-boot services (see `../vm-host/GUIDE.md`).
 - **Storage:** live VM disks, Ignition and libvirt XML must be on persistent local storage. NAS/SMB is suitable for PXE artifacts and backups, not the live qcow2 disk by default.
-- **CI/CD:** root-level GitHub Actions workflows use protected environments, SSH secrets and Ansible.
+- **CI/CD:** optional GitHub Actions workflows with SSH secrets and Ansible; the default path is direct host-side deployment (no CI).
 
 ## Independent workflows
 
@@ -25,27 +25,28 @@ The Host VM workflow is deliberately independent of the Host OS workflow. The hy
 
 Deploy Host VM never invokes or requires Deploy Host OS. Alpine PXE is the default host lifecycle, not a hard dependency.
 
+The workflows above are the optional CI path. The default deployment path runs directly on the hypervisor — `../vm-host/` renders the Ignition config and provisions the VM in one command (`run0 make deploy` on Secureblue). See `../vm-host/GUIDE.md` for the step-by-step runbook.
+
 ## Deployment sequence
 
 1. Prepare PXE services and router/firmware boot settings.
-2. Run Deploy Host OS and PXE boot Alpine, or manually prepare another supported hypervisor.
+2. Run Deploy Host OS and PXE boot Alpine, or manually prepare another supported hypervisor (Fedora Secureblue is the current physical hypervisor).
 3. For diskless Alpine, provide the UUID of an already formatted ext4 NVMe partition to the Host OS workflow. The workflow does not partition or format disks.
-4. Run Deploy Host VM with a persistent storage path; the playbook rejects tmpfs/overlay storage.
-5. Run Provision Services/Containers, then Health Check.
-6. Run Kasm Compatibility POC only against an isolated FCOS test VM.
+4. Provision the FCOS VM directly on the hypervisor (`../vm-host`: `run0 make deploy`), or run Deploy Host VM with a persistent storage path; the playbook rejects tmpfs/overlay storage.
+5. First boot layers packages and reboots once; security-finalize then applies the firewall, IDS rules and Kasm stack automatically.
+6. Run Provision Services/Containers, then Health Check (CI path only).
 
 ## Network defaults
 
-- LAN: 192.168.1.0/24
-- FCOS VM: 192.168.1.201/24
-- Gateway/DNS: 192.168.1.1
-- FCOS NIC: ens2
-- Alpine physical NIC: enp1s0 by default; host IP is assigned to bridge br0
+- LAN: 10.1.29.0/24
+- FCOS VM: 10.1.29.201/24
+- Gateway/DNS: 10.1.29.2
+- FCOS NIC: ens2 (libvirt PCI slot 0x02)
+- Hypervisor bridge: br0 at 10.1.29.100/24 (the physical NIC is enslaved to it; Alpine's enp1s0 default carries the same role on the Alpine path)
 - FCOS SSH: public-key only, allowed from the trusted LAN
-- Firewalld inbound: default DROP with a LAN-only SSH exception
-- Firewalld host egress: explicit source address, HTTP/HTTPS, DNS and NTP
+- Firewalld inbound: default DROP with a LAN-only SSH exception; Kasm workspace ports 6901/3101/3201 and HTTPS are opened by the vm-host zone
 
-Update Butane and inventory together if the FCOS IP, NIC or LAN changes. Kasm HTTPS ingress is not opened by the baseline firewall; add a narrowly scoped ingress policy only after the Kasm POC passes.
+Update Butane and inventory together if the FCOS IP, NIC or LAN changes: the direct path takes `FCOS_LAN_IP`/`FCOS_INTERFACE`/`FCOS_GATEWAY` env vars (see `../vm-host/GUIDE.md`); the CI path uses the corresponding GitHub variables.
 
 ## Persistent storage
 
