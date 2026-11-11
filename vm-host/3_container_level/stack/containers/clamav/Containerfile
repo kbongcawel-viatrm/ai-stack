@@ -1,0 +1,6 @@
+# vm-host ClamAV container — freshclam + on-demand scans of /host.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf install -y --setopt=install_weak_deps=False clamav clamav-update \
+    && dnf clean all
+# Definitions live in /var/lib/clamav (bind-mounted, persists across runs);
+# config comes from /var/opt/stack/clamav mounted at /etc/clamav (ro).

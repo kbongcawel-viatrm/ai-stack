@@ -1,0 +1,202 @@
+# 3_container_level/stack/compose.yaml — single compose stack for the FCOS
+# VM guest, grouped into profiles matching the Butane module layout:
+#
+#   edge   — firewalld + suricata (host network; they ARE the host perimeter)
+#   kasm   — the three KasmVNC workspace containers
+#   audit  — aide / lynis / clamav daily checks (run via `compose run --rm`
+#            from systemd timers; nothing here is long-running)
+#
+# Project directory on the guest: /var/opt/stack (/opt/stack symlink).
+# Runtime: docker (moby-engine, socket-activated in FCOS base — no
+# rpm-ostree layering required).
+#
+# Usage:
+#   docker compose --profile edge up -d
+#   docker compose --profile kasm up -d
+#   docker compose --profile audit run --rm aide-check
+
+name: vm-host-stack
+
+x-host-root: &host-root
+  - type: bind
+    source: /
+    target: /host
+    read_only: true
+
+services:
+
+  # ============================== edge ======================================
+
+  firewalld:
+    build:
+      context: ./containers/firewalld
+    image: localhost/vm-host-firewalld:latest
+    container_name: vm-host-firewalld
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - /var/opt/stack/firewalld:/etc/firewalld
+    # firewalld needs a writable /run; the container's own tmpfs is fine.
+
+  suricata:
+    image: docker.io/jasonish/suricata:latest
+    container_name: vm-host-suricata
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+      - SYS_PTRACE
+    volumes:
+      # rw (not ro): suricata-update writes enable.conf here during the
+      # one-time ET Open fetch in security-finalize.
+      - /var/opt/stack/suricata:/etc/suricata
+      - /var/lib/suricata:/var/lib/suricata
+      - /var/log/suricata:/var/log/suricata
+    # jasonish/suricata entrypoint is `suricata`; args below match its
+    # expected layout (/etc/suricata/suricata.yaml + rules in
+    # /var/lib/suricata/rules).
+    command: ["-c", "/etc/suricata/suricata.yaml", "--af-packet"]
+
+  # ============================== kasm =======================================
+
+  kasm-workspace:
+    image: ${KASM_UBUNTU_IMAGE:-docker.io/kasmweb/ubuntu-noble-desktop:1.19.0}
+    container_name: kasm-workspace
+    restart: unless-stopped
+    profiles: ["kasm"]
+    shm_size: "1g"
+    environment:
+      - VNC_PW=${KASM_VNC_PASSWORD:?set KASM_VNC_PASSWORD in .env}
+      - RESOLUTION=${KASM_RESOLUTION:-1920x1080}
+    ports:
+      - "${KASM_BIND_ADDR:-0.0.0.0}:6901:6901"
+    volumes:
+      - kasm_ubuntu_home:/home/kasm-user
+    security_opt:
+      - seccomp=unconfined
+    cap_add:
+      - IPC_LOCK
+
+  kasm-librewolf:
+    image: ${KASM_LIBREWOLF_IMAGE:-lscr.io/linuxserver/librewolf:latest}
+    container_name: kasm-librewolf
+    restart: unless-stopped
+    profiles: ["kasm"]
+    shm_size: "512m"
+    environment:
+      - PUID=${KASM_UID:-1000}
+      - PGID=${KASM_GID:-1000}
+      - TZ=${TZ:-UTC}
+      - SUBFOLDER=/
+      - HTTPS_PORT=3001
+    ports:
+      - "${KASM_BIND_ADDR:-0.0.0.0}:3101:3001"
+    volumes:
+      - librewolf_config:/config
+    security_opt:
+      - seccomp=unconfined
+
+  kasm-linux-os:
+    image: ${KASM_LINUX_IMAGE:-ghcr.io/bolens/kasm-workspace-images/archlinux:latest}
+    container_name: kasm-linux-os
+    restart: unless-stopped
+    profiles: ["kasm"]
+    shm_size: "1g"
+    environment:
+      - PUID=${KASM_UID:-1000}
+      - PGID=${KASM_GID:-1000}
+      - TZ=${TZ:-UTC}
+      - SUBFOLDER=/
+      - HTTPS_PORT=3001
+    ports:
+      - "${KASM_BIND_ADDR:-0.0.0.0}:3201:3001"
+    volumes:
+      - linuxos_config:/config
+    security_opt:
+      - seccomp=unconfined
+
+  # ============================== audit ======================================
+  # All audit services are oneshot scan jobs launched by systemd timers via
+  # `docker compose --profile audit run --rm <svc>`. They see the host
+  # filesystem read-only at /host.
+
+  aide-init:
+    build:
+      context: ./containers/aide
+    image: localhost/vm-host-aide:latest
+    profiles: ["audit"]
+    restart: "no"
+    volumes:
+      - <<: *host-root
+      - /var/lib/aide:/var/lib/aide
+      - /var/log/aide:/var/log/aide
+      - /var/opt/stack/aide:/etc/aide:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        install -d -m 0750 /var/lib/aide /var/log/aide &&
+        aide --init --config=/etc/aide/aide.conf &&
+        mv -f /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+
+  aide-check:
+    image: localhost/vm-host-aide:latest
+    profiles: ["audit"]
+    restart: "no"
+    volumes:
+      - <<: *host-root
+      - /var/lib/aide:/var/lib/aide
+      - /var/log/aide:/var/log/aide
+      - /var/opt/stack/aide:/etc/aide:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        aide --check --config=/etc/aide/aide.conf
+        --before="$(date -d '24 hours ago' '+%Y-%m-%d %H:%M:%S')"
+        > /var/log/aide/aide-report.log 2>&1 || true
+
+  lynis-scan:
+    build:
+      context: ./containers/lynis
+    image: localhost/vm-host-lynis:latest
+    profiles: ["audit"]
+    restart: "no"
+    volumes:
+      - <<: *host-root
+      - /var/log/lynis:/var/log/lynis
+      - /var/opt/stack/lynis:/etc/lynis:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        lynis audit system --quick --no-colors
+        --report-file /var/log/lynis/lynis-report.dat
+        --logfile /var/log/lynis/lynis.log || true
+
+  clamav-scan:
+    build:
+      context: ./containers/clamav
+    image: localhost/vm-host-clamav:latest
+    profiles: ["audit"]
+    restart: "no"
+    volumes:
+      - <<: *host-root
+      - /var/lib/clamav:/var/lib/clamav
+      - /var/log/clamav:/var/log/clamav
+      - /var/opt/stack/clamav:/etc/clamav:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        freshclam --quiet --config=/etc/clamav/freshclam.conf || true;
+        clamscan --infected --recursive --exclude-dir='^/host/proc'
+        --exclude-dir='^/host/sys' --exclude-dir='^/host/dev'
+        --exclude-dir='^/host/run' --exclude-dir='^/host/var/lib/docker'
+        /host/etc /host/var/opt /host/opt /host/root 2>/dev/null || true
+
+volumes:
+  kasm_ubuntu_home:
+  librewolf_config:
+  linuxos_config:

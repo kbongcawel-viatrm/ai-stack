@@ -38,7 +38,10 @@ vars:
 
 default-rule-path: /var/lib/suricata/rules
 rule-files:
+  # ET Open bundle output lands in default-rule-path as suricata.rules;
+  # local policy rules ship with the stack at /etc/suricata/local.rules.
   - suricata.rules
+  - /etc/suricata/local.rules
 
 # AF_PACKET IDS capture on the guest NIC (fail-open; see nftables note below
 # for the optional NFQUEUE inline-prevention path).

@@ -1,0 +1,263 @@
+variant: fcos
+version: 1.5.0
+
+# 50-container-stack — provisions the containerized service stack at
+# /opt/stack (-> /var/opt/stack) and its systemd lifecycle units.
+# No full rpm-ostree layering: podman is part of the FCOS base.
+# security-finalize applies one tiny --apply-live layer for podman-compose
+# (FCOS excludes python3 from the base image); stack units order after it.
+#
+# Profiles in compose.yaml mirror the old Butane grouping:
+#   edge  = firewalld + suricata      (stack-edge.service)
+#   kasm  = 3 KasmVNC workspaces      (stack-kasm.service)
+#   audit = aide/lynis/clamav checks  (stack-*-check timers; aide-init is
+#          a one-shot run by security-finalize)
+# Toggle: ENABLE_KASM gates the kasm stack unit only.
+storage:
+  directories:
+    - path: /opt/stack
+      mode: 0755
+    - path: /var/lib/suricata/rules
+      mode: 0750
+    - path: /var/log/suricata
+      mode: 0750
+    - path: /var/lib/aide
+      mode: 0750
+    - path: /var/log/aide
+      mode: 0750
+    - path: /var/lib/clamav
+      mode: 0750
+    - path: /var/log/clamav
+      mode: 0750
+    - path: /var/log/lynis
+      mode: 0750
+    - path: /var/opt/stack/firewalld
+      mode: 0750
+    - path: /opt/stack/bin
+      mode: 0755
+
+  files:
+    - path: /opt/stack/compose.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/compose.yaml
+    - path: /opt/stack/containers/firewalld/Containerfile
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/containers/firewalld/Containerfile
+    - path: /opt/stack/containers/aide/Containerfile
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/containers/aide/Containerfile
+    - path: /opt/stack/containers/lynis/Containerfile
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/containers/lynis/Containerfile
+    - path: /opt/stack/containers/clamav/Containerfile
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/containers/clamav/Containerfile
+    - path: /opt/stack/suricata/suricata.yaml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/suricata/suricata.yaml
+    - path: /opt/stack/suricata/local.rules
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/suricata/local.rules
+    - path: /opt/stack/firewalld/fcos-workspace.xml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/firewalld/fcos-workspace.xml
+    - path: /opt/stack/clamav/freshclam.conf
+      mode: 0640
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/clamav/freshclam.conf
+    - path: /opt/stack/aide/aide.conf
+      mode: 0640
+      overwrite: true
+      contents:
+        local: 3_container_level/stack/aide/aide.conf
+    # Placeholder so suricata finds suricata.rules before the first
+    # suricata-update run replaces it with the ET Open bundle.
+    - path: /var/lib/suricata/rules/suricata.rules
+      mode: 0644
+      overwrite: false
+      contents:
+        inline: |
+          # Placeholder — replaced by the ET Open bundle on first
+          # suricata-update run (security-finalize).
+    # /var/opt/stack/bin/docker-compose is a wrapper that execs
+    # podman-compose — keeps the familiar `docker compose` call shape while
+    # the runtime is podman. podman-compose itself arrives via a tiny
+    # rpm-ostree layer (python3 + podman-compose) in security-finalize.
+    - path: /opt/stack/bin/docker-compose
+      mode: 0755
+      overwrite: true
+      contents:
+        inline: |
+          #!/bin/sh
+          # docker-compose -> podman-compose compatibility shim
+          exec /usr/bin/podman-compose "$@"
+    # Post-boot orchestration: swap, stack .env, ET rules fetch, aide init.
+    - path: /etc/vm-host/security-finalize.sh
+      mode: 0755
+      overwrite: true
+      contents:
+        local: 2_systemd_level/security-finalize.sh
+
+systemd:
+  units:
+    - name: security-finalize.service
+      enabled: true
+      contents_local: 2_systemd_level/security-finalize.service
+
+    - name: stack-edge.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=VM host edge stack (firewalld + suricata containers)
+        After=network-online.target security-finalize.service
+        Wants=network-online.target
+        ConditionPathExists=/var/opt/stack/compose.yaml
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        WorkingDirectory=/var/opt/stack
+        ExecStart=/var/opt/stack/bin/docker-compose --profile edge up -d
+        TimeoutStartSec=600
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: stack-kasm.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=VM host Kasm workspace stack (3 containers)
+        After=network-online.target security-finalize.service stack-edge.service
+        Wants=network-online.target
+        ConditionPathExists=/var/opt/stack/compose.yaml
+        ConditionPathExists=/var/opt/stack/.env
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        WorkingDirectory=/var/opt/stack
+        ExecStart=/var/opt/stack/bin/docker-compose --profile kasm up -d
+        TimeoutStartSec=900
+
+        [Install]
+        WantedBy=multi-user.target
+
+    # --- audit timers: daily containerized checks --------------------------
+    - name: stack-aide-check.service
+      contents: |
+        [Unit]
+        Description=AIDE file-integrity check (containerized, daily)
+        After=security-finalize.service
+
+        [Service]
+        Type=oneshot
+        WorkingDirectory=/var/opt/stack
+        ExecStart=/var/opt/stack/bin/docker-compose --profile audit run --rm aide-check
+        TimeoutStartSec=3600
+
+    - name: stack-aide-check.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily AIDE check
+
+        [Timer]
+        OnCalendar=*-*-* 03:15:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: stack-lynis-scan.service
+      contents: |
+        [Unit]
+        Description=Lynis security audit (containerized, daily)
+        After=security-finalize.service
+
+        [Service]
+        Type=oneshot
+        WorkingDirectory=/var/opt/stack
+        ExecStart=/var/opt/stack/bin/docker-compose --profile audit run --rm lynis-scan
+        TimeoutStartSec=3600
+
+    - name: stack-lynis-scan.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily Lynis audit
+
+        [Timer]
+        OnCalendar=*-*-* 04:00:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: stack-clamav-scan.service
+      contents: |
+        [Unit]
+        Description=ClamAV freshclam + filesystem scan (containerized, daily)
+        After=security-finalize.service
+
+        [Service]
+        Type=oneshot
+        WorkingDirectory=/var/opt/stack
+        ExecStart=/var/opt/stack/bin/docker-compose --profile audit run --rm clamav-scan
+        TimeoutStartSec=7200
+
+    - name: stack-clamav-scan.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily ClamAV scan
+
+        [Timer]
+        OnCalendar=*-*-* 05:30:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    # weekly image refresh for all profiles
+    - name: stack-update.service
+      contents: |
+        [Unit]
+        Description=Pull updated images for all stack profiles
+        After=security-finalize.service
+
+        [Service]
+        Type=oneshot
+        WorkingDirectory=/var/opt/stack
+        ExecStart=/var/opt/stack/bin/docker-compose --profile edge --profile kasm --profile audit pull --ignore-buildable
+        TimeoutStartSec=3600
+
+    - name: stack-update.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Weekly container image update check
+
+        [Timer]
+        OnCalendar=Sun *-*-* 06:00:00
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target

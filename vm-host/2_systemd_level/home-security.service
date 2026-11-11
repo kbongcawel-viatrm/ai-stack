@@ -1,9 +1,9 @@
 [Unit]
 Description=home-security.uk v2 stack (clone + docker compose up)
 Documentation=https://github.com/kbongcawel-viatrm/v2.home-security.uk
-After=network-online.target docker.service
+After=network-online.target docker.socket
 Wants=network-online.target
-Requires=docker.service
+Requires=docker.socket
 # Runs after the Kasm stack; independent compose project in /var/opt/home-security.
 
 [Service]

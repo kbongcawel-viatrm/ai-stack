@@ -1,17 +1,14 @@
 [Unit]
-Description=Post-layering security finalize (idempotent, every boot)
+Description=Post-boot container stack orchestration (idempotent, every boot)
 Documentation=https://github.com/kbongcawel-viatrm/ai-stack/tree/devin/vm-host
-After=network-online.target security-setup.service
+After=network-online.target
 Wants=network-online.target
-# Only meaningful once rpm-ostree packages are installed; the script itself
-# also guards on the stamp file.
-ConditionPathExists=/var/lib/vm-host-packages.stamp
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/etc/vm-host/security-finalize.sh
-TimeoutStartSec=900
+TimeoutStartSec=1800
 
 [Install]
 WantedBy=multi-user.target

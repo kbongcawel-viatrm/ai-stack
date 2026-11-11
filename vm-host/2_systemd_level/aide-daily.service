@@ -1,9 +1,0 @@
-[Unit]
-Description=Daily AIDE file-integrity check
-After=local-fs.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/aide --check --config=/etc/aide/aide.conf
-# Non-zero exit = differences found; report but don't fail the unit loudly.
-SuccessExitStatus=0 1 2

@@ -1,0 +1,6 @@
+# vm-host AIDE container — daily file-integrity checks against /host.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf install -y --setopt=install_weak_deps=False aide \
+    && dnf clean all
+# Config comes from /var/opt/stack/aide mounted at /etc/aide (ro);
+# commands are overridden per-service in compose.yaml.

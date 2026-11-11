@@ -9,10 +9,11 @@
 #   3. Generate root.bu with ignition.config.merge listing the selected
 #      fragments; butane merges them at transpile time into vm-host.ign.
 #
-# Feature toggles (1 = merge the module + its packages; default all on):
-#   ENABLE_FIREWALLD ENABLE_SURICATA ENABLE_CLAMAV ENABLE_AIDE
-#   ENABLE_LYNIS ENABLE_KASM ENABLE_HOME_SECURITY
-# Modules: 00-base-system, 05-zincati-maintenance, 10-package-layer are
+# Feature toggles (1 = merge the module; default all on):
+#   ENABLE_HOME_SECURITY only — the containerized stack (50-container-stack)
+#   is always merged; per-service selection happens at runtime via compose
+#   profiles (edge/kasm/audit), not at build time.
+# Modules: 00-base-system, 05-zincati-maintenance, 50-container-stack are
 # always merged.
 set -Eeuo pipefail
 cd "$(dirname "$0")"
@@ -25,12 +26,6 @@ FCOS_GATEWAY="${FCOS_GATEWAY:-192.168.1.1}"
 FCOS_INTERFACE="${FCOS_INTERFACE:-ens2}"
 export FCOS_LAN_IP FCOS_LAN_CIDR FCOS_GATEWAY FCOS_INTERFACE
 
-ENABLE_FIREWALLD="${ENABLE_FIREWALLD:-1}"
-ENABLE_SURICATA="${ENABLE_SURICATA:-1}"
-ENABLE_CLAMAV="${ENABLE_CLAMAV:-1}"
-ENABLE_AIDE="${ENABLE_AIDE:-1}"
-ENABLE_LYNIS="${ENABLE_LYNIS:-1}"
-ENABLE_KASM="${ENABLE_KASM:-1}"
 ENABLE_HOME_SECURITY="${ENABLE_HOME_SECURITY:-1}"
 
 BUTANE="${BUTANE:-}"
@@ -66,23 +61,7 @@ for root, _, files in os.walk(sys.argv[1]):
             open(p, "w").write(out)
 PY
 
-# --- 2. Toggle-driven rpm-ostree package list -------------------------------
-pkgs=()
-[[ "$ENABLE_FIREWALLD" == 1 ]] && pkgs+=(firewalld nftables)
-# NOTE: no separate suricata-update package in Fedora — the suricata RPM
-# ships the suricata-update binary but does not Provide: that name.
-[[ "$ENABLE_SURICATA" == 1 ]] && pkgs+=(suricata)
-[[ "$ENABLE_CLAMAV" == 1 ]] && pkgs+=(clamav clamav-update)
-[[ "$ENABLE_AIDE" == 1 ]] && pkgs+=(aide)
-[[ "$ENABLE_LYNIS" == 1 ]] && pkgs+=(lynis)
-{ [[ "$ENABLE_KASM" == 1 ]] || [[ "$ENABLE_HOME_SECURITY" == 1 ]]; } && pkgs+=(moby-engine docker-compose)
-if (( ${#pkgs[@]} == 0 )); then
-  echo "No packages selected: enable at least one module" >&2
-  exit 1
-fi
-sed -i "s/@VM_HOST_PACKAGES@/${pkgs[*]}/" "$STAGE/2_systemd_level/security-setup.service"
-
-# --- 3. Transpile every module standalone -----------------------------------
+# --- 2. Transpile every module standalone -----------------------------------
 shopt -s nullglob
 for bu in "$STAGE"/butane_modules/*.bu; do
   name="$(basename "$bu" .bu)"
@@ -90,14 +69,8 @@ for bu in "$STAGE"/butane_modules/*.bu; do
 done
 shopt -u nullglob
 
-# --- 4. Merge selected modules via ignition.config.merge --------------------
-merge=(00-base-system 05-zincati-maintenance 10-package-layer)
-[[ "$ENABLE_FIREWALLD" == 1 ]] && merge+=(20-firewalld)
-[[ "$ENABLE_SURICATA" == 1 ]] && merge+=(21-suricata)
-[[ "$ENABLE_CLAMAV" == 1 ]] && merge+=(22-clamav)
-[[ "$ENABLE_AIDE" == 1 ]] && merge+=(23-aide)
-[[ "$ENABLE_LYNIS" == 1 ]] && merge+=(24-lynis)
-[[ "$ENABLE_KASM" == 1 ]] && merge+=(30-kasm-workspaces)
+# --- 3. Merge selected modules via ignition.config.merge --------------------
+merge=(00-base-system 05-zincati-maintenance 50-container-stack)
 [[ "$ENABLE_HOME_SECURITY" == 1 ]] && merge+=(40-home-security)
 
 {
@@ -113,4 +86,3 @@ merge=(00-base-system 05-zincati-maintenance 10-package-layer)
 python3 -m json.tool "$PWD/vm-host.ign" >/dev/null
 echo "Rendered: $PWD/vm-host.ign"
 echo "Modules:   ${merge[*]}"
-echo "Packages: ${pkgs[*]}"
