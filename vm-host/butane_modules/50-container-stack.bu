@@ -254,6 +254,25 @@ systemd:
         ExecStart=/var/opt/stack/bin/docker-compose --profile edge --profile kasm --profile audit pull --ignore-buildable
         TimeoutStartSec=3600
 
+    # sshd hardening LAST: installs the staged drop-in and reloads sshd only
+    # after the whole stack is up — password auth stays available during
+    # bring-up, pubkey-only is the final provisioned state.
+    - name: sshd-hardening.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Apply staged sshd hardening drop-in (last provisioning step)
+        After=stack-edge.service stack-kasm.service security-finalize.service
+        Wants=stack-edge.service stack-kasm.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/sh -c 'install -m 0600 -o root -g root /etc/vm-host/sshd-hardening.conf /etc/ssh/sshd_config.d/00-hardening.conf && /usr/bin/systemctl try-reload-or-restart sshd.service'
+
+        [Install]
+        WantedBy=multi-user.target
+
     - name: stack-update.timer
       enabled: true
       contents: |

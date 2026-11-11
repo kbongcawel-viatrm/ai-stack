@@ -28,7 +28,11 @@ storage:
       mode: 0755
 
   files:
-    - path: /etc/ssh/sshd_config.d/00-hardening.conf
+    # Staged only — sshd-hardening.service (in 50-container-stack) installs
+    # this into sshd_config.d as the LAST provisioning step, so password
+    # auth remains available during bring-up and pubkey-only is the final
+    # state, not the first.
+    - path: /etc/vm-host/sshd-hardening.conf
       mode: 0600
       overwrite: true
       contents:
