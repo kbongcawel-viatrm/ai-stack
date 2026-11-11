@@ -11,9 +11,13 @@ if [ ! -f /etc/machine-id ] || [ "$(cat /etc/machine-id)" = "uninitialized" ]; t
 fi
 
 # Start the system bus if it isn't already (idempotent).
+# dbus-broker-launch expects its listen socket via LISTEN_FDS (normally
+# supplied by systemd); systemd-socket-activate bridges that gap.
 if ! dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
     mkdir -p /run/dbus
-    dbus-broker-launch --scope system &
+    systemd-socket-activate --collect \
+        -l /run/dbus/system_bus_socket \
+        dbus-broker-launch --scope system &
     i=0
     while [ ! -S /run/dbus/system_bus_socket ] && [ $i -lt 50 ]; do
         sleep 0.1; i=$((i+1))
