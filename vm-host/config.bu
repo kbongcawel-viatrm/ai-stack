@@ -54,8 +54,35 @@ storage:
       mode: 0750
     - path: /opt/kasm
       mode: 0755
+    - path: /etc/NetworkManager/system-connections
+      mode: 0700
 
   files:
+    # Static guest address: FCOS does not auto-configure NICs; without this
+    # keyfile the guest boots with no network at all.
+    - path: /etc/NetworkManager/system-connections/${FCOS_INTERFACE}.nmconnection
+      mode: 0600
+      overwrite: true
+      contents:
+        inline: |
+          [connection]
+          id=${FCOS_INTERFACE}
+          type=ethernet
+          interface-name=${FCOS_INTERFACE}
+          autoconnect=true
+          autoconnect-priority=100
+
+          [ethernet]
+
+          [ipv4]
+          method=manual
+          address1=${FCOS_LAN_IP}/24,${FCOS_GATEWAY}
+          dns=${FCOS_GATEWAY};
+          ignore-auto-dns=true
+
+          [ipv6]
+          method=disabled
+
     # ---- 1_host_level -------------------------------------------------
     - path: /etc/ssh/sshd_config.d/00-hardening.conf
       mode: 0600

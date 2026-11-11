@@ -8,7 +8,9 @@ config file lives as a **raw fragment** — edit the fragment, re-run
 
 ```text
 vm-host/
-├── build.sh                  # render fragments + butane --strict -> vm-host.ign (DEPLOY=1 runs Ansible)
+├── Makefile                  # driver: deploy, status, console, ssh, logs, clean
+├── build.sh                  # render config.bu + fragments -> vm-host.ign
+├── deploy.sh                 # provision the VM directly on the hypervisor (no CI, no Ansible)
 ├── config.bu                 # root Butane config; pulls fragments via contents: local:
 ├── 1_host_level/             # host hardening (files installed to /etc)
 │   ├── sshd-hardening.conf   # → /etc/ssh/sshd_config.d/00-hardening.conf
@@ -64,23 +66,37 @@ systemd-run ... or: systemctl restart home-security.service
 Ports are published on `127.0.0.1` only; reach the dashboards over SSH
 tunnels or put them behind the Kasm-managed reverse proxy.
 
-## Build
+## Build & deploy (direct on the hypervisor — no CI, no Ansible)
 
-Requires: `butane`, `python3`. Defaults in parentheses.
+Requires: `butane`, `python3` (build); `libvirt`, `virt-install`, `qemu-img`,
+`curl`, `xz`, `/dev/kvm`, and the LAN bridge `br0` (deploy). Defaults in parentheses.
 
 ```bash
 export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
 export FCOS_CORE_PASSWORD_HASH='$6$...'        # openssl passwd -6
-export FCOS_INTERFACE=ens3                     # verify via DHCP diag boot (ens2)
-export FCOS_LAN_IP=192.168.1.201  FCOS_LAN_CIDR=192.168.1.0/24  FCOS_GATEWAY=192.168.1.1
-./build.sh          # → vm-host.ign
-DEPLOY=1 ./build.sh # also run diskless-os/ansible/playbooks/deploy-fcos-vm.yml
+export FCOS_INTERFACE=ens2                     # libvirt NIC at PCI slot 0x02 → ens2
+# defaults: FCOS_LAN_IP=10.1.29.201, CIDR 10.1.29.0/24, gateway 10.1.29.2
+
+run0 make deploy    # render vm-host.ign + provision the VM (Secureblue)
+# non-Secureblue hosts: make deploy
 ```
 
-For full local deployment (inventory + run0 become on Secureblue) use
-`diskless-os/ansible/deploy-fcos-vm-local.sh`; `DRY_RUN=1` prints the
-generated files. `vm-host.ign` is fed to QEMU via `-fw_cfg` or
-`coreos-installer ignition embed` on **first boot only**.
+`make deploy` = `./build.sh` then `./deploy.sh`. `deploy.sh` fetches and
+sha256-verifies the FCOS stable qcow2 (pin with `FCOS_QCOW2_URL` +
+`FCOS_QCOW2_SHA256`), creates a writable overlay, and starts the domain with
+Ignition injected via `fw_cfg` on **first boot only**. Re-running skips
+verified downloads and the existing overlay (`RECREATE_OVERLAY=1` for a fresh
+disk); it never overwrites an existing domain.
+
+Everyday targets:
+
+```bash
+make status         # virsh dominfo + list
+make console        # serial console of first boot (Ctrl-] detaches)
+make ssh            # ssh core@10.1.29.201
+make logs           # tail security-setup/security-finalize/kasm units
+make clean          # remove the domain + overlay (base image kept)
+```
 
 ## Operational notes (from the fcos-kasm-platform design)
 
