@@ -6,13 +6,21 @@ the hypervisor. No GitHub Actions, no Ansible.
 ## What you get
 
 A VM (`10.1.29.201`) that on first boot installs and configures itself:
-firewall, Suricata, ClamAV, AIDE, Lynis, and three browser workspaces:
+firewall, Suricata, ClamAV, AIDE, Lynis, and three browser workspaces
+(standalone KasmVNC containers — no Kasm server needed):
 
-| Workspace | Address |
-|---|---|
-| Ubuntu desktop | `https://10.1.29.201:6901` |
-| LibreWolf browser | `https://10.1.29.201:3101` |
-| Arch XFCE | `https://10.1.29.201:3201` |
+| Workspace | Address | Login |
+|---|---|---|
+| Ubuntu desktop | `https://10.1.29.201:6901` | VNC password (below) |
+| LibreWolf browser | `https://10.1.29.201:3101` | VNC password (below) |
+| Arch XFCE | `https://10.1.29.201:3201` | VNC password (below) |
+
+The VNC password is generated once on first boot and stored on the VM at
+`/var/opt/kasm/.env`:
+
+```bash
+make ssh -t 'sudo cat /var/opt/kasm/.env'   # KASM_VNC_PASSWORD=...
+```
 
 ## One-time host setup
 
@@ -45,7 +53,7 @@ Then:
 
 ```bash
 make ssh        # log into the VM
-make logs       # watch setup progress / get the Kasm admin password
+make logs       # watch setup progress
 ```
 
 Done. Open the workspace URLs above in your browser.
@@ -57,7 +65,7 @@ Done. Open the workspace URLs above in your browser.
 | `make status` | Is the VM running? |
 | `make ssh` | Log into the VM |
 | `make console` | Boot/console output |
-| `make logs` | Setup logs (contains Kasm admin password) |
+| `make logs` | Setup/log tail for the first-boot units |
 | `make clean` | Delete the VM and its disk (image kept, `make deploy` rebuilds) |
 
 ## Troubleshooting
