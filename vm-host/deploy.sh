@@ -60,7 +60,15 @@ virsh -c "$LIBVIRT_URI" uri >/dev/null 2>&1 \
   || die "cannot connect to $LIBVIRT_URI"
 mkdir -p "$IMAGE_DIR"
 [[ -w $IMAGE_DIR ]]             || die "not writable: $IMAGE_DIR"
-ip link show dev "$BRIDGE" >/dev/null 2>&1 || die "bridge $BRIDGE missing (run prepare-hypervisor or setup-br0.sh)"
+# The image dir must be traversable/readable by the host qemu user. When
+# provisioning from a container this may be a user-owned dir (e.g. ~/fcos-vm);
+# ensure o+x so qemu can reach the disks.
+chmod 0755 "$IMAGE_DIR"
+# The bridge lives in the HOST netns — inside a provisioning container it is
+# not visible. Host libvirt validates it at domain start, so warn only.
+if ! ip link show dev "$BRIDGE" >/dev/null 2>&1; then
+  log "note: bridge $BRIDGE not visible in this netns (container?) — host libvirt will validate"
+fi
 if virsh -c "$LIBVIRT_URI" dominfo "$VM_NAME" >/dev/null 2>&1; then
   die "domain '$VM_NAME' already exists; this script never overwrites a VM (see 'make clean')"
 fi
@@ -86,6 +94,7 @@ log "image: $FCOS_QCOW2_URL"
 [[ $FCOS_QCOW2_URL == https://* ]] || die "only https:// image sources are supported here"
 
 mkdir -p "$IMAGE_DIR/base" "$IMAGE_DIR/ignition" "$IMAGE_DIR/domains"
+chmod 0755 "$IMAGE_DIR/base" "$IMAGE_DIR/ignition" "$IMAGE_DIR/domains"
 
 xz_path="$IMAGE_DIR/base/fcos-base.qcow2.xz"
 if [[ ! -f $BASE_QCOW2 ]]; then
@@ -99,6 +108,9 @@ elif [[ -f $xz_path ]]; then
 fi
 [[ $(qemu-img info --output=json "$BASE_QCOW2") == *'"format": "qcow2"'* ]] \
   || die "$BASE_QCOW2 is not a qcow2 image"
+# Public FCOS image — world-readable so the host qemu user can use it as a
+# backing file even when it was fetched by an unprivileged container.
+chmod 0644 "$BASE_QCOW2"
 
 # --- 3. Writable overlay ------------------------------------------------------
 if [[ ! -f $OVERLAY || $RECREATE_OVERLAY == 1 ]]; then
@@ -110,17 +122,29 @@ if [[ ! -f $OVERLAY || $RECREATE_OVERLAY == 1 ]]; then
 else
   log "reusing existing overlay: $OVERLAY (RECREATE_OVERLAY=1 to replace)"
 fi
-# Unprivileged runs (rootless container as qemu:///system) cannot chown to
-# qemu:qemu — virtqemud assigns disk ownership when the domain starts.
-chown qemu:qemu "$OVERLAY" 2>/dev/null \
-  || log "chown to qemu:qemu skipped (unprivileged); libvirt sets ownership at boot"
-chmod 0660 "$OVERLAY"
+# Privileged runs chown the overlay to qemu:qemu (0600). Unprivileged
+# container runs cannot — fall back to world-readable so the host qemu
+# process can open the disk (the image holds no host secrets).
+if chown qemu:qemu "$OVERLAY" 2>/dev/null; then
+  chmod 0660 "$OVERLAY"
+else
+  log "chown to qemu:qemu skipped (unprivileged); using world-readable overlay"
+  chmod 0644 "$OVERLAY"
+fi
 command -v restorecon >/dev/null 2>&1 && restorecon -F "$OVERLAY" || true
 
 # --- 4. Ignition + domain -----------------------------------------------------
-install -m 0644 "$IGN_FILE" "$IGN_DEST"
-chown qemu:qemu "$IGN_DEST" 2>/dev/null || true
+# The .ign carries bootstrap secrets (password hash): prefer 0640 owned by
+# qemu; in unprivileged container runs chown fails, so fall back to 0644 —
+# QEMU must be able to read the fw_cfg payload at domain start.
+install -m 0640 "$IGN_FILE" "$IGN_DEST"
+chown qemu:qemu "$IGN_DEST" 2>/dev/null || chmod 0644 "$IGN_DEST"
 restorecon -F "$IGN_DEST" 2>/dev/null || true
+# svirt_t cannot read user_home_t: outside /var/lib/libvirt/images the
+# restorecon above leaves the wrong label and domain start fails with
+# "can't load <ign>: Permission denied" on the fw_cfg payload. Force the
+# image label (works from a spc_t container too).
+command -v chcon >/dev/null 2>&1 && chcon -t virt_image_t "$IGN_DEST" 2>/dev/null || true
 
 log "defining + starting domain '$VM_NAME' (Ignition via fw_cfg, first boot only)"
 virt-install \

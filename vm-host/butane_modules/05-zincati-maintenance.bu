@@ -1,0 +1,14 @@
+variant: fcos
+version: 1.5.0
+
+# 05-zincati-maintenance — stage updates automatically but only reboot to
+# finalize them inside a weekly maintenance window, so active Kasm sessions
+# are not interrupted. Times are UTC (Zincati periodic windows are always UTC).
+# Always merged (like 00/10 — baseline hardening, no toggle).
+storage:
+  files:
+    - path: /etc/zincati/config.d/20-maintenance.toml
+      mode: 0644
+      overwrite: true
+      contents:
+        local: 1_host_level/zincati-maintenance.toml

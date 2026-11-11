@@ -12,7 +12,8 @@
 # Feature toggles (1 = merge the module + its packages; default all on):
 #   ENABLE_FIREWALLD ENABLE_SURICATA ENABLE_CLAMAV ENABLE_AIDE
 #   ENABLE_LYNIS ENABLE_KASM ENABLE_HOME_SECURITY
-# Modules: 00-base-system, 10-package-layer are always merged.
+# Modules: 00-base-system, 05-zincati-maintenance, 10-package-layer are
+# always merged.
 set -Eeuo pipefail
 cd "$(dirname "$0")"
 
@@ -88,7 +89,7 @@ done
 shopt -u nullglob
 
 # --- 4. Merge selected modules via ignition.config.merge --------------------
-merge=(00-base-system 10-package-layer)
+merge=(00-base-system 05-zincati-maintenance 10-package-layer)
 [[ "$ENABLE_FIREWALLD" == 1 ]] && merge+=(20-firewalld)
 [[ "$ENABLE_SURICATA" == 1 ]] && merge+=(21-suricata)
 [[ "$ENABLE_CLAMAV" == 1 ]] && merge+=(22-clamav)

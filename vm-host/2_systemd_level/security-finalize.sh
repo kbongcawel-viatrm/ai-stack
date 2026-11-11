@@ -6,6 +6,16 @@ set -Eeuo pipefail
 
 PKG_STAMP=/var/lib/vm-host-packages.stamp
 AIDE_STAMP=/var/lib/vm-host-aide-init.stamp
+SURICATA_STAMP=/var/lib/suricata-rules.stamp
+SWAP_SIZE="${SWAP_SIZE:-8G}"
+
+# --- swap: FCOS ships without swap (ZRAM only); Kasm needs burst headroom --
+# Runs before the package-stamp gate: swap is independent of rpm-ostree.
+if [[ ! -f /swap ]]; then
+  fallocate -l "$SWAP_SIZE" /swap && chmod 0600 /swap && mkswap /swap
+fi
+grep -q '^/swap ' /etc/fstab || echo '/swap none swap defaults 0 0' >> /etc/fstab
+swapon -a || true
 
 # Only act after rpm-ostree layering has been applied (i.e., packages exist).
 [[ -f "$PKG_STAMP" ]] || exit 0
@@ -18,10 +28,13 @@ if [[ -n "$IFACE" ]]; then
 fi
 
 # --- suricata: fetch ET Open rules once, then enable ------------------------
-if ! compgen -G "/var/lib/suricata/rules/*.rules" >/dev/null; then
-  suricata-update update-sources || true
-  suricata-update enable-source et/open || true
-  suricata-update || true
+# Dedicated stamp: a glob on *.rules would match the provisioned local.rules
+# and skip the ET download entirely.
+if [[ ! -f "$SURICATA_STAMP" ]] \
+  && suricata-update update-sources \
+  && suricata-update enable-source et/open \
+  && suricata-update; then
+  touch "$SURICATA_STAMP"
 fi
 chown -R suricata:suricata /etc/suricata /var/lib/suricata/rules /var/log/suricata /var/run/suricata 2>/dev/null || true
 systemctl enable --now suricata.service || true

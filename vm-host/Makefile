@@ -7,11 +7,14 @@
 # Per-target env overrides (see build.sh / deploy.sh headers for the full set):
 #   VM_NAME, VM_RAM_MB, VM_VCPUS, VM_DISK_GB, BRIDGE, IMAGE_DIR, FCOS_LAN_IP,
 #   ENABLE_* module toggles, FCOS_QCOW2_URL + FCOS_QCOW2_SHA256 (pin together)
+#   'make up' (container path) uses STATE_DIR instead of IMAGE_DIR (default ~/fcos-vm)
 
 SHELL := /bin/bash
 VM_NAME    ?= fcos-kasm
 FCOS_LAN_IP ?= 192.168.1.201
 LIBVIRT_URI ?= qemu:///system
+IMAGE_DIR  ?= /var/lib/libvirt/images
+SSH_KEY    ?= $(HOME)/.ssh/core
 
 .PHONY: deploy up ignition status console ssh logs clean help
 
@@ -32,16 +35,16 @@ console: ## Attach to the VM serial console (Ctrl-] to detach)
 	virsh -c $(LIBVIRT_URI) console $(VM_NAME)
 
 ssh: ## SSH to the guest core user
-	ssh core@$(FCOS_LAN_IP)
+	ssh -i $(SSH_KEY) core@$(FCOS_LAN_IP)
 
 logs: ## Tail first-boot provisioning units on the guest
-	ssh core@$(FCOS_LAN_IP) 'journalctl -u security-setup.service -u security-finalize.service -u kasm-workspace.service --no-pager -n 100'
+	ssh -i $(SSH_KEY) core@$(FCOS_LAN_IP) 'journalctl -u security-setup.service -u security-finalize.service -u kasm-workspace.service --no-pager -n 100'
 
 clean: ## Undefine the domain and delete its overlay disk (base image kept)
 	virsh -c $(LIBVIRT_URI) shutdown $(VM_NAME) 2>/dev/null || true
 	virsh -c $(LIBVIRT_URI) destroy $(VM_NAME) 2>/dev/null || true
 	virsh -c $(LIBVIRT_URI) undefine $(VM_NAME) 2>/dev/null || true
-	rm -f /var/lib/libvirt/images/$(VM_NAME).qcow2
+	rm -f $(IMAGE_DIR)/$(VM_NAME).qcow2
 	@echo "domain + overlay removed (base image and Ignition files kept)"
 
 help: ## List targets

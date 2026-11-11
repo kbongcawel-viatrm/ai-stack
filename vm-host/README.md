@@ -10,9 +10,11 @@ config file lives as a **raw fragment** — edit the fragment, re-run
 vm-host/
 ├── Makefile                  # direct host-side driver: deploy, status, console, clean
 ├── build.sh                  # composable pipeline: transpile modules → merge → vm-host.ign
-├── deploy.sh                 # provision the VM directly on the hypervisor (no CI, no Ansible)
+├── deploy.sh                 # provision the VM on host libvirt (no CI, no Ansible)
+├── container/                # disposable provisioning runner: Containerfile, entrypoint.sh, up.sh
 ├── butane_modules/           # each module is a standalone valid Butane file
 │   ├── 00-base-system.bu     # always: core user, SSH keyfile, static NM network, sysctl/sshd/journald/zincati
+│   ├── 05-zincati-maintenance.bu # always: weekly reboot window — updates stage anytime, reboot only inside it
 │   ├── 10-package-layer.bu   # always: security-setup (rpm-ostree via the toggles, stamp, one reboot) + security-finalize
 │   ├── 20-firewalld.bu       # ENABLE_FIREWALLD
 │   ├── 21-suricata.bu         # ENABLE_SURICATA
@@ -85,28 +87,48 @@ systemd-run ... or: systemctl restart home-security.service
 Ports are published on `127.0.0.1` only; reach the dashboards over SSH
 tunnels or put them behind the Kasm-managed reverse proxy.
 
-## Deployment (direct on the hypervisor — no GitHub Actions, no Ansible)
+## Deployment
 
-Run `deploy.sh` on the host OS itself (Secureblue: prefix `run0`). It fetches
-and sha256-verifies the FCOS stable qcow2 (or a pinned pair via
-`FCOS_QCOW2_URL` + `FCOS_QCOW2_SHA256`), creates the writable overlay, and
-defines/starts the domain with Ignition injected via `fw_cfg` on **first boot
-only** — a persistent overlay boots without Ignition afterwards.
+Two ways to run the same pipeline — pick one:
+
+### Containerized (recommended — disposable provisioning runner)
+
+```bash
+# on the host, inside vm-host/ (needs rootless podman + FCOS_* env):
+export FCOS_SSH_PUBLIC_KEY='ssh-ed25519 ...'
+export FCOS_CORE_PASSWORD_HASH='$6$...'
+make up        # builds container/image once, renders + provisions, self-cleans
+```
+
+The container holds only tools/temp state — `podman rm` wipes it. The VM
+still runs on **host** libvirt (`qemu:///system`, `br0`). Persistent state:
+
+- `~/fcos-vm/` (`STATE_DIR` override) — base image, overlay, `.ign`, domain XML
+- host libvirt domain `fcos-kasm` — remove with `make clean` + `rm -rf ~/fcos-vm`
+
+### Direct on the hypervisor
 
 ```bash
 # on the hypervisor, inside vm-host/ (br0 must already exist):
 run0 make deploy                    # render vm-host.ign + provision the VM
 make status                         # virsh dominfo
 make console                        # serial console of first boot
-make ssh                            # ssh core@192.168.1.201
+make ssh                            # ssh -i ~/.ssh/core core@192.168.1.201
 make clean                          # remove the domain + overlay (base image kept)
 ```
 
+`deploy.sh` fetches and sha256-verifies the FCOS stable qcow2 (or a pinned
+pair via `FCOS_QCOW2_URL` + `FCOS_QCOW2_SHA256`), creates the writable
+overlay, and defines/starts the domain with Ignition injected via `fw_cfg`
+on **first boot only** — a persistent overlay boots without Ignition
+afterwards. It never destroys an existing domain — removal is the explicit
+`make clean`.
+
 Reusable: `make deploy` skips the (already-verified) base download and the
-existing overlay; set `RECREATE_OVERLAY=1 ./deploy.sh` for a fresh disk. It
-never destroys an existing domain — removal is the explicit `make clean`.
+existing overlay; set `RECREATE_OVERLAY=1 ./deploy.sh` for a fresh disk.
 Host requirements: libvirt (`virsh`, `virt-install`), `qemu-img`, `curl`,
-`xz`, `/dev/kvm`, bridge `br0`. The Ansible playbooks in
+`xz`, `/dev/kvm`, bridge `br0` (host-direct mode only — the container path
+validates it host-side). The Ansible playbooks in
 `diskless-os/ansible/` remain available but are not part of the build path,
 and no GitHub Actions workflow is involved.
 
