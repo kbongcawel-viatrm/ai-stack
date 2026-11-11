@@ -12,6 +12,8 @@ fi
 # Start the system bus if it isn't already (idempotent).
 if ! dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
     mkdir -p /run/dbus
+    # podman restarts reuse the container fs — clear stale bus artifacts
+    rm -f /run/dbus/pid /run/dbus/system_bus_socket
     dbus-daemon --system --fork
 fi
 
