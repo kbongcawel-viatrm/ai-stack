@@ -6,6 +6,15 @@ set -Eeuo pipefail
 
 PKG_STAMP=/var/lib/vm-host-packages.stamp
 AIDE_STAMP=/var/lib/vm-host-aide-init.stamp
+SWAP_SIZE="${SWAP_SIZE:-8G}"
+
+# --- swap: FCOS ships without swap (ZRAM only); Kasm needs burst headroom --
+# Runs before the package-stamp gate: swap is independent of rpm-ostree.
+if [[ ! -f /swap ]]; then
+  fallocate -l "$SWAP_SIZE" /swap && chmod 0600 /swap && mkswap /swap
+fi
+grep -q '^/swap ' /etc/fstab || echo '/swap none swap defaults 0 0' >> /etc/fstab
+swapon -a || true
 
 # Only act after rpm-ostree layering has been applied (i.e., packages exist).
 [[ -f "$PKG_STAMP" ]] || exit 0
