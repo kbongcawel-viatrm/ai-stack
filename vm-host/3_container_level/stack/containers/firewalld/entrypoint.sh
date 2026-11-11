@@ -15,7 +15,7 @@ fi
 # supplied by systemd); systemd-socket-activate bridges that gap.
 if ! dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1; then
     mkdir -p /run/dbus
-    systemd-socket-activate --collect \
+    systemd-socket-activate \
         -l /run/dbus/system_bus_socket \
         dbus-broker-launch --scope system &
     i=0
