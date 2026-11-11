@@ -1,7 +1,10 @@
 # vm-host firewalld container — Debian base: classic dbus-daemon (Fedora
 # ships only dbus-broker, which needs systemd socket activation).
 FROM debian:bookworm-slim
-RUN apt-get update \
+# Build containers inherit FCOS's 127.0.0.53 stub resolv.conf, unreachable
+# from the build netns — point at the LAN gateway DNS before apt runs.
+RUN echo "nameserver 192.168.1.1" > /etc/resolv.conf \
+    && apt-get update \
     && apt-get install -y --no-install-recommends firewalld nftables dbus \
     && rm -rf /var/lib/apt/lists/*
 COPY entrypoint.sh /usr/local/bin/vm-host-firewalld-entrypoint.sh
