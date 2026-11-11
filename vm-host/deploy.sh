@@ -118,11 +118,8 @@ chmod 0660 "$OVERLAY"
 command -v restorecon >/dev/null 2>&1 && restorecon -F "$OVERLAY" || true
 
 # --- 4. Ignition + domain -----------------------------------------------------
-# The .ign carries bootstrap secrets (password hash): prefer 0640 owned by
-# qemu; in unprivileged container runs chown fails, so fall back to 0644 —
-# QEMU must be able to read the fw_cfg payload at domain start.
-install -m 0640 "$IGN_FILE" "$IGN_DEST"
-chown qemu:qemu "$IGN_DEST" 2>/dev/null || chmod 0644 "$IGN_DEST"
+install -m 0644 "$IGN_FILE" "$IGN_DEST"
+chown qemu:qemu "$IGN_DEST" 2>/dev/null || true
 restorecon -F "$IGN_DEST" 2>/dev/null || true
 
 log "defining + starting domain '$VM_NAME' (Ignition via fw_cfg, first boot only)"

@@ -104,12 +104,6 @@ storage:
       overwrite: true
       contents:
         local: 1_host_level/zincati-updates.toml
-    # Maintenance window: stage updates anytime, reboot only inside it.
-    - path: /etc/zincati/config.d/20-maintenance.toml
-      mode: 0644
-      overwrite: true
-      contents:
-        local: 1_host_level/zincati-maintenance.toml
     - path: /etc/aide/aide.conf
       mode: 0640
       overwrite: true
