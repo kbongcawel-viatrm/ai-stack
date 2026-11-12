@@ -5,13 +5,13 @@ if [ -f /etc/bashrc ]; then
 fi
 
 # User specific environment
-if ! [[ "$PATH" =~ "$HOME/.local/bin:$HOME/bin:" ]]; then
-    PATH="$HOME/.local/bin:$HOME/bin:$PATH"
-fi
+for dir in "$HOME/.local/bin" "$HOME/bin" "$HOME/.mistral/bin"; do
+    if [[ -d "$dir" && ":$PATH:" != *":$dir:"* ]]; then
+        PATH="$dir:$PATH"
+    fi
+done
+unset dir
 export PATH
-
-# Uncomment the following line if you don't like systemctl's auto-paging feature:
-# export SYSTEMD_PAGER=
 
 # User specific aliases and functions
 if [ -d ~/.bashrc.d ]; then
@@ -21,29 +21,31 @@ if [ -d ~/.bashrc.d ]; then
         fi
     done
 fi
+# Unset commands here
 unset rc
+unset DEBUGINFOD_URLS
+unset SSH_AUTH_SOCK
+unset P11_KIT_SERVER_ADDRESS
 
-
-
-
-#############################
-# Needed functions ##########
-#############################
-# Alter terminal output
-# Display file contents directly in the terminal
+#  GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   
+#  Display file contents directly in the terminal 
 tcat() {
     if [[ ! -w /dev/tty ]]; then
         printf 'Error: No writable terminal available.\n' >&2
         return 1
     fi
-
     command cat -- "$@" > /dev/tty
 }
 
+# Better than echo ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 _terminal_msg() {
     local status="$1"
     shift
-
+    
+    # ⚠️  Take note: this is part of kimctl()
+    # Suppress direct terminal messages when running through kimctl.
+    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+   
     local color icon
     case "$status" in
         success) color='1;32'; icon='✅ ' ;;  # Bold Green + Check
@@ -53,7 +55,6 @@ _terminal_msg() {
         *)       color='0';    icon=''    ;;  # Reset/Plain
     esac
 
-    # Check if /dev/tty supports colors (requires >= 8 colors and NO_COLOR unset)
     local colors=0
     if [[ -z "${NO_COLOR:-}" ]] && command -v tput >/dev/null 2>&1; then
         colors=$(tput colors </dev/tty 2>/dev/null || echo 0)
@@ -66,10 +67,11 @@ _terminal_msg() {
     fi
 }
 
-_print_line() {
+# Prints a line ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+_terminal_line() {
     local style="${1:-thin}"
     local color="${2:-38;5;244}"
-    local width="${3:-50}" # Reduced default width to 50 characters
+    local width="${3:-50}"
     local char
 
     case "$style" in
@@ -88,79 +90,92 @@ _print_line() {
     printf '\033[%sm%s\033[0m\n' "$color" "$line" | tcat
 }
 
-##############################################################
-# End of needed functions										      ##
-##############################################################
+# Unified command loader.
+# Use only for non-interactive commands; do not wrap read/select/password prompts,
+# TTY applications, or functions whose changes must affect the current shell.
+run_with_loader() {
+    local label="${1:-Running}"
+    shift
 
-##############################################################
-## Declaration 															##
-##############################################################
-_terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
-_print_line bold "1;32" 35
+    local bar_width=15
+    local progress=0
+    local pid
+    local exit_code=0
+    local had_monitor=0
+    local i filled empty bar full_bar
 
-##############################################################
-### start of functions P1  											##
-##############################################################
-
-# Syntax check bashrc
-validatebash	() {
-    if [[ -f "$HOME/.bashrc" ]]; then
-        _terminal_msg normal ".bashrc configuration"
-
-        if bash -n "$HOME/.bashrc"; then
-            _terminal_msg success "Syntax OK! Configuration reloaded! ♻️"
-        else
-            _terminal_msg error "Syntax error found in ~/.bashrc"
-            return 1
-        fi
-    else
-        _terminal_msg error "~/.bashrc does not exist"
-        return 1
+    if (( $# == 0 )); then
+        printf 'Usage: run_with_loader "label" command [arguments...]\n' >&2
+        return 2
     fi
-echo ""
 
+    # Disable Bash job-control notifications while the child runs.
+    case "$-" in
+        *m*) had_monitor=1; set +m ;;
+    esac
+
+    # Suppress Bash's asynchronous-job announcement as well as command output.
+    # The brace group keeps pid assignment in the current shell.
+    {
+        KIMCTL_QUIET=1 "$@" </dev/null >/dev/null 2>&1 &
+        pid=$!
+    } 2>/dev/null
+
+    # Hide the cursor only when stdout is a terminal.
+    if [[ -t 1 ]]; then
+        tput civis 2>/dev/null || :
+    fi
+
+    printf '%s\n' "$label"
+
+    while kill -0 "$pid" 2>/dev/null; do
+        if (( progress < 95 )); then
+            progress=$((progress + (95 - progress) / 10 + 1))
+        fi
+
+        filled=$((progress * bar_width / 100))
+        empty=$((bar_width - filled))
+        bar=""
+
+        for ((i=0; i<filled; i++)); do bar+="🟩"; done
+        for ((i=0; i<empty; i++)); do bar+="⬜"; done
+
+        printf '\r[ %s %3d%% progress ]' "$bar" "$progress"
+        sleep 0.2
+    done
+
+    wait "$pid" || exit_code=$?
+
+    if [[ -t 1 ]]; then
+        tput cnorm 2>/dev/null || :
+    fi
+
+    if (( had_monitor )); then
+        set -m
+    fi
+
+    if (( exit_code == 0 )); then
+        full_bar=""
+        for ((i=0; i<bar_width; i++)); do full_bar+="🟩"; done
+        printf '\r[ %s 100%% progress ]\n' "$full_bar"
+    else
+        printf '\nFailed (exit code: %d)\n' "$exit_code"
+    fi
+
+    return "$exit_code"
 }
 
-validatepath(){
-  _terminal_msg normal "PATH configuration"
-  sleep 2
-  if printf '%s' "$PATH" | awk -v RS=: '
-      length($0) == 0 || $0 !~ /^\// { bad = 1 }
-      END { exit (bad || NR == 0) }
-      '; then
-  
-      _terminal_msg success "Syntax OK! PATH looks good. 👌"    
-  else
-      _terminal_msg error "FAIL❌: PATH has some issues. Please check. 🙇"
-  fi
-}
+# END OF GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
-bashconfigcheck(){
- sleep 1
- _terminal_msg normal "Checklist initialize 📋"
- sleep 1
- echo
-validatepath
- echo
- sleep 1
- validatebash
- echo
- sleep 1
- _terminal_msg normal "done with all checks..."
- _terminal_msg success "Enjoy 🎉"
- echo
- _print_line bold "1;32" 35 
- echo
- sleep 1
-}
-##############################################################
-### end of functions P1                                    ###
-##############################################################
+#  INTRO MESSAGES          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+_terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
+_terminal_line bold "1;32" 35
 
+#  DECLARATIVE CONFIG      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
-##############################################################
-# Declarative Shell hardening                               ##
-##############################################################
+# disable .swp or .swo
+grep -qxF 'set noswapfile' ~/.vimrc 2>/dev/null || \
+printf '\n" Disable swap files\nset noswapfile\n' >> ~/.vimrc
 
 # Default visual and editor
 export EDITOR=/usr/bin/vim
@@ -183,8 +198,6 @@ PATH="$(printf '%s' "$PATH" | awk -v RS=: '
 ')"
 export PATH
 
-# Validate that PATH contains only absolute, non-empty entries.
-
 # Prevents the shell and its children from creating memory core dumps on crash
 ulimit -c 0
 
@@ -203,10 +216,15 @@ export PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
 # If not yet set to readonly else set it.
 if [[ "${TMOUT@a}" != *r* ]]; then
     export TMOUT=600
-    readonly -f TMOUT 2>/dev/null
+    readonly TMOUT
 fi
-# Harden critical execution aliases natively
-alias run0='run0 -i' # -q adds a silent flag
+
+# ALIAS     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+alias distro='distrobox'
+alias tlbx='toolbox'
+alias tlbxen='toolbox enter'
+alias tlbxli='toolbox list'
+alias tlbxcr='toolbox create'
 alias rm='rm -rf'
 alias ls='ls -alt'
 alias ps='ps -aux'
@@ -217,93 +235,58 @@ alias run0ctlstatus='run0 systemctl status'
 alias run0ctlenable='run0 systemctl enable --now'
 alias run0ctlstop='run0 systemctl stop'
 alias run0journal='run0 journalctl -u'
+alias vibe='vibe --continue --yolo'
+# Protect custom privileged-command wrappers against runtime redefinition.
+for fn in run0 sudo; do
+    if declare -F "$fn" >/dev/null 2>&1; then
+        readonly -f "$fn"
+    fi
+done
 
-# Mark aliases or sensitive protective paths as read-only to block runtime tampering
-readonly -f run0 2>/dev/null
-readonly -f sudo 2>/dev/null
+# FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
-##############################################################
-## End of declared configuration                            ##
-##############################################################
-
-##############################################################
-### start of functions P2  											##
-##############################################################
-workspacevirshall(){
-virsh -c qemu:///system list --all
-}
-shazam() {
-  # Runs the target utility inside the systemd execution framework
-  # --empower dynamically elevates or assigns capabilities
-  # --property=LogLevelMax=0 silences systemd-level log generation for this fork
-  run0 --empower && _terminal_msg warning "With great power comes with great responsibility"
-}
-
-# workspace navigator
-workspace() {
-    local target_dir="$HOME/workspace"
-    local -a folders=()
-    local item choice selected_folder
-    local choice_num i
-
-    # 1. Verify the workspace directory exists
-    if [[ ! -d "$target_dir" ]]; then
-        printf 'Error: Directory %s does not exist.\n' "$target_dir" >&2
+getbash() {
+    if [[ -f "$HOME/.bashrc" ]]; then
+        _terminal_msg normal ".bashrc configuration"
+        if bash -n "$HOME/.bashrc"; then
+            _terminal_msg success "Syntax OK! Configuration valid! ♻️"
+        else
+            _terminal_msg error "Syntax error found in ~/.bashrc"
+            return 1
+        fi
+    else
+        _terminal_msg error "~/.bashrc does not exist"
         return 1
     fi
-
-    # 2. Collect subdirectories, preserving spaces in names
-    for item in "$target_dir"/*; do
-        [[ -d "$item" ]] || continue
-        folders+=("${item##*/}")
-    done
-
-    # 3. Handle an empty workspace
-    if (( ${#folders[@]} == 0 )); then
-        printf 'No subfolders found in %s.\n' "$target_dir"
-        return 0
-    fi
-
-    # 4. Display the numbered list
-    printf 'Which folder do you want to enter?\n'
-    for i in "${!folders[@]}"; do
-        printf '%d. %s\n' "$((i + 1))" "${folders[$i]}"
-    done
-
-    # 5. Read the selection
-    read -r -p 'Enter number: ' choice || return 1
-
-    # 6. Validate the selection
-    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
-        printf 'Error: Enter a valid number.\n' >&2
-        return 1
-    fi
-
-    choice_num=$((10#$choice))
-
-    if (( choice_num < 1 || choice_num > ${#folders[@]} )); then
-        printf 'Error: Selection out of range.\n' >&2
-        return 1
-    fi
-
-    # 7. Change the current shell's directory
-    selected_folder="${folders[$((choice_num - 1))]}"
-
-    if ! cd -- "$target_dir/$selected_folder"; then
-        printf 'Error: Could not enter directory.\n' >&2
-        return 1
-    fi
-
-    printf 'Moved to: %s\n' "$PWD"
-
+    echo ""
 }
 
-# manage nodejs, npm, and nvm
-workspacenode(){
+getpath() {
+    _terminal_msg normal "PATH configuration"
+    if printf '%s' "$PATH" | awk -v RS=: '
+        length($0) == 0 || $0 !~ /^\// { bad = 1 }
+        END { exit (bad || NR == 0) }
+    '; then
+        _terminal_msg success "Syntax OK! PATH looks good. 👌"
+    else
+        _terminal_msg error "FAIL❌: PATH has some issues. Please check. 🙇"
+        return 1
+    fi
+}
+
+# Get all virtual instances
+getvirtall() {
+    virsh -c qemu:///system list --all
+}
+
+# download nvm node and npm
+getnvm(){
 echo
 _terminal_msg normal '🚀 Downloading latest NVM.'
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/HEAD/install.sh | bash
-nvm install --lts > /dev/tty
+run_with_loader "Running" bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/HEAD/install.sh | bash' || return $?
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+run_with_loader "Running" nvm install --lts || return $?
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
@@ -311,7 +294,7 @@ echo
 _terminal_msg success '🚀 Finished downloading'
 echo
 _terminal_msg normal '📦 Rebuilding workspace.'
-npm rebuild > /dev/tty
+run_with_loader "Running" npm rebuild || return $?
 _terminal_msg success '🚀 Finished rebuilding'
 echo 
 _terminal_msg normal  '⚙️  Fetching versions...'
@@ -322,174 +305,278 @@ _terminal_msg normal 🟢'npm:'$(npm -v)
 echo
 }
 
-# Back up user dotfiles for Fedora Secureblue workspace recovery
-workspacesync() {
-    local SRC=$HOME
-    local DEST=$HOME/workspace/dotfiles-backup
+# empowered
+whoseyourdaddy() {
+    run0 --empower && _terminal_msg warning "With great power comes with great responsibility"
+}
 
-    load_progress() {
-        # Get the height of your current terminal window
-        #height=$(tput lines)
-        width=$(tput cols)
-        
-	_terminal_msg_normal " Transfering ...🚀 "
-        for ((i=0; i<height-2; i++)); do
-           # \r resets to start of line; %${i}s prints 'i' spaces; then the package
-	   printf "\r%${i}s📦" ""
-    
-           # Pause for 0.15 seconds (increase for slower, decrease for faster)
-           sleep 0.15
-	done
+workspaceconfigcheck() {
+    _terminal_msg normal "Checklist initialize 📋"
+    echo
+    getpath
+    echo
+    getbash
+    echo
+    _terminal_msg normal "Done with all checks..."
+    _terminal_msg success "Enjoy 🎉"
+    echo
+    _terminal_line bold "1;32" 35
+    echo
+}
 
-	# Reset the cursor
-	tput cnorm
-        echo ""
-      }
+# Workspace navigator
 
-    if [ ! -d "$DEST" ]; then
-       _terminal_msg error " Destination path doesn't exist ⛔ "
-    else
-       _terminal_msg normal " Destination path exists, copying files...📦 "
-       load_progress
-       # 2. Copy the explicit files and directory structures
-       cp ~/.gitconfig "$DEST" || return 1
-       cp ~/.bashrc "$DEST" || return 1
-       cp ~/.bash_profile "$DEST" || return 1
+# Workspace navigator
+workspace() {
+    local target_dir="$HOME/workspace"
+    local item choice keyword selected_folder choice_num i
+    local -a folders=() matches=()
 
-       # 3. Safely copy structures (retaining nested directories)
-       cp -r ~/.cline "$DEST" || return 1
-       cp -r ~/.config/containers "$DEST" || return 1
-
-       # 4. Copy your local workspace code and workspace specifications
-       mkdir -p "$DEST/Documents"
-       cp -r ~/Documents/Cline "$DEST/Documents" || return 1
-       cp -r ~/workspace "$DEST" || return 1
-
-       # 5. Backup your Toolbx containers dynamically into the staging folder
-       # (This creates a clean tar file instead of breaking permissions)
-       if command -v podman >/dev/null 2>&1 && command -v toolbox >/dev/null 2>&1; then
-           podman export $(toolbox list | awk 'NR>1 {print $2}') -o "$DEST/toolbox_backup.tar" || return 1
-       fi
-
-       _terminal_msg success " Done copying files. Bye ☕ "
+    # Validate workspace directory.
+    if [[ ! -d "$target_dir" ]]; then
+        printf 'Error: Directory %s does not exist.\n' "$target_dir" >&2
+        return 1
     fi
 
+    # Discover workspace directories.
+    for item in "$target_dir"/*/; do
+        [[ -d "$item" ]] || continue
+        folders+=("${item%/}")
+    done
+
+    if (( ${#folders[@]} == 0 )); then
+        printf 'No subfolders found in %s.\n' "$target_dir"
+        return 0
+    fi
+
+    # Display initial workspace list.
+    while true; do
+        printf '\n'
+        _terminal_msg normal ' Which folder do you want to enter? 📂 '
+        _terminal_line thin "1;32" 35
+
+        printf '\nAvailable workspaces:\n'
+
+        for i in "${!folders[@]}"; do
+            printf '%2d. %s\n' "$((i + 1))" "${folders[$i]##*/}"
+        done
+
+        # Accept number or keyword.
+        read -r -p $'\nEnter number or keyword (q to quit): ' choice || return 1
+
+        case "${choice,,}" in
+            q|quit|exit)
+                printf 'Cancelled.\n'
+                return 0
+                ;;
+            "")
+                printf 'Error: Input cannot be empty.\n' >&2
+                continue
+                ;;
+        esac
+
+        selected_folder=""
+
+        # Direct numeric selection.
+        if [[ "$choice" =~ ^[0-9]+$ ]]; then
+            choice_num=$((10#$choice))
+
+            if (( choice_num < 1 || choice_num > ${#folders[@]} )); then
+                printf 'Error: Selection out of range.\n' >&2
+                continue
+            fi
+
+            selected_folder="${folders[$((choice_num - 1))]}"
+
+        else
+            # Case-insensitive partial keyword search.
+            keyword="${choice,,}"
+            matches=()
+
+            for item in "${folders[@]}"; do
+                if [[ "${item##*/}" == *"$keyword"* ]]; then
+                    matches+=("$item")
+                fi
+            done
+
+            if (( ${#matches[@]} == 0 )); then
+                printf 'No folders match keyword: %s\n' "$choice" >&2
+                continue
+            fi
+
+            # Display matching results.
+            printf '\nMatching workspaces:\n'
+
+            for i in "${!matches[@]}"; do
+                printf '%2d. %s\n' "$((i + 1))" "${matches[$i]##*/}"
+            done
+
+            # Automatically identify a single match.
+            if (( ${#matches[@]} == 1 )); then
+                selected_folder="${matches[0]}"
+
+                while true; do
+                    read -r -p "Enter '${selected_folder##*/}'? [y/N]: " choice || return 1
+
+                    case "${choice,,}" in
+                        y|yes)
+                            break
+                            ;;
+                        n|no|"")
+                            printf 'Returning to workspace list.\n'
+                            selected_folder=""
+                            break
+                            ;;
+                        *)
+                            printf 'Please enter y or n.\n'
+                            ;;
+                    esac
+                done
+
+                [[ -n "$selected_folder" ]] || continue
+
+            else
+                # Select from multiple matches.
+                read -r -p 'Select matching folder number (0 to go back): ' choice || return 1
+
+                if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+                    printf 'Error: Enter a valid number.\n' >&2
+                    continue
+                fi
+
+                choice_num=$((10#$choice))
+
+                if (( choice_num == 0 )); then
+                    printf 'Returning to workspace list.\n'
+                    continue
+                fi
+
+                if (( choice_num < 1 || choice_num > ${#matches[@]} )); then
+                    printf 'Error: Selection out of range.\n' >&2
+                    continue
+                fi
+
+                selected_folder="${matches[$((choice_num - 1))]}"
+            fi
+        fi
+
+        # Enter selected workspace.
+        if [[ -n "$selected_folder" ]]; then
+            if ! cd -- "$selected_folder"; then
+                printf 'Error: Could not enter directory.\n' >&2
+                return 1
+            fi
+
+            printf 'Moved to: %s\n' "$PWD"
+            return 0
+        fi
+    done
+}
+
+
+# Back up user dotfiles for Fedora Secureblue workspace recovery
+workspacesync() {
+    local SRC="$HOME" DEST="$HOME/workspace/dotfiles-backup"
+
+    if [[ ! -d "$DEST" ]]; then
+        _terminal_msg error "Destination path does not exist: $DEST"
+        return 1
+    fi
+
+    _terminal_msg normal "Backing up workspace configuration and files..."
+    run_with_loader "Running" bash -c '
+        set -e
+        src=$1 dest=$2
+        for file in .gitconfig .bashrc .bash_profile; do
+            [[ ! -f "$src/$file" ]] || cp -p -- "$src/$file" "$dest/"
+        done
+        [[ ! -d "$src/.cline" ]] || cp -a -- "$src/.cline" "$dest/"
+        [[ ! -d "$src/.config/containers" ]] || {
+            mkdir -p -- "$dest/.config"
+            cp -a -- "$src/.config/containers" "$dest/.config/"
+        }
+        if [[ -d "$src/Documents/Cline" ]]; then
+            mkdir -p -- "$dest/Documents"
+            cp -a -- "$src/Documents/Cline" "$dest/Documents/"
+        fi
+        # The destination is inside ~/workspace; copying that tree into itself
+        # would recurse. Back up workspace entries except the backup directory.
+        if [[ -d "$src/workspace" ]]; then
+            mkdir -p -- "$dest/workspace"
+            for item in "$src/workspace"/* "$src/workspace"/.[!.]* "$src/workspace"/..?*; do
+                [[ -e "$item" ]] || continue
+                [[ "$item" == "$dest" ]] && continue
+                cp -a -- "$item" "$dest/workspace/"
+            done
+        fi
+        if command -v podman >/dev/null 2>&1 && command -v toolbox >/dev/null 2>&1; then
+            mapfile -t ids < <(toolbox list --containers 2>/dev/null | awk "NR>1 {print \$1}")
+            if ((${#ids[@]})); then
+                mkdir -p -- "$dest/toolbox-backups"
+                for id in "${ids[@]}"; do
+                    safe_id=${id//[^a-zA-Z0-9_.-]/_}
+                    podman export "$id" -o "$dest/toolbox-backups/${safe_id}.tar"
+                done
+            fi
+        fi
+    ' _ "$SRC" "$DEST" || {
+        _terminal_msg error "Workspace backup failed."
+        return 1
+    }
+
+    _terminal_msg success "Workspace backup completed."
 }
 
 # install AI assistants
-workspaceai() {
-    local loader_pid=""
-    local had_job_control=0
-    local log_file
-    log_file=$(mktemp "${TMPDIR:-/tmp}/workspaceai.XXXXXX.log")
-
-    # Query terminal width before backgrounding (when /dev/tty is attached)
-    local term_width
-    term_width=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
-    [[ "$term_width" =~ ^[0-9]+$ ]] && (( term_width > 6 )) || term_width=40
-
-    # Animated loader
-    _load_progress() {
-        local max=$(( term_width - 4 ))
-        local i
-        printf '\033[?25l' >/dev/tty 2>/dev/null || return 0
-
-        while :; do
-            for ((i=0; i<=max; i++)); do
-                printf '\r\033[K%*s📦' "$i" "" >/dev/tty 2>/dev/null || exit 0
-                sleep 0.05
-            done
-            for ((i=max; i>=0; i--)); do
-                printf '\r\033[K%*s📦' "$i" "" >/dev/tty 2>/dev/null || exit 0
-                sleep 0.05
-            done
-        done
-    }
-
-    # Guaranteed cleanup on normal return, error, or Ctrl+C
-    _cleanup_workspaceai() {
-        if [[ -n "$loader_pid" ]]; then
-            kill "$loader_pid" 2>/dev/null || :
-            wait "$loader_pid" 2>/dev/null || :
-            loader_pid=""
-        fi
-        printf '\r\033[K\033[?25h' >/dev/tty 2>/dev/null || :
-        (( had_job_control )) && set -m
-        rm -f "$log_file"
-        trap - RETURN INT TERM
-    }
-
-    # Helper to print status cleanly without colliding with the loader line
-    _step_msg() {
-        printf '\r\033[K' >/dev/tty 2>/dev/null || :
-        _terminal_msg normal "$1"
-    }
-
-    # Helper to run noisy commands silently while loader animates; dumps log on failure
-    _run_step() {
-        local desc="$1"
-        shift
-        _step_msg "$desc"
-        if ! "$@" >>"$log_file" 2>&1; then
-            _cleanup_workspaceai
-            _terminal_msg error "Failed: $desc (see output below)"
-            cat "$log_file" >&2
-            return 1
-        fi
-    }
-
-    trap _cleanup_workspaceai RETURN INT TERM
-
-    case "$-" in
-        *m*) had_job_control=1; set +m ;;
-    esac
-
-    # Start loader only if attached to an interactive terminal
-    if [[ -w /dev/tty ]]; then
-        _load_progress >/dev/null 2>&1 &
-        loader_pid=$!
-    fi
-
-    # 1. Load existing NVM and PATH first so checks can detect installed binaries
-    _step_msg "Exporting deps"
+getaitools(){
     export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+    [[ ! -s "$NVM_DIR/nvm.sh" ]] || . "$NVM_DIR/nvm.sh"
+    [[ ! -s "$NVM_DIR/bash_completion" ]] || . "$NVM_DIR/bash_completion"
 
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
         *) export PATH="$HOME/.local/bin:$PATH" ;;
     esac
 
-    # 2. Check & install nvm, node, npm
-    if command -v nvm >/dev/null 2>&1 && command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-        _step_msg "nvm, node, and npm already installed — skipping"
+    if ! command -v nvm >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+        _terminal_msg normal "Installing nvm, Node.js, and npm..."
+        run_with_loader "Running" workspacenode || return $?
+        [[ ! -s "$NVM_DIR/nvm.sh" ]] || . "$NVM_DIR/nvm.sh"
+        [[ ! -s "$NVM_DIR/bash_completion" ]] || . "$NVM_DIR/bash_completion"
     else
-        _run_step "Installing nvm, node, npm" workspacenode || return 1
-        # Re-source nvm in case workspacenode just installed it
-        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+        _terminal_msg success " nvm, node, and npm are already installed."
     fi
 
-    # 3. Check & install cline CLI
-    if command -v cline >/dev/null 2>&1; then
-        _step_msg "cline cli already installed — skipping"
+    if ! command -v cline >/dev/null 2>&1; then
+        _terminal_msg normal "Installing Cline CLI..."
+        run_with_loader "Running" npm install -g cline --no-progress || return $?
     else
-        _run_step "Installing cline cli" npm install -g cline --no-progress || return 1
+        _terminal_msg success " Cline CLI is already installed."
     fi
 
-    # 4. Check & install devin CLI
-    if command -v devin >/dev/null 2>&1 || [ -x "$HOME/.local/bin/devin" ]; then
-        _step_msg "devin cli already installed — skipping"
+    if ! command -v devin >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/devin" ]]; then
+        _terminal_msg normal "Installing Devin CLI..."
+        run_with_loader "Running" bash -c 'curl -fsSL https://devin.ai | bash' || return $?
     else
-        _run_step "Installing devin cli" bash -c 'curl -fsSL https://devin.ai | bash' || return 1
+        _terminal_msg success " Devin CLI is already installed."
     fi
+    
+    if ! command -v mistral >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/mistral" ]]; then
+        _terminal_msg normal "Installing Mistral CLI..."
+        run_with_loader "Running" bash -c 'curl -fsSL https://mistral.ai/vibe/install.sh | bash && uv tool install mistral-vibe' || return $?
+    else
+        _terminal_msg success " Mistral CLI is already installed."
+    fi
+    
 
-    _cleanup_workspaceai
-    _terminal_msg normal "Workspace AI setup complete ✅"
+    _terminal_msg success " Workspace AI setup complete. 🧠"
 }
 
-
+mistralfix(){
+_terminal_msg normal "Running vibe fix 'pip install --user --force-reinstall vibe'"
+command -v pip >/dev/null 2>&1 && pip install --user --force-reinstall mistral-vibe || echo "pip is not installed"
+_terminal_msg normal "If it returns an error msg e.g. 'externally-managed-environment', run this command 'pipx install mistral-vibe' or 'uv tool install mistral-vibe'"
+}
 
 # Dedicated SSH agent for the home-security key
 workspaceagent() {
@@ -559,6 +646,7 @@ _terminal_msg normal "🐧 Termination signals sent. Processes may take time to 
 
 # Generate SSH and GPG keys for Github
 workspacegenkeys(){
+local git_name git_email key_passphrase ssh_key_name ssh_key_path gpg_key_id gpg_batch gpg_rc
 # --- 1. Gather User Details ---
 read -rp "Enter your GitHub Name: " git_name
 read -rp "Enter your GitHub Email: " git_email
@@ -575,14 +663,15 @@ mkdir -p -m 700 "$HOME/.ssh"
 if [[ -f "$ssh_key_path" ]]; then
     _terminal_msg warning "[!] $ssh_key_path already exists ⚠️. Skipping SSH key generation."
 else
-    ssh-keygen -t ed25519 -C "$git_email" -f "$ssh_key_path" -N "$key_passphrase"
-    chmod 600 "$ssh_key_path"
-    chmod 644 "${ssh_key_path}.pub"
+    run_with_loader "Running" ssh-keygen -t ed25519 -C "$git_email" -f "$ssh_key_path" -N "$key_passphrase" || return $?
+    chmod 600 "$ssh_key_path" || return $?
+    chmod 644 "${ssh_key_path}.pub" || return $?
 fi
 
 # --- 3. Generate GPG Key (RSA 4096) ---
 echo "[*] Generating 4096-bit RSA GPG key...🚀"
-gpg --batch --generate-key <<EOF
+gpg_batch=$(mktemp "${TMPDIR:-/tmp}/gpg-batch.XXXXXX") || return 1
+cat >"$gpg_batch" <<EOF
 %echo Generating GitHub GPG key
 Key-Type: RSA
 Key-Length: 4096
@@ -595,17 +684,26 @@ Passphrase: $key_passphrase
 %commit
 %echo Done
 EOF
+chmod 600 "$gpg_batch" || {
+    rm -f -- "$gpg_batch"
+    return 1
+}
+run_with_loader "Running" gpg --batch --generate-key "$gpg_batch"
+gpg_rc=$?
+rm -f -- "$gpg_batch"
+(( gpg_rc == 0 )) || return "$gpg_rc"
+
 
 # Extract the newly created GPG Key ID (Long format)
 gpg_key_id=$(gpg --list-secret-keys --keyid-format=long "$git_email" | awk '/sec/{print $2}' | cut -d'/' -f2 | tail -n 1)
 
 # --- 4. Configure Global Git Settings ---
 _terminal_msg normal "[*] Configuring Git...🚀"
-git config --global user.name "$git_name"
-git config --global user.email "$git_email"
-git config --global user.signingkey "$gpg_key_id"
-git config --global commit.gpgsign true
-git config --global gpg.program "$(command -v gpg)"
+run_with_loader "Running" git config --global user.name "$git_name" || return $?
+run_with_loader "Running" git config --global user.email "$git_email" || return $?
+run_with_loader "Running" git config --global user.signingkey "$gpg_key_id" || return $?
+run_with_loader "Running" git config --global commit.gpgsign true || return $?
+run_with_loader "Running" git config --global gpg.program "$(command -v gpg)" || return $?
 
 # --- 5. Output Public Keys for GitHub ---
 _terminal_msg success "Done generating SSH and GPG keys!🔑🚀"
@@ -615,7 +713,7 @@ _terminal_msg warning "  🔑 SSH public key : (Proceed to add in GH)"
 cat "${ssh_key_path}.pub"
 sleep 2
 
-_print_line bold "1;32" 35
+_terminal_line bold "1;32" 35
 
 _terminal_msg warning"  🔑 GPG public key: (Proceed to add in GH)"
 gpg --armor --export "$gpg_key_id"
@@ -634,7 +732,7 @@ _gvariant_quote() {
 }
 
 # Interactive GNOME Custom Keyboard Shortcuts Manager. Simply add keyboard shortcuts.
-myshortcutkeys() {
+workspaceshortcuts() {
     if ! command -v gsettings >/dev/null 2>&1; then
         _terminal_msg error "gsettings not found. A compatible GNOME settings schema is required."
         return 1
@@ -715,10 +813,10 @@ myshortcutkeys() {
         quoted_binding=$(_gvariant_quote "$binding")
         quoted_path=$(_gvariant_quote "$new_path")
 
-        # Configure the shortcut before registering it.
-        gsettings set "$schema_path" name "$quoted_name" || return 1
-        gsettings set "$schema_path" command "$quoted_cmd" || return 1
-        gsettings set "$schema_path" binding "$quoted_binding" || return 1
+        # Prompts above remain interactive; animate only the non-interactive writes.
+        run_with_loader "Running" gsettings set "$schema_path" name "$quoted_name" || return 1
+        run_with_loader "Running" gsettings set "$schema_path" command "$quoted_cmd" || return 1
+        run_with_loader "Running" gsettings set "$schema_path" binding "$quoted_binding" || return 1
 
         # Register the path only if it does not already exist.
         if [[ "$current_bindings" != *"$new_path"* ]]; then
@@ -728,7 +826,7 @@ myshortcutkeys() {
                 updated_bindings="${current_bindings%]}, $quoted_path]"
             fi
 
-            gsettings set "$SCHEMA" custom-keybindings "$updated_bindings" || return 1
+            run_with_loader "Running" gsettings set "$SCHEMA" custom-keybindings "$updated_bindings" || return 1
         fi
 
         _terminal_msg success "Configured shortcut '$name' ($binding) -> '$cmd'"
@@ -766,7 +864,7 @@ myshortcutkeys() {
 
 # Optional one-time Ptyxis shortcut provisioning.
 # Manually execute: setup_ptyxis_shortcut
-setup_ptyxis_shortcut() {
+workspaceterminalshortcut() {
     if ! command -v gsettings >/dev/null 2>&1; then
         _terminal_msg error "gsettings not found."
         return 1
@@ -784,10 +882,10 @@ setup_ptyxis_shortcut() {
         return 1
     fi
 
-    # Configure Ptyxis shortcut.
-    gsettings set "$schema_path" name "$(_gvariant_quote "Ptyxis New Window")" || return 1
-    gsettings set "$schema_path" command "$(_gvariant_quote "ptyxis --new-window")" || return 1
-    gsettings set "$schema_path" binding "$(_gvariant_quote "<Control>1")" || return 1
+    # Configure the shortcut; there are no prompts or live output in this phase.
+    run_with_loader "Running" gsettings set "$schema_path" name "$(_gvariant_quote "Ptyxis New Window")" || return 1
+    run_with_loader "Running" gsettings set "$schema_path" command "$(_gvariant_quote "ptyxis --new-window")" || return 1
+    run_with_loader "Running" gsettings set "$schema_path" binding "$(_gvariant_quote "<Control>1")" || return 1
 
     # Register only if not already present.
     if [[ "$current_bindings" != *"$NEW_PATH"* ]]; then
@@ -804,12 +902,11 @@ setup_ptyxis_shortcut() {
 
     _terminal_msg success "Ptyxis shortcut configured: Ctrl+1"
 }
-# Whitelist podman image
-podwhitelist() {
-    local input_path repo_scope policy_file answer
-    local toolbox_name
 
-    policy_file="$HOME/.config/containers/policy.json"
+# Whitelist podman image
+podimage() {
+    local input_path repo_scope answer
+    local toolbox_name
 
     read -rp "Enter container image path (e.g., quay.io/fedora/fedora-toolbox:latest): " input_path
 
@@ -825,23 +922,10 @@ podwhitelist() {
         repo_scope="${repo_scope%:*}"
     fi
 
-    # Ensure user-level policy.json exists
-    if [[ ! -f "$policy_file" ]]; then
-        mkdir -p "$HOME/.config/containers" || return 1
-
-        if [[ -f "/etc/containers/policy.json" ]]; then
-            cp "/etc/containers/policy.json" "$policy_file" || return 1
-        else
-            printf '%s\n' '{"default":[{"type":"reject"}]}' > "$policy_file" || return 1
-        fi
-    fi
-
-    # Whitelist image repository
-    if ! podman image trust set \
-        --signature-policy "$policy_file" \
-        --type accept \
-        "$repo_scope"; then
-        echo "Error: Failed to whitelist image." >&2
+    # Update the active Podman signature policy for this repository scope.
+    # image trust set does not accept a --signature-policy option.
+    if ! podman image trust set --type accept "$repo_scope"; then
+        echo "Error: Failed to whitelist image repository: $repo_scope" >&2
         return 1
     fi
 
@@ -857,7 +941,7 @@ podwhitelist() {
             [yY]|[yY][eE][sS])
                 echo "Pulling image: $input_path"
 
-                if ! podman pull "$input_path"; then
+                if ! run_with_loader "Running" podman pull "$input_path"; then
                     echo "Error: Failed to pull image." >&2
                     return 1
                 fi
@@ -898,7 +982,6 @@ podwhitelist() {
 
             read -rp "Enter Toolbox container name [custom-toolbox]: " toolbox_name
             toolbox_name="${toolbox_name:-custom-toolbox}"
-
             # Check if Toolbox container already exists and is running
             if toolbox list --containers | grep -Fq "$toolbox_name"; then
                 if podman container exists "$toolbox_name"; then
@@ -926,7 +1009,7 @@ podwhitelist() {
 
             echo "Creating Toolbox container: $toolbox_name"
 
-            if ! toolbox create \
+            if ! run_with_loader "Running" toolbox create \
                 --container "$toolbox_name" \
                 --image "$input_path"; then
                 _terminal_msg error "Error: Failed to create Toolbox container."
@@ -942,22 +1025,38 @@ podwhitelist() {
     esac
 }
 
-# Setup rootless podam
-podsetuprootless() {
+# Setup rootless podman
+# This is the rootless setup
+# Setup rootless podman
+podrootless() {
     local sock_path="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
     local host_uri="unix://${sock_path}"
+
+    # Remote-only podman client (Secureblue): local socket impossible.
+    if ! podman system service --help >/dev/null 2>&1; then
+        [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman-machine-default-api.sock" ]] \
+            || run_with_loader "Running" podman machine start || true
+        export CONTAINER_HOST="unix:///run/user/1000/podman/podman-machine-default-api.sock"
+        export DOCKER_HOST="$CONTAINER_HOST"
+        grep -qxF "export CONTAINER_HOST=\"$CONTAINER_HOST\"" "$HOME/.bashrc" \
+            || printf 'export CONTAINER_HOST="%s"\n' "$CONTAINER_HOST" >> "$HOME/.bashrc"
+        grep -qxF "export DOCKER_HOST=\"$DOCKER_HOST\"" "$HOME/.bashrc" \
+            || printf 'export DOCKER_HOST="%s"\n' "$DOCKER_HOST" >> "$HOME/.bashrc"
+        _terminal_msg normal "Rootless Podman via podman machine: $CONTAINER_HOST"
+        return 0
+    fi
 
     # 1. Restart only podman.socket on the host (let systemd socket activation start podman.service on demand)
     if [ -f /run/.containerenv ]; then
         echo "Detected Toolbox environment. Restarting host rootless Podman socket..."
-        flatpak-spawn --host systemctl --user reset-failed podman.socket podman.service 2>/dev/null
-        flatpak-spawn --host systemctl --user enable --now podman.socket
-        flatpak-spawn --host systemctl --user restart podman.socket
+        run_with_loader "Running" flatpak-spawn --host systemctl --user reset-failed podman.socket podman.service 2>/dev/null || return $?
+        run_with_loader "Running" flatpak-spawn --host systemctl --user enable --now podman.socket || return $?
+        run_with_loader "Running" flatpak-spawn --host systemctl --user restart podman.socket || return $?
     else
         echo "Restarting rootless Podman socket on host..."
-        systemctl --user reset-failed podman.socket podman.service 2>/dev/null
-        systemctl --user enable --now podman.socket
-        systemctl --user restart podman.socket
+        run_with_loader "Running" systemctl --user reset-failed podman.socket podman.service 2>/dev/null || return $?
+        run_with_loader "Running" systemctl --user enable --now podman.socket || return $?
+        run_with_loader "Running" systemctl --user restart podman.socket || return $?
     fi
 
     # 2. Export and persist socket variables
@@ -974,39 +1073,95 @@ podsetuprootless() {
 
     # 4. Verify socket using podman --remote (works on both host and Toolbox)
     if [ -S "${sock_path}" ] && podman --remote --url "${host_uri}" info >/dev/null 2>&1; then
-        echo "Success: Rootless Podman socket is active at ${host_uri}"
+        _terminal_msg success "Success: Rootless Podman socket is active at ${host_uri}"
     else
-        echo "Error: Socket check failed. Details:"
+        _terminal_msg error "Error: Socket check failed. Details:"
         podman --remote --url "${host_uri}" info
         return 1
     fi
 }
 
-# Reset
-podrecoverrootless() {
-    local socket_path
 
-    socket_path="${XDG_RUNTIME_DIR}/podman/podman.sock"
 
-    # Validate prerequisites
-    if ! command -v podman >/dev/null 2>&1; then
-        echo "Error: Podman is not installed." >&2
+# Recover rootless Podman (Host / Toolbox)
+podrecoverstate() {
+    local uid runtime_dir socket_path host_uri
+    local answer bashrc
+    local -a systemctl_cmd
+
+    # Remote-only podman client (Secureblue): local socket impossible.
+    if ! podman system service --help >/dev/null 2>&1; then
+        [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman-machine-default-api.sock" ]] \
+            || run_with_loader "Running" podman machine start || true
+        export CONTAINER_HOST="unix:///run/user/1000/podman/podman-machine-default-api.sock"
+        export DOCKER_HOST="$CONTAINER_HOST"
+        grep -qxF "export CONTAINER_HOST=\"$CONTAINER_HOST\"" "$HOME/.bashrc" \
+            || printf 'export CONTAINER_HOST="%s"\n' "$CONTAINER_HOST" >> "$HOME/.bashrc"
+        grep -qxF "export DOCKER_HOST=\"$DOCKER_HOST\"" "$HOME/.bashrc" \
+            || printf 'export DOCKER_HOST="%s"\n' "$DOCKER_HOST" >> "$HOME/.bashrc"
+        _terminal_msg normal "Rootless Podman via podman machine: $CONTAINER_HOST"
+        return 0
+    fi
+
+    # --------------------------------------------------
+    # 1. Validate prerequisites
+    # --------------------------------------------------
+
+    for cmd in podman systemctl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            _terminal_msg error "Required command unavailable: $cmd"
+            return 1
+        fi
+    done
+
+    uid=$(id -u)
+    runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
+    socket_path="${runtime_dir}/podman/podman.sock"
+    host_uri="unix://${socket_path}"
+    bashrc="${HOME}/.bashrc"
+
+    if [[ ! -d "$runtime_dir" ]]; then
+        _terminal_msg error "Runtime directory unavailable: ${runtime_dir}"
         return 1
     fi
 
-    if ! command -v systemctl >/dev/null 2>&1; then
-        echo "Error: systemctl is unavailable." >&2
+    if [[ "$(stat -c '%u' "$runtime_dir" 2>/dev/null)" != "$uid" ]]; then
+        _terminal_msg error "Runtime directory ownership mismatch."
         return 1
     fi
 
-    if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
-        echo "Error: XDG_RUNTIME_DIR is not configured." >&2
-        return 1
+    # --------------------------------------------------
+    # 2. Detect execution environment
+    # --------------------------------------------------
+
+    if [[ -f /run/.containerenv ]]; then
+
+        if ! command -v flatpak-spawn >/dev/null 2>&1; then
+            _terminal_msg error "flatpak-spawn is unavailable inside Toolbox."
+            return 1
+        fi
+
+        systemctl_cmd=(flatpak-spawn --host systemctl --user)
+
+        _terminal_msg normal "Detected Toolbox environment."
+        _terminal_msg normal "Host systemd will manage rootless Podman."
+
+    else
+
+        systemctl_cmd=(systemctl --user)
+
+        _terminal_msg normal "Detected Fedora host environment."
+
     fi
 
-    # Confirm destructive impact of stopping containers
-    _terminal_msg warning "WARNING: All rootless Podman containers will be stopped."
-    read -rp "Continue? [y/N]: " answer
+    # --------------------------------------------------
+    # 3. Confirm recovery
+    # --------------------------------------------------
+
+    _terminal_msg warning "Podman API socket will be restarted."
+    _terminal_msg normal "Running containers, images, and volumes will be preserved."
+
+    read -r -p "Continue? [y/N]: " answer
 
     case "$answer" in
         [yY]|[yY][eE][sS]) ;;
@@ -1016,57 +1171,291 @@ podrecoverrootless() {
             ;;
     esac
 
-    _terminal_msg normal "Stopping rootless Podman services"
+    # --------------------------------------------------
+    # 4. Reset failed systemd units
+    # --------------------------------------------------
 
-    if ! systemctl --user stop podman.socket podman.service; then
-        echo "Error: Failed to stop Podman services." >&2
+    _terminal_msg normal "Resetting failed Podman systemd units."
+
+    if ! run_with_loader "Running" \
+        "${systemctl_cmd[@]}" reset-failed podman.socket podman.service; then
+        _terminal_msg error "Failed to reset Podman systemd units."
         return 1
     fi
 
-    # Stop all running containers gracefully
-    if ! podman stop --all --time 10; then
-        echo "Error: Failed to stop all containers." >&2
+    # --------------------------------------------------
+    # 5. Enable Podman socket
+    # --------------------------------------------------
+
+    _terminal_msg normal "Ensuring Podman socket is enabled."
+
+    if ! run_with_loader "Running" \
+        "${systemctl_cmd[@]}" enable podman.socket; then
+        _terminal_msg error "Failed to enable podman.socket."
         return 1
     fi
 
-    # Confirm no containers remain running
-    if [[ -n "$(podman ps --quiet)" ]]; then
-        echo "Error: Running containers remain." >&2
+    # --------------------------------------------------
+    # 6. Restart Podman socket
+    # --------------------------------------------------
+
+    _terminal_msg normal "Restarting rootless Podman socket."
+
+    if ! run_with_loader "Running" \
+        "${systemctl_cmd[@]}" restart podman.socket; then
+        _terminal_msg error "Failed to restart podman.socket."
         return 1
     fi
 
-    _terminal_msg normal "Migrating rootless Podman storage"
+    # --------------------------------------------------
+    # 7. Verify socket activation
+    # --------------------------------------------------
 
-    if ! podman system migrate; then
-        echo "Error: Podman system migration failed." >&2
+    if ! "${systemctl_cmd[@]}" is-active --quiet podman.socket; then
+        _terminal_msg error "Podman socket is not active."
         return 1
     fi
 
-    _terminal_msg normal "Restarting rootless Podman socket"
+    # --------------------------------------------------
+    # 8. Verify socket availability
+    # --------------------------------------------------
 
-    systemctl --user reset-failed
-
-    if ! systemctl --user start podman.socket; then
-        echo "Error: Failed to start podman.socket." >&2
+    if [[ ! -S "$socket_path" ]]; then
+        _terminal_msg error "Podman socket file is unavailable: ${socket_path}"
         return 1
     fi
 
-    # Verify Docker-compatible Podman API
-    if ! podman --remote \
-        --url "unix://${socket_path}" \
-        info >/dev/null; then
-        echo "Error: Rootless Podman API is unavailable." >&2
+    # --------------------------------------------------
+    # 9. Verify remote Podman API
+    # --------------------------------------------------
+
+    _terminal_msg normal "Verifying rootless Podman API connectivity."
+
+    if ! run_with_loader "Running" \
+        podman --remote --url "$host_uri" info; then
+
+        _terminal_msg error "Rootless Podman API verification failed."
         return 1
     fi
 
-    _terminal_msg normal "Podman Status"
+    # --------------------------------------------------
+    # 10. Configure Docker-compatible environment
+    # --------------------------------------------------
 
-    systemctl --user status podman.socket --no-pager
-    systemctl --user status podman.service --no-pager
+    export CONTAINER_HOST="$host_uri"
+    export DOCKER_HOST="$host_uri"
+
+    # --------------------------------------------------
+    # 11. Persist environment variables
+    # --------------------------------------------------
+
+    if [[ ! -e "$bashrc" ]]; then
+        if ! touch "$bashrc"; then
+            _terminal_msg error "Cannot create ${bashrc}."
+            return 1
+        fi
+    fi
+
+    if [[ ! -w "$bashrc" ]]; then
+        _terminal_msg error "Cannot write to ${bashrc}."
+        return 1
+    fi
+
+    if ! grep -qxF "export CONTAINER_HOST=\"${host_uri}\"" "$bashrc"; then
+        if ! printf 'export CONTAINER_HOST="%s"\n' "$host_uri" >> "$bashrc"; then
+            _terminal_msg error "Failed to persist CONTAINER_HOST."
+            return 1
+        fi
+    fi
+
+    if ! grep -qxF "export DOCKER_HOST=\"${host_uri}\"" "$bashrc"; then
+        if ! printf 'export DOCKER_HOST="%s"\n' "$host_uri" >> "$bashrc"; then
+            _terminal_msg error "Failed to persist DOCKER_HOST."
+            return 1
+        fi
+    fi
+
+    # --------------------------------------------------
+    # 12. Final verification
+    # --------------------------------------------------
 
     echo
-    echo "Rootless Podman reset completed successfully."
+    _terminal_line bold "1;32" 35
+
+    _terminal_msg success "Rootless Podman recovery completed."
+
+    printf 'Environment: %s\n' \
+        "$([[ -f /run/.containerenv ]] && echo Toolbox || echo Host)"
+
+    printf 'User:        %s\n' "$USER"
+    printf 'UID:         %s\n' "$uid"
+    printf 'Socket:      %s\n' "$socket_path"
+    printf 'Socket URI:  %s\n' "$host_uri"
+    printf 'Socket:      %s\n' "$("${systemctl_cmd[@]}" show -p ActiveState --value podman.socket)"
+    printf 'Service:     %s\n' "$("${systemctl_cmd[@]}" show -p ActiveState --value podman.service)"
+    printf 'Docker Host: %s\n' "$DOCKER_HOST"
+    echo
+
+    _terminal_msg success "Podman API is operational."
+    _terminal_msg normal "No containers, images, or volumes were removed."
 }
+
+
+# Podman reset all
+podresetall() {
+    local uid
+    uid=$(id -u)
+
+    _terminal_line bold "1;32" 35
+    _terminal_msg normal "Checking Podman socket and service 🚀"
+
+    # Recover Podman socket if inactive.
+    if ! systemctl --user is-active --quiet podman.socket; then
+
+        if ! run_with_loader "Running" systemctl --user stop podman.service; then
+            _terminal_msg error "Error: Failed to stop podman.service" >&2
+            return 1
+        fi
+
+        if ! run_with_loader "Running" systemctl --user stop podman.socket; then
+            _terminal_msg error "Error: Failed to stop podman.socket" >&2
+            return 1
+        fi
+
+        if ! run_with_loader "Running" systemctl --user start podman.socket; then
+            _terminal_msg error "Error: Failed to start podman.socket" >&2
+            return 1
+        fi
+    fi
+
+    # Verify socket.
+    if ! systemctl --user is-active --quiet podman.socket; then
+        _terminal_msg error "Error: podman.socket is not active"
+        return 1
+    fi
+
+    # Verify Podman CLI.
+    if ! run_with_loader "Running" podman info; then
+        _terminal_msg error "Error: Podman is not operational"
+        return 1
+    fi
+
+    echo
+    echo "Socket: $(systemctl --user show -p ActiveState,SubState --value podman.socket | paste -sd '/') ✅"
+    echo "Service: $(systemctl --user show -p ActiveState,SubState --value podman.service | paste -sd '/')"
+    echo
+
+    # Prune Podman resources.
+    _terminal_line bold "1;32" 35
+    _terminal_msg normal "Pruning Podman resources ✂️"
+
+    if ! run_with_loader "Running" podman stop --all; then
+        _terminal_msg error "Error: Failed to stop all Podman containers" >&2
+        return 1
+    fi
+
+  #  if ! run_with_loader "Running" podman rm --all --force; then
+  #    _terminal_msg error "Error: Failed to remove all Podman containers" >&2
+  #      return 1
+  #  fi
+  #
+  #  if ! run_with_loader "Running" podman system prune --all --volumes --force; then
+  #      _terminal_msg error "Error: Failed to prune Podman resources" >&2
+  #      return 1
+  #  fi
+
+    _terminal_msg success "Podman resources have been reset."
+
+    # Re-check Podman socket after pruning.
+    _terminal_line bold "1;32" 35
+    _terminal_msg normal "Re-checking Podman socket after pruning 🚀"
+
+    if ! systemctl --user is-active --quiet podman.socket; then
+        if ! run_with_loader "Running" systemctl --user restart podman.socket; then
+            _terminal_msg error "Error: Failed to restart podman.socket" >&2
+            return 1
+        fi
+    fi
+
+    if ! systemctl --user is-active --quiet podman.socket; then
+        _terminal_msg error "Error: Podman socket failed to recover"
+        return 1
+    fi
+
+    if ! run_with_loader "Running" podman info; then
+        _terminal_msg error "Error: Podman failed post-pruning verification"
+        return 1
+    fi
+
+    echo
+    echo "Socket: $(systemctl --user show -p ActiveState,SubState --value podman.socket | paste -sd '/') ✅"
+    echo "Service: $(systemctl --user show -p ActiveState,SubState --value podman.service | paste -sd '/')"
+    echo
+
+    # Configure automatic startup.
+    _terminal_line bold "1;32" 35
+    _terminal_msg normal "Ensuring Podman socket starts automatically 🚀"
+
+    if ! run_with_loader "Running" loginctl enable-linger "$USER"; then
+        _terminal_msg error "Error: Failed to enable lingering for $USER" >&2
+        return 1
+    fi
+
+    if ! run_with_loader "Running" systemctl --user enable --now podman.socket; then
+        _terminal_msg error "Error: Failed to enable podman.socket" >&2
+        return 1
+    fi
+
+    # Verify socket enablement.
+    if ! run_with_loader "Running" systemctl --user is-enabled podman.socket; then
+        _terminal_msg error "Error: podman.socket is not enabled" >&2
+        return 1
+    fi
+
+    # Verify socket activation.
+    if ! run_with_loader "Running" systemctl --user is-active podman.socket; then
+        _terminal_msg error "Error: podman.socket is not active" >&2
+        return 1
+    fi
+
+    # Configure Docker-compatible clients.
+    export DOCKER_HOST="unix:///run/user/${uid}/podman/podman.sock"
+
+    # Verify socket file.
+    if [[ ! -S "/run/user/${uid}/podman/podman.sock" ]]; then
+        _terminal_msg error "Error: Podman API socket file does not exist" >&2
+        return 1
+    fi
+
+    _terminal_line bold "1;32" 35
+    _terminal_msg success "Podman reset completed successfully."
+    _terminal_msg normal "Podman socket is enabled, active, and configured for automatic startup."
+    _terminal_msg normal "DOCKER_HOST=${DOCKER_HOST}"
+}
+
+# systemic restart
+podsystemrestart(){
+
+   freshstart(){
+      unset CONTAINER_HOST
+      _terminal_msg normal "Stopping podman resources...⌛"
+      systemctl --user stop podman.socket
+      systemctl --user stop podman.service
+      _terminal_msg normal "Inprogress... ⏳🌐 "
+      sleep 5
+      systemctl --user start podman.socket
+      systemctl --user start podman.service
+      _terminal_msg success "Started podman resources. 🟢"
+   }
+
+   _terminal_msg normal "Attempting to refresh podman resources ⚠️ "
+   if freshstart; then
+      _terminal_msg success "Refreshed. ✅"
+   else
+      if podrootless; then :; elif podmanrecover; then :; elif podmanresetall; then :; fi
+   fi
+}
+
 
 # Install gcloud
 workspaceinstallgcloud(){
@@ -1140,6 +1529,51 @@ EOF
     gcloud --version
 }
 
+# Create/reuse a Fedora Toolbox, upgrade it, install Google Cloud CLI, and enter it.
+# Usage: gcloudtoolbox [container-name]
+gcloudtoolbox() {
+    local container_name="${1:-gcloud-dev}" arch
+    if (( $# > 1 )) || [[ ! "$container_name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        printf 'Usage: gcloudtoolbox [container-name]\n' >&2
+        return 2
+    fi
+    for cmd in toolbox podman; do
+        command -v "$cmd" >/dev/null 2>&1 || {
+            printf 'Error: Required command not found: %s\n' "$cmd" >&2
+            return 127
+        }
+    done
+    case "$(uname -m)" in
+        x86_64) arch=x86_64 ;;
+        aarch64) arch=aarch64 ;;
+        *) printf 'Error: Unsupported architecture: %s\n' "$(uname -m)" >&2; return 1 ;;
+    esac
+    if podman container exists "$container_name"; then
+        printf 'Reusing Toolbox container: %s\n' "$container_name"
+    else
+        printf 'Creating Toolbox container: %s\n' "$container_name"
+        toolbox create --container "$container_name" || return $?
+    fi
+    toolbox run --container "$container_name" bash -c '
+        set -Eeuo pipefail
+        sudo dnf upgrade --refresh -y
+        sudo tee /etc/yum.repos.d/google-cloud-sdk.repo >/dev/null <<EOF
+[google-cloud-cli]
+name=Google Cloud CLI
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el10-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
+EOF
+        sudo dnf install -y libxcrypt-compat
+        sudo env CLOUDSDK_SKIP_PY_COMPILATION=1 dnf install -y google-cloud-cli
+        gcloud version
+    ' || return $?
+    printf 'Google Cloud CLI setup complete. Entering %s.\n' "$container_name"
+    toolbox enter "$container_name"
+}
+
 # Unified bidirectional workspace sync.
 # Prompts for direction interactively, or pass "up"/"down" (aliases: upload/download)
 # to skip the prompt. Neither direction uses --delete.
@@ -1150,8 +1584,6 @@ gcloud_workspace_sync() {
     local REMOTE_DIR="$BUCKET/workspace"
     local direction="${1:-}"
     local SOURCE_DIR DESTINATION_DIR
-    local LOADER_PID=""
-    local had_job_control=0
     local exit_code=0
     local gcloud_log
 
@@ -1210,73 +1642,19 @@ gcloud_workspace_sync() {
         return 1
     }
 
-    # Animated loader.
-    load_progress() {
-        local width i
-
-        width=$(tput cols 2>/dev/null) || width=40
-        (( width > 4 )) || width=40
-
-        printf '\033[?25l' >/dev/tty 2>/dev/null || :
-
-        while :; do
-            for ((i=0; i<width-3; i++)); do
-                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
-                sleep 0.05
-            done
-
-            for ((i=width-3; i>=0; i--)); do
-                printf '\r\033[K%*s📦' "$i" "" >/dev/tty
-                sleep 0.05
-            done
-        done
-    }
-
-    # Stop loader and restore cursor.
-    stop_loader() {
-        if [[ -n "$LOADER_PID" ]]; then
-            kill "$LOADER_PID" 2>/dev/null || :
-            wait "$LOADER_PID" 2>/dev/null || :
-            LOADER_PID=""
-        fi
-
-        printf '\r\033[K\033[?25h' >/dev/tty 2>/dev/null || :
-    }
-
     _terminal_msg normal "Direction: $([[ "$direction" == up ]] && echo 'Upload 📤' || echo 'Download 📥')"
     _terminal_msg normal "Source: $SOURCE_DIR"
     _terminal_msg normal "Destination: $DESTINATION_DIR"
     _terminal_msg normal "Project: $PROJECT_ID"
 
-    # Suppress background-job notifications while loader runs.
-    case "$-" in
-        *m*) had_job_control=1; set +m ;;
-    esac
-
-    # Start animated loader.
-    load_progress >/dev/null 2>&1 &
-    LOADER_PID=$!
-
-    # Execute GCloud synchronization in the chosen direction.
-    if CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:gcloud)" \
-        gcloud storage rsync "$SOURCE_DIR" "$DESTINATION_DIR" \
-            --recursive \
-            --quiet \
-            --project="$PROJECT_ID" \
-            >/dev/null 2>"$gcloud_log"; then
-
-        exit_code=0
-    else
-        exit_code=$?
-    fi
-
-    # Always stop loader after GCloud returns.
-    stop_loader
-
-    # Restore original job-control setting.
-    if (( had_job_control )); then
-        set -m
-    fi
+    # Animate only the non-interactive sync phase.
+    run_with_loader "Running" bash -c '
+        CLOUDSDK_METRICS_REQUEST_ATTRIBUTION="agent-skills/1.0 (skill:gcloud)" \
+            gcloud storage rsync "$1" "$2" \
+                --recursive --quiet --project="$3" \
+                >/dev/null 2>"$4"
+    ' _ "$SOURCE_DIR" "$DESTINATION_DIR" "$PROJECT_ID" "$gcloud_log"
+    exit_code=$?
 
     # Display final result.
     if (( exit_code == 0 )); then
@@ -1295,17 +1673,490 @@ gcloud_workspace_sync() {
     fi
 }
 
-##############################################################
-# End of functions  Pt2                                     ## 
-##############################################################
+# Sync ~/workspace with Cloudflare R2 via the S3-compatible API.
+# Requires R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to be exported
+# (create an R2 API token in the Cloudflare dashboard).
+export R2_ACCESS_KEY_ID=
+export R2_SECRET_ACCESS_KEY=
 
-##############################################################
-# Validate Configuration                                    ## 
-##############################################################
+cf_workspace_sync() {
+    local R2_ENDPOINT="https://2b35063950967e6ee34d1708bcc5c221.r2.cloudflarestorage.com"
+    local BUCKET="s3://backups/workspace"
+    local PUBLIC_URL="https://pub-33db5eb700004f5f8fe4b7430303bbf5.r2.dev/workspace"
+    local LOCAL_DIR="$HOME/workspace"
+    local REMOTE_DIR="$BUCKET"
+    local direction="${1:-}"
+    local SOURCE_DIR DESTINATION_DIR
+    local exit_code=0
+    local r2_log
 
-##############################################################
-# EOF                                                       ## 
-##############################################################
+    # Validate required commands.
+    for cmd in aws tput sleep mktemp; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            _terminal_msg error "Required command not found: $cmd ⚠️ "
+            return 1
+        fi
+    done
+
+    # Validate R2 credentials.
+    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
+        _terminal_msg error "R2 credentials missing. Export R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY first ⚠️ "
+        return 1
+    fi
+
+    # Resolve direction: argument first, then interactive prompt.
+    case "$direction" in
+        up|upload|push)   direction="up" ;;
+        down|download|pull) direction="down" ;;
+        "")
+            if [[ ! -t 0 ]]; then
+                _terminal_msg error "No direction given and stdin is not a TTY. Usage: $FUNCNAME [up|down] ⚠️ "
+                return 1
+            fi
+            _terminal_msg normal "Cloudflare R2 sync 📦"
+            _terminal_msg normal "  1) Upload   $LOCAL_DIR -> $REMOTE_DIR"
+            _terminal_msg normal "  2) Download $REMOTE_DIR -> $LOCAL_DIR"
+            printf "Choose direction [1/2]: "
+            read -r choice
+            case "$choice" in
+                1) direction="up" ;;
+                2) direction="down" ;;
+                *)
+                    _terminal_msg error "Invalid choice: $choice ⚠️ "
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            _terminal_msg error "Invalid direction: $direction (expected up|down) ⚠️ "
+            return 1
+            ;;
+    esac
+
+    if [[ "$direction" == "up" ]]; then
+        SOURCE_DIR="$LOCAL_DIR"
+        DESTINATION_DIR="$REMOTE_DIR"
+        if [[ ! -d "$SOURCE_DIR" ]]; then
+            _terminal_msg error "Source directory does not exist: $SOURCE_DIR ⚠️ "
+            return 1
+        fi
+    else
+        SOURCE_DIR="$REMOTE_DIR"
+        DESTINATION_DIR="$LOCAL_DIR"
+    fi
+
+    # Create temporary error log.
+    r2_log=$(mktemp "${TMPDIR:-/tmp}/r2-sync.XXXXXX") || {
+        _terminal_msg error "Could not create temporary log. ⚠️"
+        return 1
+    }
+
+    _terminal_msg normal "Direction: $([[ "$direction" == up ]] && echo 'Upload 📤' || echo 'Download 📥')"
+    _terminal_msg normal "Source: $SOURCE_DIR"
+    _terminal_msg normal "Destination: $DESTINATION_DIR"
+    _terminal_msg normal "Public URL: $PUBLIC_URL"
+
+    # Animate only the non-interactive sync phase.
+    run_with_loader "Running" bash -c '
+        AWS_ACCESS_KEY_ID="$1" \
+        AWS_SECRET_ACCESS_KEY="$2" \
+        AWS_REGION=auto \
+        aws s3 sync "$3" "$4" \
+            --endpoint-url "$5" --only-show-errors \
+            >/dev/null 2>"$6"
+    ' _ "$R2_ACCESS_KEY_ID" "$R2_SECRET_ACCESS_KEY" \
+        "$SOURCE_DIR" "$DESTINATION_DIR" "$R2_ENDPOINT" "$r2_log"
+    exit_code=$?
+
+    # Display final result.
+    if (( exit_code == 0 )); then
+        rm -f -- "$r2_log"
+        _terminal_msg success "Cloudflare R2 $([[ "$direction" == up ]] && echo 'upload' || echo 'download') completed! 🚀"
+        return 0
+    else
+        _terminal_msg error \
+            "Cloudflare R2 sync failed (exit code: $exit_code). ⚠️ "
+
+        _terminal_msg warning "R2 error details: ⚠️ "
+        tcat "$r2_log"
+
+        _terminal_msg normal "Error log: $r2_log ⚠️"
+        return "$exit_code"
+    fi
+}
 
 # Re-apply managed network/DNS state (Cloudflare DoT global DNS + dnsconfd/Unbound)
-fix-network() { /usr/bin/run0 /usr/local/sbin/network-state-enforce; }
+_mynetworkfix_impl() {
+#!/usr/bin/env bash
+# Enforce the desired network/DNS state on this Secureblue system.
+# Idempotent: only restarts NetworkManager when something actually changed.
+# Managed state:
+#   - Resolver: dnsconfd (Unbound) on 127.0.0.1; systemd-resolved masked/stopped
+#   - Global DNS: Cloudflare "security" profile via NM global-dns (DoT)
+#   - Trivalent browser DoH: https://security.cloudflare-dns.com/dns-query
+#   - No per-connection static DNS / bogus dns-search domains
+#   - Dead USB NIC (enp0s20f0u10) kept down / autoconnect disabled
+changed=0
+note() { printf 'network-state-enforce: %s\n' "$*"; }
+
+# --- 1. NM plugin config: dns=dnsconfd -------------------------------------
+DNSCONFD_NM=/etc/NetworkManager/conf.d/dnsconfd.conf
+if ! cmp -s "$DNSCONFD_NM" <(printf '[main]\ndns=dnsconfd\n') 2>/dev/null; then
+    printf '[main]\ndns=dnsconfd\n' > "$DNSCONFD_NM"; chmod 644 "$DNSCONFD_NM"; changed=1
+    note "rewrote $DNSCONFD_NM"
+fi
+
+# --- 2. Global DNS (Cloudflare security profile) ----------------------------
+GLOBALDNS=/etc/NetworkManager/conf.d/global-dns.conf
+GLOBALDNS_WANT='[global-dns]
+resolve-mode=exclusive
+
+[global-dns-domain-*]
+servers=dns+tls://1.1.1.2#security.cloudflare-dns.com,dns+tls://1.0.0.2#security.cloudflare-dns.com,dns+tls://[2606:4700:4700::1112]#security.cloudflare-dns.com,dns+tls://[2606:4700:4700::1002]#security.cloudflare-dns.com
+'
+if ! cmp -s "$GLOBALDNS" <(printf '%s' "$GLOBALDNS_WANT") 2>/dev/null; then
+    printf '%s' "$GLOBALDNS_WANT" > "$GLOBALDNS"; chmod 644 "$GLOBALDNS"; changed=1
+    note "rewrote $GLOBALDNS"
+fi
+
+# --- 3. Trivalent DoH policy -------------------------------------------------
+TRIV=/etc/trivalent/policies/managed/10-securedns-browser.json
+TRIV_WANT='{
+    "DnsOverHttpsMode": "secure",
+    "DnsOverHttpsTemplates": "https://security.cloudflare-dns.com/dns-query"
+}
+'
+if ! cmp -s "$TRIV" <(printf '%s' "$TRIV_WANT") 2>/dev/null; then
+    install -d -m 0755 "$(dirname "$TRIV")"
+    printf '%s' "$TRIV_WANT" > "$TRIV"; chmod 644 "$TRIV"; changed=1
+    note "rewrote $TRIV"
+fi
+
+# --- 4. DNSSEC stays off (no /etc/dnsconfd.conf) -----------------------------
+if [[ -e /etc/dnsconfd.conf ]]; then
+    rm -f /etc/dnsconfd.conf; changed=1; note "removed /etc/dnsconfd.conf (DNSSEC off)"
+fi
+
+# --- 5. resolv.conf: real file for dnsconfd, not systemd stub ---------------
+if [[ -L /etc/resolv.conf ]] || ! grep -q '^nameserver 127\.0\.0\.1' /etc/resolv.conf 2>/dev/null; then
+    rm -f /etc/resolv.conf
+    printf 'options edns0 trust-ad\nnameserver 127.0.0.1\n' > /etc/resolv.conf
+    chown dnsconfd:root /etc/resolv.conf; chmod 644 /etc/resolv.conf
+    changed=1; note "recreated /etc/resolv.conf for dnsconfd"
+fi
+
+# --- 6. Resolver services ----------------------------------------------------
+if systemctl is-enabled --quiet systemd-resolved.service 2>/dev/null \
+   || systemctl is-active --quiet systemd-resolved.service 2>/dev/null; then
+    systemctl disable --now systemd-resolved.service >/dev/null 2>&1 || true
+    systemctl mask systemd-resolved.service >/dev/null 2>&1 || true
+    changed=1; note "stopped/disabled/masked systemd-resolved"
+fi
+for svc in dnsconfd.service unbound.socket unbound-control.socket; do
+    if ! systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+        systemctl enable "$svc" >/dev/null 2>&1 || true; changed=1; note "enabled $svc"
+    fi
+done
+if ! systemctl is-active --quiet dnsconfd.service 2>/dev/null; then
+    systemctl start dnsconfd.service >/dev/null 2>&1 || true
+fi
+
+# --- 7. Strip per-connection static DNS drift (ethernet/wifi profiles) ------
+while IFS= read -r conn; do
+    [[ -z "$conn" ]] && continue
+    dirty="$(nmcli -g ipv4.dns,ipv4.dns-search,ipv6.dns,ipv6.dns-search,ipv4.dns-options,ipv6.dns-options con show "$conn" 2>/dev/null | tr '\n' ',' )"
+    if [[ "$dirty" =~ [^,[:space:]-] ]]; then
+        nmcli con mod "$conn" ipv4.dns "" ipv4.dns-search "" ipv6.dns "" ipv6.dns-search "" \
+            ipv4.dns-options "" ipv6.dns-options "" >/dev/null 2>&1 || true
+        changed=1; note "cleared static DNS on connection '$conn'"
+    fi
+done < <(nmcli -t -f NAME,TYPE con show 2>/dev/null | awk -F: '$2 ~ /^802-3-ethernet$|^802-11-wireless$/ {print $1}')
+
+# --- 8. Keep dead USB NIC down ----------------------------------------------
+while IFS= read -r conn; do
+    [[ -z "$conn" ]] && continue
+    iface="$(nmcli -g connection.interface-name con show "$conn" 2>/dev/null || true)"
+    if [[ "$iface" == "enp0s20f0u10" ]]; then
+        auto="$(nmcli -g connection.autoconnect con show "$conn" 2>/dev/null || true)"
+        if [[ "$auto" != "no" ]]; then
+            nmcli con mod "$conn" connection.autoconnect no >/dev/null 2>&1 || true
+            changed=1; note "disabled autoconnect on '$conn' ($iface)"
+        fi
+        if nmcli -t -f DEVICE,STATE device status 2>/dev/null | awk -F: -v i="$iface" '$1==i && $2=="connected" {f=1} END{exit !f}'; then
+            nmcli device disconnect "$iface" >/dev/null 2>&1 || true
+            note "disconnected dead interface $iface"
+        fi
+    fi
+done < <(nmcli -t -f NAME con show 2>/dev/null)
+
+# --- 9. Apply ----------------------------------------------------------------
+if [[ "$changed" -eq 1 ]]; then
+    note "changes applied; restarting NetworkManager"
+    systemctl restart NetworkManager.service
+    sleep 3
+    systemctl start dnsconfd.service >/dev/null 2>&1 || true
+else
+    note "state already correct"
+fi
+
+}
+
+# Network reconciliation is non-interactive; buffer its status output while animating.
+mynetworkfix() {
+    run_with_loader "Running" _mynetworkfix_impl "$@"
+}
+
+# Restart a systemd service
+mysystemdrestart(){
+    local keyword="$1"
+    
+    # Prompt for a keyword if none was passed as an argument
+    if [[ -z "$keyword" ]]; then
+        read -rp "Enter service keyword: " keyword
+    fi
+
+    # Exit if still empty
+    [[ -z "$keyword" ]] && echo "No keyword provided." && return 1
+
+    # Gather matching systemd service names into an array
+    local services=()
+    while IFS= read -r line; do
+        services+=("$line")
+    done < <(systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -i "$keyword")
+
+    # Handle no matches
+    if [[ ${#services[@]} -eq 0 ]]; then
+        echo "No services found matching '$keyword'."
+        return 1
+    fi
+
+    # Display interactive menu
+    echo "Select a service to restart:"
+    PS3="Enter number (or Ctrl+C to cancel): "
+    select svc in "${services[@]}"; do
+        if [[ -n "$svc" ]]; then
+            echo "Restarting $svc..."
+            run0 systemctl restart "$svc"
+            break
+        else
+            echo "Invalid selection. Try again."
+        fi
+    done
+}
+
+# usbguard generate allow policy
+
+myusbgenpolicy(){
+_terminal_msg normal " Generating new policy: Default Allow all 💾 "
+run0 usbguard generate-policy > /etc/usbguard/rules.conf
+run0 chmod 600 /etc/usbguard/rules.conf
+run0ctl enable --now usbguard.service
+run0ctl restart  usbguard.service
+run0ctl status usbguard.service
+}
+
+bashconfigbackup(){
+_terminal_msg normal "Validating .bashrc before creating backup."
+if bash -n "$HOME/.bashrc"; then
+    _terminal_msg success "Syntax is valid  ☕ "
+    cp -a $HOME/.bashrc $HOME/workspace/ai-stack/diskless-os/bashrc_template
+else
+    _terminal_msg error "Syntax error detected. Aborting. 👹 " >&2
+    exit 1
+fi
+}
+
+# Check Bash syntax; default target is ~/.bashrc.
+# Usage: bashconfigcheck [file-path|filename-keyword]
+bashconfigcheck() {
+    local search_input="${1:-$HOME/.bashrc}" selected_file="" file
+    local -a matches=()
+    (( $# <= 1 )) || { printf 'Usage: bashconfigcheck [file-path|keyword]\n' >&2; return 2; }
+    if [[ "$search_input" == '~/'* ]]; then search_input="$HOME/${search_input#~/}"; fi
+    if [[ -f "$search_input" ]]; then
+        selected_file="$search_input"
+    elif [[ -z "${1:-}" ]]; then
+        printf 'Error: Default file not found: %s\n' "$search_input" >&2
+        return 1
+    else
+        while IFS= read -r -d '' file; do matches+=("$file"); done \
+            < <(find . -maxdepth 4 -type f -iname "*${search_input}*" -print0 2>/dev/null)
+        if (( ${#matches[@]} == 0 )); then
+            printf "No files found matching '%s'.\n" "$search_input"
+            return 1
+        fi
+        _terminal_msg normal "Select the number of the file you want to check:"
+        PS3="Enter choice (number): "
+        select file in "${matches[@]}" "Cancel"; do
+            if [[ "$file" == Cancel ]]; then _terminal_msg error "Operation cancelled."; return 0
+            elif [[ -n "$file" ]]; then selected_file="$file"; break
+            else _terminal_msg warning "Invalid selection. Please enter a valid number."
+            fi
+        done
+    fi
+    [[ -s "$selected_file" ]] || { printf "Error: '%s' is empty or unreadable.\n" "$selected_file" >&2; return 1; }
+    _terminal_msg normal "Checking Bash syntax: $selected_file"
+    if bash -n "$selected_file"; then
+        _terminal_msg success "Syntax is valid: $selected_file"
+        bash "$selected_file"
+    else
+        _terminal_msg error "Syntax error detected in '$selected_file'. Execution aborted." >&2
+        return 1
+    fi
+}
+
+
+burnerbox() {
+  local project_dir="${1:-.}"
+  local image="${2:-registry.fedoraproject.org/fedora-toolbox:44}"
+  local net_mode="${3:-host}"
+
+  # Resolve the absolute path of the target project directory
+  if ! project_dir="$(realpath -e "$project_dir" 2>/dev/null)"; then
+    echo "Error: Directory '$1' does not exist." >&2
+    return 1
+  fi
+
+  # Safety check: Prevent accidentally mounting your entire home directory or root
+  if [[ "$project_dir" == "$HOME" || "$project_dir" == "/" ]]; then
+    echo "Error: Refusing to mount '$project_dir' for security reasons. Pass a specific project subfolder." >&2
+    return 1
+  fi
+
+  echo "Starting hardened AI sandbox..."
+  echo "  Workspace : $project_dir -> /workspace"
+  echo "  Image     : $image"
+  echo "  Network   : $net_mode"
+
+  podman run --rm -it \
+    --name "ai-sandbox-$(date +%s)" \
+    --cap-drop=ALL \
+    --security-opt=no-new-privileges \
+    --read-only \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
+    --tmpfs /var/tmp:rw,noexec,nosuid,nodev,size=256m \
+    --pids-limit=512 \
+    --memory=4g \
+    --cpus=2 \
+    --network="$net_mode" \
+    --userns=keep-id \
+    -v "${project_dir}:/workspace:Z" \
+    -w /workspace \
+    "$image" \
+    /bin/bash
+
+_terminal_msg normal "Verify created podman container"
+podman ps -a 
+
+}
+
+burnercommand() {
+  local container="burnerbox"
+  local project_dir="$HOME/workspace/"
+  local image="registry.fedoraproject.org/fedora-toolbox:44"
+
+  # 1. Start the hardened background container if it does not exist yet
+  if ! podman container exists "$container"; then
+    echo "Creating persistent hardened sandbox '$container'..."
+    podman run -d \
+      --name "$container" \
+      --cap-drop=ALL \
+      --security-opt=no-new-privileges \
+      --read-only \
+      --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
+      --tmpfs /var/tmp:rw,noexec,nosuid,nodev,size=256m \
+      --pids-limit=512 \
+      --memory=4g \
+      --cpus=2 \
+      --network=host \
+      --userns=keep-id \
+      -v "${project_dir}:/workspace:Z" \
+      -w /workspace \
+      "$image" \
+      sleep infinity >/dev/null
+  elif [ "$(podman inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
+    podman start "$container" >/dev/null
+  fi
+
+  # 2. If no command is passed, open an interactive bash shell
+  if [ $# -eq 0 ]; then
+    podman exec -it "$container" /bin/bash
+    return
+  fi
+
+  # 3. Pass all arguments into the container
+  local tty_flags="-i"
+  [[ -t 0 && -t 1 ]] && tty_flags="-it"
+  podman exec $tty_flags "$container" /bin/bash -c "$*"
+}
+
+
+# Configure Podman image trust for one registry/repository.
+# Defaults to Fedora Toolbox 44 when no image scope is supplied.
+podimagetrust() {
+    local input_path="${1:-registry.fedoraproject.org/fedora-toolbox:44}" repo_scope
+    if (( $# > 1 )); then printf 'Usage: podimagetrust [registry/repository[:tag][@digest]]\n' >&2; return 2; fi
+    case "$input_path" in
+        docker://*) input_path="${input_path#docker://}" ;;
+        *://*) printf 'Error: Specify a registry/image without a URL scheme.\n' >&2; return 2 ;;
+    esac
+    repo_scope="${input_path%%@*}"
+    if [[ "$repo_scope" == */* && "${repo_scope##*/}" == *:* ]]; then repo_scope="${repo_scope%:*}"; fi
+    if [[ ! "$repo_scope" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]*(/[A-Za-z0-9._-]+)*$ ]]; then
+        printf 'Error: Invalid registry/repository scope: %s\n' "$repo_scope" >&2
+        return 2
+    fi
+    printf 'Setting Podman image trust to accept for: %s\n' "$repo_scope"
+    podman image trust set --type accept "$repo_scope" || {
+        printf 'Error: Podman failed to update image trust for %s.\n' "$repo_scope" >&2
+        return 1
+    }
+    podman image trust show
+}
+
+# EOF
+firewall-cmd-get-active(){
+for zone in $(sudo firewall-cmd --get-active-zones | grep -v '^[[:space:]]'); do
+  sudo firewall-cmd --zone="$zone" --list-all
+done
+}
+
+# Bash completion for kimctl: complete currently defined shell functions.
+_kimctl_completion() {
+    local current="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=()
+    (( COMP_CWORD == 1 )) || return 0
+    mapfile -t COMPREPLY < <(compgen -A function -- "$current" | grep -v '^_kimctl_completion$')
+}
+complete -F _kimctl_completion kimctl
+
+# Command wrapper
+kimctl() {
+    local command_name="${1:-}"
+    if (( $# == 0 )); then printf 'Usage: kimctl function [arguments...]\n' >&2; return 2; fi
+    if ! declare -F "$command_name" >/dev/null 2>&1; then
+        printf 'Error: Function not found: %s\n' "$command_name" >&2
+        return 127
+    fi
+    case "$command_name" in
+        getnvm|workspacesync|getaitools|workspacegenkeys|\
+        workspaceterminalshortcut|podimage|podimagetrust|podrootless|podrecoverstate|\
+        podresetall|gcloud_workspace_sync|cf_workspace_sync|mynetworkfix|\
+        workspace|workspaceagent|workspaceinstallgcloud|bashconfigcheck|\
+        mysystemdrestart|myusbgenpolicy|burnerbox|burnercommand|gcloudtoolbox)
+            shift
+            "$command_name" "$@"
+            return $?
+            ;;
+    esac
+    shift
+    run_with_loader "Running: $command_name" "$command_name" "$@"
+}
+
+
+# >>> Mistral >>>
+export PATH="/home/kim/.mistral/bin:$PATH"
+# <<< Mistral <<<
+# Secureblue ships the podman *remote* client as /usr/bin/podman; no local
+# rootless socket can exist (podman.service exits 125). Containers run
+# rootless in the podman machine instead.
