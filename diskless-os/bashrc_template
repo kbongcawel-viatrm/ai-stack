@@ -2142,6 +2142,343 @@ kimctl() {
     run_with_loader "Running: $command_name" "$command_name" "$@"
 }
 
+
+# sretoolbox
+sretoolbox() {
+    local name="sre-devops-f44"
+    local image="${SRE_TOOLBOX_IMAGE:-registry.fedoraproject.org/fedora-toolbox:44}"
+    local enter_after=0 name_set=0
+    local cache_dir setup_script log_file rc cmd
+
+    while (($#)); do
+        case "$1" in
+            -h|--help)
+                cat <<'USAGE'
+Usage: sretoolboxcreate [container-name] [--image IMAGE] [--enter]
+
+Creates (or reuses) a Fedora Toolbox container and provisions an SRE/DevOps toolchain.
+Default image: registry.fedoraproject.org/fedora-toolbox:44
+Override image with --image or SRE_TOOLBOX_IMAGE.
+USAGE
+                return 0
+                ;;
+            -e|--enter)
+                enter_after=1
+                shift
+                ;;
+            -i|--image)
+                if (($# < 2)); then
+                    printf 'Error: --image requires an image reference.\n' >&2
+                    return 2
+                fi
+                image="$2"
+                shift 2
+                ;;
+            --)
+                shift
+                break
+                ;;
+            -* )
+                printf 'Error: Unknown option: %s\n' "$1" >&2
+                return 2
+                ;;
+            *)
+                if (( name_set )); then
+                    printf 'Error: Unexpected argument: %s\n' "$1" >&2
+                    return 2
+                fi
+                name="$1"
+                name_set=1
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$ ]]; then
+        printf 'Error: Invalid Toolbox container name: %s\n' "$name" >&2
+        return 2
+    fi
+
+    for cmd in toolbox podman curl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            printf 'Error: Required host command not found: %s\n' "$cmd" >&2
+            return 127
+        fi
+    done
+
+    cache_dir="$HOME/.cache/sre-toolbox"
+    if ! mkdir -p -m 700 "$cache_dir"; then
+        printf 'Error: Cannot create cache directory: %s\n' "$cache_dir" >&2
+        return 1
+    fi
+
+    setup_script=$(mktemp "$cache_dir/provision.XXXXXX.sh") || return 1
+    log_file="$cache_dir/${name}-$(date +%Y%m%d-%H%M%S).log"
+    chmod 600 "$setup_script" || {
+        rm -f -- "$setup_script"
+        return 1
+    }
+
+    cat > "$setup_script" <<'TOOLBOX_SETUP'
+
+if [[ ! -f /run/.containerenv ]]; then
+    printf 'This provisioning script must run inside a Toolbox container.\n' >&2
+    exit 1
+fi
+
+if [[ ! -r /etc/os-release ]]; then
+    printf 'Cannot identify the container operating system.\n' >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+. /etc/os-release
+if [[ "${ID:-}" != fedora ]]; then
+    printf 'Expected Fedora Toolbox; found %s.\n' "${PRETTY_NAME:-unknown}" >&2
+    exit 1
+fi
+
+command -v sudo >/dev/null 2>&1 || {
+    printf 'sudo is required inside the Toolbox container.\n' >&2
+    exit 127
+}
+
+workdir=$(mktemp -d "${TMPDIR:-/tmp}/sre-toolbox.XXXXXX")
+trap 'rm -rf -- "$workdir"' EXIT
+
+printf '\n==> Refreshing Fedora package metadata and upgrading installed packages\n'
+sudo dnf upgrade --refresh -y
+
+printf '\n==> Installing base SRE/DevOps packages\n'
+base_packages=(
+    git git-lfs gh
+    curl wget ca-certificates
+    gnupg2 openssh-clients openssl
+    python3 python3-pip python3-devel python3-virtualenv pipx uv
+    perl perl-Digest-SHA
+    awscli2 azure-cli
+    ansible-core
+    lynis aide clamav clamav-freshclam
+    jq yq ripgrep fd-find fzf tmux htop btop tree bat eza
+    bind-utils mtr traceroute nmap tcpdump socat iperf3 lsof strace sysstat
+    make gcc gcc-c++ cmake pkgconf-pkg-config
+    unzip zip tar gzip xz less
+    ShellCheck shfmt yamllint
+    helm k9s
+    buildah skopeo podman-compose
+    cosign
+)
+sudo dnf install -y --skip-unavailable "${base_packages[@]}"
+
+printf '\n==> Adding HashiCorp and Aqua Security repositories\n'
+sudo install -d -m 0755 /etc/yum.repos.d
+curl -fsSL https://rpm.releases.hashicorp.com/fedora/hashicorp.repo \
+    | sudo tee /etc/yum.repos.d/hashicorp.repo >/dev/null
+sudo tee /etc/yum.repos.d/trivy.repo >/dev/null <<'TRIVY_REPO'
+[trivy]
+name=Trivy repository
+baseurl=https://aquasecurity.github.io/trivy-repo/rpm/releases/$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=https://aquasecurity.github.io/trivy-repo/rpm/public.key
+TRIVY_REPO
+sudo dnf makecache --refresh
+sudo dnf install -y terraform trivy
+
+printf '\n==> Installing cloudflared (latest Cloudflare RPM release)\n'
+case "$(uname -m)" in
+    x86_64) cloudflared_rpm='cloudflared-linux-x86_64.rpm' ;;
+    aarch64) cloudflared_rpm='cloudflared-linux-aarch64.rpm' ;;
+    *) printf 'Unsupported architecture for cloudflared: %s\n' "$(uname -m)" >&2; exit 1 ;;
+esac
+curl -fL --retry 3 --retry-delay 2 \
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/${cloudflared_rpm}" \
+    -o "$workdir/$cloudflared_rpm"
+sudo dnf install -y "$workdir/$cloudflared_rpm"
+
+printf '\n==> Installing Google Cloud CLI from the official Linux archive\n'
+case "$(uname -m)" in
+    x86_64) gcloud_arch='x86_64' ;;
+    aarch64) gcloud_arch='arm' ;;
+    *) printf 'Unsupported architecture for Google Cloud CLI: %s\n' "$(uname -m)" >&2; exit 1 ;;
+esac
+gcloud_archive="google-cloud-cli-linux-${gcloud_arch}.tar.gz"
+curl -fL --retry 3 --retry-delay 2 \
+    "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/${gcloud_archive}" \
+    -o "$workdir/$gcloud_archive"
+mkdir -p "$HOME/.local/share/sre-devops"
+tar -xzf "$workdir/$gcloud_archive" -C "$workdir"
+gcloud_source="$workdir/google-cloud-sdk"
+gcloud_target="$HOME/.local/share/sre-devops/google-cloud-sdk"
+gcloud_previous="$HOME/.local/share/sre-devops/google-cloud-sdk.previous"
+rm -rf -- "$gcloud_previous"
+if [[ -d "$gcloud_target" ]]; then
+    mv "$gcloud_target" "$gcloud_previous"
+fi
+if ! mv "$gcloud_source" "$gcloud_target"; then
+    [[ ! -d "$gcloud_previous" ]] || mv "$gcloud_previous" "$gcloud_target"
+    printf 'Could not publish the Google Cloud CLI installation.\n' >&2
+    exit 1
+fi
+rm -rf -- "$gcloud_previous"
+"$gcloud_target/install.sh" --quiet --path-update=false --command-completion=false --usage-reporting=false
+gcloud components install gke-gcloud-auth-plugin --quiet
+
+printf '\n==> Installing the current stable kubectl with SHA-256 verification\n'
+case "$(uname -m)" in
+    x86_64) kubectl_arch='amd64' ;;
+    aarch64) kubectl_arch='arm64' ;;
+    *) printf 'Unsupported architecture for kubectl: %s\n' "$(uname -m)" >&2; exit 1 ;;
+esac
+kubectl_version=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+if [[ ! "$kubectl_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf 'Unexpected kubectl stable version value: %s\n' "$kubectl_version" >&2
+    exit 1
+fi
+curl -fsSL "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${kubectl_arch}/kubectl" \
+    -o "$workdir/kubectl"
+curl -fsSL "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${kubectl_arch}/kubectl.sha256" \
+    -o "$workdir/kubectl.sha256"
+printf '%s  %s\n' "$(<"$workdir/kubectl.sha256")" "$workdir/kubectl" \
+    | sha256sum --check --status || {
+        printf 'kubectl checksum verification failed.\n' >&2
+        exit 1
+    }
+install -d -m 0755 "$HOME/.local/bin"
+install -m 0755 "$workdir/kubectl" "$HOME/.local/bin/kubectl"
+
+printf '\n==> Installing NVM, current Node.js LTS, npm and AI CLIs\n'
+export NVM_DIR="$HOME/.local/share/sre-devops/nvm"
+mkdir -p "$NVM_DIR" "$HOME/.bashrc.d" "$HOME/.local/bin"
+if [[ ! -s "$NVM_DIR/nvm.sh" ]]; then
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/HEAD/install.sh \
+        -o "$workdir/nvm-install.sh"
+    PROFILE=/dev/null NVM_DIR="$NVM_DIR" bash "$workdir/nvm-install.sh"
+fi
+# shellcheck disable=SC1090
+. "$NVM_DIR/nvm.sh"
+nvm install --lts
+nvm alias default 'lts/*'
+nvm use --lts
+npm install --global cline @anthropic-ai/claude-code
+
+printf '\n==> Installing Devin CLI\n'
+curl -fsSL https://cli.devin.ai/install.sh -o "$workdir/devin-install.sh"
+bash "$workdir/devin-install.sh"
+
+printf '\n==> Installing Python SRE/DevOps developer tools with pipx\n'
+for app in ansible-lint checkov pre-commit; do
+    if ! pipx runpip "$app" --version >/dev/null 2>&1; then
+        pipx install "$app"
+    else
+        pipx upgrade "$app"
+    fi
+done
+
+printf '\n==> Configuring Toolbox-only shell environment\n'
+cat > "$HOME/.bashrc.d/95-sre-toolbox.sh" <<'TOOLBOX_RC'
+# SRE/DevOps tools installed for Toolbox. Do not alter host-shell behavior.
+if [[ -f /run/.containerenv ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+    export NVM_DIR="$HOME/.local/share/sre-devops/nvm"
+    [[ ! -s "$NVM_DIR/nvm.sh" ]] || . "$NVM_DIR/nvm.sh"
+    gcloud_path="$HOME/.local/share/sre-devops/google-cloud-sdk/path.bash.inc"
+    [[ ! -s "$gcloud_path" ]] || . "$gcloud_path"
+
+    # WARP is a host networking service; forward CLI calls to the host.
+    warp-cli() {
+        if command -v flatpak-spawn >/dev/null 2>&1 \
+            && flatpak-spawn --host sh -c 'command -v warp-cli >/dev/null 2>&1'; then
+            flatpak-spawn --host warp-cli "$@"
+        else
+            printf 'warp-cli is unavailable on the host. Install and run Cloudflare WARP on the host OS.\n' >&2
+            return 127
+        fi
+    }
+fi
+TOOLBOX_RC
+chmod 0644 "$HOME/.bashrc.d/95-sre-toolbox.sh"
+
+printf '\n==> Provisioning completed. Installed command availability:\n'
+for tool in git gh aws az gcloud cloudflared terraform ansible kubectl helm k9s trivy lynis aide clamscan freshclam nvm node npm cline claude devin gke-gcloud-auth-plugin; do
+    if command -v "$tool" >/dev/null 2>&1; then
+        printf '  [OK] %s -> %s\n' "$tool" "$(command -v "$tool")"
+    else
+        printf '  [MISSING] %s\n' "$tool"
+    fi
+done
+printf '\nWARP: warp-cli is forwarded to the host if flatpak-spawn and the host WARP client are available.\n'
+printf 'Note: Lynis, AIDE and ClamAV installed here operate within the Toolbox context, not as host security agents.\n'
+TOOLBOX_SETUP
+
+    if [[ ! -s "$setup_script" ]]; then
+        printf 'Error: Failed to write Toolbox provisioning script.\n' >&2
+        rm -f -- "$setup_script"
+        return 1
+    fi
+    chmod 700 "$setup_script" || {
+        rm -f -- "$setup_script"
+        return 1
+    }
+
+    if command podman container exists "$name" >/dev/null 2>&1; then
+        printf 'Reusing existing Toolbox container: %s\n' "$name"
+    else
+        printf 'Creating Toolbox container %s from %s\n' "$name" "$image"
+        if declare -F run_with_loader >/dev/null 2>&1; then
+            if run_with_loader "Creating ${name}" toolbox create --assumeyes --container "$name" --image "$image"; then
+                rc=0
+            else
+                rc=$?
+            fi
+        else
+            if toolbox create --assumeyes --container "$name" --image "$image"; then
+                rc=0
+            else
+                rc=$?
+            fi
+        fi
+        if (( rc != 0 )); then
+            printf 'Error: Toolbox creation failed (exit code %d).\n' "$rc" >&2
+            rm -f -- "$setup_script"
+            return "$rc"
+        fi
+    fi
+
+    printf 'Provisioning logs: %s\n' "$log_file"
+    if declare -F run_with_loader >/dev/null 2>&1; then
+        if run_with_loader "Provisioning ${name}" \
+            bash -c 'toolbox run --container "$1" bash "$2" >"$3" 2>&1' \
+            _ "$name" "$setup_script" "$log_file"; then
+            rc=0
+        else
+            rc=$?
+        fi
+    else
+        if toolbox run --container "$name" bash "$setup_script" >"$log_file" 2>&1; then
+            rc=0
+        else
+            rc=$?
+        fi
+    fi
+
+    rm -f -- "$setup_script"
+    if (( rc != 0 )); then
+        printf '\nError: Provisioning failed (exit code %d). Last 80 log lines:\n' "$rc" >&2
+        tail -n 80 "$log_file" >&2
+        printf '\nFull log: %s\n' "$log_file" >&2
+        return "$rc"
+    fi
+
+    printf '\nToolbox %s is ready.\n' "$name"
+    printf 'Enter it with: toolbox enter %q\n' "$name"
+    printf 'Provisioning log: %s\n' "$log_file"
+
+    if (( enter_after )); then
+        toolbox enter "$name"
+        return $?
+    fi
+}
+
 # >>> Mistral >>>
 export PATH="/home/kim/.mistral/bin:$PATH"
 # <<< Mistral <<<
