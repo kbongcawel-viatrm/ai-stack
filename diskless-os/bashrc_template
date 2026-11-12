@@ -1556,11 +1556,12 @@ gcloudtoolbox() {
     fi
     toolbox run --container "$container_name" bash -c '
         set -Eeuo pipefail
+        arch="$1"
         sudo dnf upgrade --refresh -y
         sudo tee /etc/yum.repos.d/google-cloud-sdk.repo >/dev/null <<EOF
 [google-cloud-cli]
 name=Google Cloud CLI
-baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el10-x86_64
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el10-${arch}
 enabled=1
 gpgcheck=1
 repo_gpgcheck=0
@@ -1569,7 +1570,7 @@ EOF
         sudo dnf install -y libxcrypt-compat
         sudo env CLOUDSDK_SKIP_PY_COMPILATION=1 dnf install -y google-cloud-cli
         gcloud version
-    ' || return $?
+    ' _ "$arch" || return $?
     printf 'Google Cloud CLI setup complete. Entering %s.\n' "$container_name"
     toolbox enter "$container_name"
 }
