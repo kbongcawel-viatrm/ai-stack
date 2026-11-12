@@ -30,6 +30,7 @@ unset P11_KIT_SERVER_ADDRESS
 #  GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   
 #  Display file contents directly in the terminal 
 tcat() {
+    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
     if [[ ! -w /dev/tty ]]; then
         printf 'Error: No writable terminal available.\n' >&2
         return 1
@@ -69,6 +70,8 @@ _terminal_msg() {
 
 # Prints a line ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 _terminal_line() {
+    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+
     local style="${1:-thin}"
     local color="${2:-38;5;244}"
     local width="${3:-50}"
@@ -91,68 +94,49 @@ _terminal_line() {
 }
 
 # Unified command loader.
-# Use only for non-interactive commands; do not wrap read/select/password prompts,
-# TTY applications, or functions whose changes must affect the current shell.
+# Use only for non-interactive commands. Do not wrap prompts, TTY applications,
+# or functions whose changes must affect the current shell.
 run_with_loader() {
     local label="${1:-Running}"
     shift
-
-    local bar_width=15
-    local progress=0
-    local pid
-    local exit_code=0
-    local had_monitor=0
+    local bar_width=15 progress=0 pid exit_code=0 had_monitor=0 cursor_hidden=0
     local i filled empty bar full_bar
 
-    if (( $# == 0 )); then
+    (( $# > 0 )) || {
         printf 'Usage: run_with_loader "label" command [arguments...]\n' >&2
         return 2
-    fi
+    }
 
-    # Disable Bash job-control notifications while the child runs.
     case "$-" in
         *m*) had_monitor=1; set +m ;;
     esac
 
-    # Suppress Bash's asynchronous-job announcement as well as command output.
-    # The brace group keeps pid assignment in the current shell.
     {
         KIMCTL_QUIET=1 "$@" </dev/null >/dev/null 2>&1 &
         pid=$!
     } 2>/dev/null
 
-    # Hide the cursor only when stdout is a terminal.
-    if [[ -t 1 ]]; then
-        tput civis 2>/dev/null || :
+    if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
+        tput civis 2>/dev/null && cursor_hidden=1
     fi
 
     printf '%s\n' "$label"
-
     while kill -0 "$pid" 2>/dev/null; do
         if (( progress < 95 )); then
             progress=$((progress + (95 - progress) / 10 + 1))
         fi
-
         filled=$((progress * bar_width / 100))
         empty=$((bar_width - filled))
         bar=""
-
         for ((i=0; i<filled; i++)); do bar+="🟩"; done
         for ((i=0; i<empty; i++)); do bar+="⬜"; done
-
         printf '\r[ %s %3d%% progress ]' "$bar" "$progress"
         sleep 0.2
     done
 
     wait "$pid" || exit_code=$?
-
-    if [[ -t 1 ]]; then
-        tput cnorm 2>/dev/null || :
-    fi
-
-    if (( had_monitor )); then
-        set -m
-    fi
+    (( cursor_hidden )) && tput cnorm 2>/dev/null || :
+    (( had_monitor )) && set -m
 
     if (( exit_code == 0 )); then
         full_bar=""
@@ -161,7 +145,6 @@ run_with_loader() {
     else
         printf '\nFailed (exit code: %d)\n' "$exit_code"
     fi
-
     return "$exit_code"
 }
 
@@ -897,7 +880,7 @@ workspaceterminalshortcut() {
             updated_bindings="${current_bindings%]}, $quoted_path]"
         fi
 
-        gsettings set "$SCHEMA" custom-keybindings "$updated_bindings" || return 1
+        run_with_loader "Running" gsettings set "$SCHEMA" custom-keybindings "$updated_bindings" || return $?
     fi
 
     _terminal_msg success "Ptyxis shortcut configured: Ctrl+1"
@@ -2131,20 +2114,25 @@ _kimctl_completion() {
 }
 complete -F _kimctl_completion kimctl
 
-# Command wrapper
+# Command wrapper.
+# Interactive, TTY-dependent, and current-shell functions run in foreground.
 kimctl() {
     local command_name="${1:-}"
-    if (( $# == 0 )); then printf 'Usage: kimctl function [arguments...]\n' >&2; return 2; fi
+    if (( $# == 0 )); then
+        printf 'Usage: kimctl function [arguments...]\n' >&2
+        return 2
+    fi
     if ! declare -F "$command_name" >/dev/null 2>&1; then
         printf 'Error: Function not found: %s\n' "$command_name" >&2
         return 127
     fi
     case "$command_name" in
-        getnvm|workspacesync|getaitools|workspacegenkeys|\
-        workspaceterminalshortcut|podimage|podimagetrust|podrootless|podrecoverstate|\
-        podresetall|gcloud_workspace_sync|cf_workspace_sync|mynetworkfix|\
-        workspace|workspaceagent|workspaceinstallgcloud|bashconfigcheck|\
-        mysystemdrestart|myusbgenpolicy|burnerbox|burnercommand|gcloudtoolbox)
+        workspace|workspaceshortcuts|workspacegenkeys|whoseyourdaddy|workspacekill|\
+        bashconfigcheck|bashconfigbackup|mysystemdrestart|podimage|podimagetrust|\
+        podrecoverstate|gcloud_workspace_sync|cf_workspace_sync|\
+        workspaceinstallgcloud|myusbgenpolicy|burnerbox|burnercommand|\
+        gcloudtoolbox|firewall-cmd-get-active|workspaceconfigcheck|\
+        getbash|getpath|getvirtall|workspaceagent)
             shift
             "$command_name" "$@"
             return $?
@@ -2153,7 +2141,6 @@ kimctl() {
     shift
     run_with_loader "Running: $command_name" "$command_name" "$@"
 }
-
 
 # >>> Mistral >>>
 export PATH="/home/kim/.mistral/bin:$PATH"
