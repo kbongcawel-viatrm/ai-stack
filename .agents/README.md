@@ -18,3 +18,6 @@ Memory is curated project documentation, not a transcript dump. Record durable f
 Before acting on a task, search `.agents/skills/` for skills whose descriptions or workflows are close or similar to the task, even when terminology differs. Read all relevant `SKILL.md` files and follow their safety and validation guidance. For technology-specific research, use the curated [upstream GitHub repository and official documentation registry](sources/github-repositories.md). Official documentation remains linked at its upstream canonical location rather than copied wholesale, so agents can check current, version-matched guidance.
 
 Security and host-operation skills include `suricata-configuration`, `aide-file-integrity`, `auditd-linux-audit`, `security-forensics-analysis`, and `fedora-secureblue-operations`. Cline adapters live in `.cline/skills/`; keep their core workflow and safety guidance aligned with the canonical `.agents/skills/` playbooks.
+
+
+The shared MCP integration guidance is in [providers/mcp.md](providers/mcp.md); the Cline endpoint template and setup instructions are in [MCP setup](../docs/mcp-setup.md). Keep credentials in local client configuration, never in Git.

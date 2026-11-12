@@ -6,7 +6,7 @@ A provider/model-modular AI development workflow. GitHub stores code and curated
 1. **Provider/API:** Cline API, Anthropic, OpenAI, AWS Bedrock, OpenRouter, or local Ollama. Select based on capability, cost, privacy, and runtime requirements.
 2. **Agent runtime:** Cline CLI and/or IDE extension; configure authentication separately.
 3. **Shared context:** `.agents/` contains portable rules, curated memory, reusable skills, provider docs, and session templates. `.clinerules/` and `.cline/` provide Cline-specific project entry points.
-4. **Planning:** Linear issues capture goals, acceptance criteria, decisions, blockers, and handoffs. Linear MCP is the recommended agent integration.
+4. **Planning and integrations:** Linear tracks goals, acceptance criteria, decisions, blockers, and handoffs. GitHub, Cloudflare, and Firecrawl are available through MCP; see [MCP setup](docs/mcp-setup.md).
 5. **Source control:** GitHub holds code and reviewed context and tracks changes via commits and pull requests.
 
 ## Quick start
@@ -27,8 +27,12 @@ Read [Cline CLI setup](.agents/providers/cline-cli.md) and [Cline API setup](.ag
 
 `.env.example` documents variable names only. A local `.env` is ignored; never commit credentials.
 
+### Configure MCP servers
+
+Merge the server entries from [`.cline/mcp.json`](.cline/mcp.json) into each agent runtime's active MCP settings. Authenticate GitHub locally and complete Cloudflare/Firecrawl OAuth. See the [MCP setup guide](docs/mcp-setup.md) for least-privilege configuration and client-specific instructions. This template does not transfer ChatGPT connector credentials or automatically configure every agent.
+
 ### Linear
-Use Linear's official MCP endpoint `https://mcp.linear.app/mcp` with the compatible client's authenticated MCP setup. See [workflow](docs/linear-planning.md) and [provider notes](.agents/providers/linear.md). An optional third-party CLI is documented there; it is not required for Linear MCP:
+Use Linear's official read-only MCP endpoint `https://mcp.linear.app/mcp/readonly` with the compatible client's authenticated MCP setup. See [workflow](docs/linear-planning.md), [provider notes](.agents/providers/linear.md), and [MCP setup](docs/mcp-setup.md). An optional third-party CLI is documented there; it is not required for Linear MCP:
 
 ```bash
 INSTALL_LINEAR_CLI=1 ./scripts/install-ai-tools.sh

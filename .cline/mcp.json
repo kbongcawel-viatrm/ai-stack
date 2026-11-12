@@ -12,8 +12,20 @@
       "type": "streamableHttp",
       "disabled": false,
       "headers": {
-        "Authorization": "Bearer [GITHUB_READ_ONLY_TOKEN]"
+        "Authorization": "Bearer REPLACE_WITH_GITHUB_READ_ONLY_TOKEN"
       },
+      "autoApprove": []
+    },
+    "cloudflare": {
+      "url": "https://mcp.cloudflare.com/mcp",
+      "type": "streamableHttp",
+      "disabled": false,
+      "autoApprove": []
+    },
+    "firecrawl": {
+      "url": "https://mcp.firecrawl.dev/v2/mcp-oauth",
+      "type": "streamableHttp",
+      "disabled": false,
       "autoApprove": []
     }
   }
