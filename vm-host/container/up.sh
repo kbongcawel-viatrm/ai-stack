@@ -22,6 +22,13 @@ cd "$(dirname "$0")/.."
 IMAGE="${IMAGE:-localhost/fcos-vm-provision:latest}"
 STATE_DIR="${STATE_DIR:-$HOME/fcos-vm}"
 NAME="${NAME:-fcos-vm-provision}"
+# Host paths for libvirt. Defaults work when podman shares the host fs;
+# with `podman machine` only $HOME is shared, so bind-mount these under
+# STATE_DIR on the host first, e.g.:
+#   run0 mount --bind /run/libvirt "$STATE_DIR/libvirt"
+#   run0 mount --bind /etc/libvirt "$STATE_DIR/etc-libvirt"
+LIBVIRT_HOST_DIR="${LIBVIRT_HOST_DIR:-/run/libvirt}"
+LIBVIRT_ETC_DIR="${LIBVIRT_ETC_DIR:-/etc/libvirt}"
 
 if ! podman image exists "$IMAGE" 2>/dev/null; then
   echo "[up] building $IMAGE"
@@ -37,7 +44,8 @@ chmod 0755 "$STATE_DIR"
 #   $STATE_DIR         same absolute path inside — domain XML references it
 #   /run/libvirt       host libvirt sockets (world-writable srw-rw-rw-)
 #   /etc/libvirt       client config, read-only
-#   /dev/kvm           required by deploy.sh's precondition check
+#   (/dev/kvm is NOT mounted: KVM belongs to the host qemu process; the
+#    podman machine has no /dev/kvm and deploy.sh only warns without it)
 # --security-opt label=type:spc_t: the container SELinux context cannot
 # connect() to the libvirt unix sockets; spc_t keeps SELinux enforcing but
 # allows socket access. Verified on Secureblue with libvirt socket perms
@@ -59,8 +67,7 @@ exec podman run --rm --replace --name "$NAME" "${ENVS[@]}" \
   -e IMAGE_DIR="$STATE_DIR" \
   -v "$PWD:/work" \
   -v "$STATE_DIR:$STATE_DIR" \
-  -v /run/libvirt:/run/libvirt \
-  -v /etc/libvirt:/etc/libvirt:ro \
-  --device /dev/kvm \
+  -v "$LIBVIRT_HOST_DIR:/run/libvirt" \
+  -v "$LIBVIRT_ETC_DIR:/etc/libvirt:ro" \
   --security-opt label=type:spc_t \
   "$IMAGE" /work/container/entrypoint.sh

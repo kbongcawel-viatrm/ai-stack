@@ -50,8 +50,6 @@ storage:
       mode: 0750
     - path: /var/log/suricata
       mode: 0750
-    - path: /var/run/suricata
-      mode: 0750
     - path: /opt/kasm
       mode: 0755
     - path: /etc/NetworkManager/system-connections
@@ -114,6 +112,14 @@ storage:
       overwrite: true
       contents:
         local: 1_host_level/files/clamav/freshclam.conf
+    # /var/run is a tmpfs still read-only during ignition; tmpfiles creates
+    # the runtime dir at boot instead.
+    - path: /etc/tmpfiles.d/suricata.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          d /run/suricata 0750 suricata suricata -
     - path: /etc/suricata/suricata.yaml
       # 0644: the packaged suricata.service runs as user 'suricata' and must
       # be able to read its config.
@@ -121,6 +127,14 @@ storage:
       overwrite: true
       contents:
         local: 1_host_level/files/suricata/suricata.yaml
+    # The packaged default passes "-i eth0", which does not exist on FCOS
+    # (iface is ens2+); the interface lives in suricata.yaml af-packet instead.
+    - path: /etc/sysconfig/suricata
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          OPTIONS="--user suricata"
     # Local rules live in the rule path the config's default-rule-points at,
     # named exactly as its rule-files list expects: local.rules.
     - path: /var/lib/suricata/rules/local.rules

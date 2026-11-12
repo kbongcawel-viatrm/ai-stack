@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Applied to /etc/firewalld/zones/fcos-workspace.xml
-     Bound to ${FCOS_INTERFACE} by security-finalize (firewall-cmd --zone=... --change-interface).
+     Bound to ${FCOS_INTERFACE} by security-finalize via firewall-cmd.
      Default zone behavior: everything not listed is dropped inbound. -->
 <zone target="default">
   <short>FCOS workspace zone</short>

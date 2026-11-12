@@ -40,6 +40,378 @@ default-rule-path: /var/lib/suricata/rules
 rule-files:
   - suricata.rules
 
+# Full app-layer protocol config (from upstream suricata.yaml): ET Open
+# rules reference many app-layer protocols; stock defaults enable them.
+app-layer:
+  # error-policy: ignore
+  protocols:
+    telnet:
+      enabled: yes
+    rfb:
+      enabled: yes
+      detection-ports:
+        dp: 5900, 5901, 5902, 5903, 5904, 5905, 5906, 5907, 5908, 5909
+      # max-string-length: 4 KB
+    mqtt:
+      enabled: yes
+      # max-msg-length: 1 MiB
+      # subscribe-topic-match-limit: 100
+      # unsubscribe-topic-match-limit: 100
+      # Maximum number of live MQTT transactions per flow
+      # max-tx: 4096
+      # Maximum number of messages per transaction
+      # max-messages: 1024
+    krb5:
+      enabled: yes
+    bittorrent-dht:
+      enabled: yes
+    snmp:
+      enabled: yes
+    ike:
+      enabled: yes
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+
+      # Generate JA3/JA4 fingerprints from client hello. If not specified it
+      # will be disabled by default, but enabled if rules require it.
+      #ja3-fingerprints: auto
+      #ja4-fingerprints: auto
+
+      # What to do when the encrypted communications start:
+      # - track-only: keep tracking TLS session, check for protocol anomalies,
+      #            inspect tls_* keywords. Disables inspection of unmodified
+      #            'content' signatures. (default)
+      # - bypass:  stop processing this flow as much as possible. No further
+      #            TLS parsing and inspection. Offload flow bypass to kernel
+      #            or hardware if possible.
+      # - full:    keep tracking and inspection as normal. Unmodified content
+      #            keyword signatures are inspected as well.
+      #
+      # For best performance, select 'bypass'.
+      #
+      #encryption-handling: track-only
+
+    pgsql:
+      enabled: yes
+      # Stream reassembly size for PostgreSQL. By default, track it completely.
+      stream-depth: 0
+      # Maximum number of live PostgreSQL transactions per flow
+      # max-tx: 1024
+      # Maximum number of responses per PGSQL transaction
+      # Accepted values: 21-64, (min 21 to accommodate a full Startup sequence
+      # of responses)
+      # max-responses: 64
+    dcerpc:
+      enabled: yes
+      # Maximum number of live DCERPC transactions per flow
+      # max-tx: 1024
+      #max-stub-size: 1MiB
+
+    ftp:
+      enabled: yes
+      # memcap: 64 MiB
+      # max-tx: 1024
+      # Maximum number of preliminary (1xx) responses kept per transaction.
+      # max-preliminary-responses: 16
+    websocket:
+      #enabled: yes
+      # Maximum used payload size, the rest is skipped
+      # Also applies as a maximum for uncompressed data
+      # max-payload-size: 64 KiB
+    rdp:
+      #enabled: yes
+    ssh:
+      enabled: yes
+      # hassh: no
+
+      # What to do when the encrypted communications start:
+      # - track-only: keep tracking but stop inspection (default)
+      # - full:    keep tracking and inspect as normal
+      # - bypass:  stop processing this flow as much as possible.
+      #            Offload flow bypass to kernel or hardware if possible.
+      # For the best performance, select 'bypass'.
+      #
+      # encryption-handling: track-only
+    doh2:
+      enabled: yes
+    http2:
+      enabled: yes
+      # Maximum number of live HTTP2 streams in a flow
+      #max-streams: 256
+      # Maximum headers table size
+      #max-table-size: 65536
+      # Maximum reassembly size for header + continuation frames
+      #max-reassembly-size: 102400
+      # Maximum number of frames per tx
+      #max-frames: 65536
+      # Maximum data to decompress if the decompress ratio is too high
+      #compression-bomb-limit: 1MiB
+    smtp:
+      enabled: yes
+      raw-extraction: no
+      # Maximum number of live SMTP transactions per flow
+      # max-tx: 256
+      # Configure SMTP-MIME Decoder
+      mime:
+        # Decode MIME messages from SMTP transactions
+        # (may be resource intensive)
+        # This field supersedes all others because it turns the entire
+        # process on or off
+        decode-mime: yes
+
+        # Decode MIME entity bodies (ie. Base64, quoted-printable, etc.)
+        decode-base64: yes
+        decode-quoted-printable: yes
+
+        # Maximum bytes per header data value stored in the data structure
+        # (default is 2000)
+        header-value-depth: 2000
+
+        # Extract URLs and save in state data structure
+        extract-urls: yes
+        # Scheme of URLs to extract
+        # (default is [http])
+        #extract-urls-schemes: [http, https, ftp, mailto]
+        # Log the scheme of URLs that are extracted
+        # (default is no)
+        #log-url-scheme: yes
+        # Set to yes to compute the md5 of the mail body. You will then
+        # be able to journalize it.
+        body-md5: no
+      # Configure inspected-tracker for file_data keyword
+      inspected-tracker:
+        content-limit: 100000
+        content-inspect-min-size: 32768
+        content-inspect-window: 4096
+    imap:
+      enabled: detection-only
+    pop3:
+      enabled: yes
+      detection-ports:
+        dp: 110
+      # Stream reassembly size for POP3. By default, track it completely.
+      stream-depth: 0
+      # Maximum number of live POP3 transactions per flow
+      # max-tx: 256
+    smb:
+      enabled: yes
+      detection-ports:
+        dp: 139, 445
+      # Maximum number of live SMB transactions per flow
+      # max-tx: 1024
+
+      # Stream reassembly size for SMB streams. By default track it completely.
+      #stream-depth: 0
+      #dcerpc:
+      #  max-stub-size: 1MiB
+
+    nfs:
+      enabled: yes
+      # max-tx: 1024
+    tftp:
+      enabled: yes
+    dns:
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+    http:
+      enabled: yes
+
+      # Byte Range Containers default settings
+      # byterange:
+      #   memcap: 100 MiB
+      #   timeout: 60
+
+      # memcap:                   Maximum memory capacity for HTTP
+      #                           Default is unlimited, values can be 64 MiB, e.g.
+
+      # default-config:           Used when no server-config matches
+      #   personality:            List of personalities used by default
+      #   request-body-limit:     Limit reassembly of request body for inspection
+      #                           by http_client_body & pcre /P option.
+      #   response-body-limit:    Limit reassembly of response body for inspection
+      #                           by file_data, http_server_body & pcre /Q option.
+      #
+      #   For advanced options, see the user guide
+
+
+      # server-config:            List of server configurations to use if address matches
+      #   address:                List of IP addresses or networks for this block
+      #   personality:            List of personalities used by this block
+      #
+      #                           Then, all the fields from default-config can be overloaded
+      #
+      # Currently Available Personalities:
+      #   Minimal, Generic, IDS (default), IIS_4_0, IIS_5_0, IIS_5_1, IIS_6_0,
+      #   IIS_7_0, IIS_7_5, Apache_2
+      libhtp:
+         default-config:
+           personality: IDS
+
+           # Can be specified in KiB, MiB, GiB.  Just a number indicates
+           # it's in bytes.
+           request-body-limit: 100 KiB
+           response-body-limit: 100 KiB
+
+           # inspection limits
+           request-body-minimal-inspect-size: 32 KiB
+           request-body-inspect-window: 4 KiB
+           response-body-minimal-inspect-size: 40 KiB
+           response-body-inspect-window: 16 KiB
+
+           # response body decompression (0 disables)
+           response-body-decompress-layer-limit: 2
+
+           # auto will use http-body-inline mode in IPS mode, yes or no set it statically
+           http-body-inline: auto
+
+           # Decompress SWF files. Disabled by default.
+           # Two types: 'deflate', 'lzma', 'both' will decompress deflate and lzma
+           # compress-depth:
+           # Specifies the maximum amount of data to decompress,
+           # set 0 for unlimited. The maximum is 4294967282 bytes.
+           # decompress-depth:
+           # Specifies the maximum amount of decompressed data to obtain. The
+           # output buffer grows on demand up to this limit. Set 0 to use the
+           # default limit of 50 MB. The maximum is 2147483640 bytes.
+           swf-decompression:
+             enabled: no
+             type: both
+             compress-depth: 100 KiB
+             decompress-depth: 100 KiB
+
+           # Use a random value for inspection sizes around the specified value.
+           # This lowers the risk of some evasion techniques but could lead
+           # to detection change between runs. It is set to 'yes' by default.
+           #randomize-inspection-sizes: yes
+           # If "randomize-inspection-sizes" is active, the value of various
+           # inspection size will be chosen from the [1 - range%, 1 + range%]
+           # range
+           # Default value of "randomize-inspection-range" is 10.
+           #randomize-inspection-range: 10
+
+           # decoding
+           double-decode-path: no
+           double-decode-query: no
+
+           # Can enable LZMA decompression
+           #lzma-enabled: false
+           # Memory limit usage for LZMA decompression dictionary
+           # Data is decompressed until dictionary reaches this size
+           #lzma-memlimit: 1 MiB
+           # Maximum decompressed size with a compression ratio
+           # above 2048 (only LZMA can reach this ratio, deflate cannot)
+           #compression-bomb-limit: 1 MiB
+           # Maximum times in a single flow a compression bomb is allowed.
+           # If this is reached no more decompression will happen for the
+           # rest of that flow.
+           #compression-bomb-count: 3
+           # Maximum time spent decompressing a single transaction in usec
+           #decompression-time-limit: 100000
+           # Maximum number of live transactions per flow
+           #max-tx: 512
+           # Maximum used number of HTTP1 headers in one request or response
+           #headers-limit: 1024
+
+         server-config:
+
+           #- apache:
+           #    address: [192.168.1.0/24, 127.0.0.0/8, "::1"]
+           #    personality: Apache_2
+           #    # Can be specified in KiB, MiB, GiB.  Just a number indicates
+           #    # it's in bytes.
+           #    request-body-limit: 4096
+           #    response-body-limit: 4096
+           #    double-decode-path: no
+           #    double-decode-query: no
+
+           #- iis7:
+           #    address:
+           #      - 192.168.0.0/24
+           #      - 192.168.10.0/24
+           #    personality: IIS_7_0
+           #    # Can be specified in KiB, MiB, GiB.  Just a number indicates
+           #    # it's in bytes.
+           #    request-body-limit: 4096
+           #    response-body-limit: 4096
+           #    double-decode-path: no
+           #    double-decode-query: no
+
+    # Note: Modbus probe parser is minimalist due to the limited usage in the field.
+    # Only Modbus message length (greater than Modbus header length)
+    # and protocol ID (equal to 0) are checked in probing parser
+    # It is important to enable detection port and define Modbus port
+    # to avoid false positives
+    modbus:
+      # How many unanswered Modbus requests are considered a flood.
+      # If the limit is reached, the app-layer-event:modbus.flooded; will match.
+      #request-flood: 500
+
+      enabled: yes
+      detection-ports:
+        dp: 502
+      # According to MODBUS Messaging on TCP/IP Implementation Guide V1.0b, it
+      # is recommended to keep the TCP connection opened with a remote device
+      # and not to open and close it for each MODBUS/TCP transaction. In that
+      # case, it is important to set the depth of the stream reassembling as
+      # unlimited (stream.reassembly.depth: 0)
+
+      # Stream reassembly size for modbus. By default track it completely.
+      stream-depth: 0
+
+    # DNP3
+    dnp3:
+      enabled: yes
+      detection-ports:
+        dp: 20000
+      #max-tx: 32
+      #max-points: 16384
+      #max-objects: 2048
+
+    # SCADA EtherNet/IP and CIP protocol support
+    enip:
+      enabled: yes
+      detection-ports:
+        dp: 44818
+        sp: 44818
+
+    ntp:
+      enabled: yes
+
+    quic:
+      enabled: yes
+
+    dhcp:
+      enabled: yes
+
+    sip:
+      #enabled: yes
+
+    ldap:
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 389, 3268
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 389, 3268
+      # Maximum number of live LDAP transactions per flow
+      # max-tx: 1024
+      # Maximum number of responses per LDAP transaction
+      # max-responses: 1024
+
+    mdns:
+      enabled: yes
+
+
 # AF_PACKET IDS capture on the guest NIC (fail-open; see nftables note below
 # for the optional NFQUEUE inline-prevention path).
 afp-mode: mpsc
@@ -104,7 +476,7 @@ outputs:
       append: yes
       totals: yes
       threads: no
-afp-devices:
+af-packet:
   - interface: ${FCOS_INTERFACE}
     cluster-id: 99
     cluster-type: cluster_flow

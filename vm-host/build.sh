@@ -69,8 +69,8 @@ PY
 # --- 2. Toggle-driven rpm-ostree package list -------------------------------
 pkgs=()
 [[ "$ENABLE_FIREWALLD" == 1 ]] && pkgs+=(firewalld nftables)
-[[ "$ENABLE_SURICATA" == 1 ]] && pkgs+=(suricata suricata-update)
-[[ "$ENABLE_CLAMAV" == 1 ]] && pkgs+=(clamav clamav-update)
+[[ "$ENABLE_SURICATA" == 1 ]] && pkgs+=(suricata)
+[[ "$ENABLE_CLAMAV" == 1 ]] && pkgs+=(clamav clamav-freshclam)
 [[ "$ENABLE_AIDE" == 1 ]] && pkgs+=(aide)
 [[ "$ENABLE_LYNIS" == 1 ]] && pkgs+=(lynis)
 { [[ "$ENABLE_KASM" == 1 ]] || [[ "$ENABLE_HOME_SECURITY" == 1 ]]; } && pkgs+=(moby-engine docker-compose)

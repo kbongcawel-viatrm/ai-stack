@@ -24,8 +24,24 @@ swapon -a || true
 IFACE="$(nmcli -t -f DEVICE,STATE device | awk -F: '$2=="connected" && $1!="lo" {print $1; exit}')"
 if [[ -n "$IFACE" ]]; then
   firewall-cmd --permanent --zone=fcos-workspace --change-interface="$IFACE" || true
-  firewall-cmd --reload || true
 fi
+# dockerd requires a firewalld zone literally named "docker" (INVALID_ZONE
+# otherwise); FCOS's firewalld does not ship one.
+if command -v dockerd >/dev/null 2>&1 \
+  && ! firewall-cmd --permanent --query-zone=docker >/dev/null 2>&1; then
+  firewall-cmd --permanent --new-zone=docker 2>/dev/null || true
+  # Fallback: an empty zone may be rejected on some firewalld builds.
+  if ! firewall-cmd --permanent --query-zone=docker >/dev/null 2>&1; then
+    cat > /etc/firewalld/zones/docker.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<zone>
+  <short>docker</short>
+  <description>docker</description>
+</zone>
+EOF
+  fi
+fi
+firewall-cmd --reload || true
 
 # --- suricata: fetch ET Open rules once, then enable ------------------------
 # Dedicated stamp: a glob on *.rules would match the provisioned local.rules
@@ -60,7 +76,9 @@ systemctl enable --now container-update.timer || true
 # and generate the compose .env (KASM_VNC_PASSWORD) exactly once.
 if [[ -f /opt/kasm/docker-compose.yaml ]]; then
   install -d -m 0755 /var/opt/kasm
-  install -m 0644 /opt/kasm/docker-compose.yaml /var/opt/kasm/docker-compose.yaml
+  # /opt is a symlink to /var/opt on FCOS — skip the copy when src == dst.
+  cmp -s /opt/kasm/docker-compose.yaml /var/opt/kasm/docker-compose.yaml \
+    || install -m 0644 /opt/kasm/docker-compose.yaml /var/opt/kasm/docker-compose.yaml
   if [[ ! -f /var/opt/kasm/.env ]]; then
     ( umask 077; printf 'KASM_VNC_PASSWORD=%s\n' "$(head -c18 /dev/urandom | base64)" > /var/opt/kasm/.env )
     echo "Kasm VNC password generated in /var/opt/kasm/.env" >&2
