@@ -203,6 +203,7 @@ if [[ "${TMOUT@a}" != *r* ]]; then
 fi
 
 # ALIAS     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+alias cline='cline --auto-approve false'
 alias distro='distrobox'
 alias tlbx='toolbox'
 alias tlbxen='toolbox enter'
