@@ -2163,6 +2163,8 @@ bashconfigcheck() {
     if bash -n "$selected_file"; then
         _terminal_msg success "Syntax is valid: $selected_file"
         bash "$selected_file"
+        source $HOME/.bashrc
+        _terminal_msg success "New bash config loaded"
     else
         _terminal_msg error "Syntax error detected in '$selected_file'. Execution aborted." >&2
         return 1
