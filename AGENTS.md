@@ -14,6 +14,15 @@
   `podman machine reset` / recover rootless) before retrying. Use
   `CONTAINER_HOST=unix:///run/user/1000/podman/podman-machine-default-api.sock`
   if `podman.sock` refuses.
+- **App deployment model (containers only — no systemd):** every app runs
+  as a rootless Podman container managed by `podman-compose` — never create
+  systemd units for app lifecycle. Pattern: app container publishes
+  `127.0.0.1:<port>` → Caddy terminates TLS on `127.0.0.1:8443` with a
+  per-hostname vhost → `cloudflared` maps the public hostname
+  (`<app>.home-security.uk`) to Caddy. Cloudflare Access SSO is the only
+  auth gate; apps run with no auth of their own. Secrets stay in `.env`
+  files (gitignored). See the `vite-app-development` skill for the full
+  reference implementation and Cloudflare/podman gotchas.
 - **Folder structure (scaling rule):** the repository root is organized as:
 
   ```text
