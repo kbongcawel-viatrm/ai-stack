@@ -2163,6 +2163,7 @@ bashconfigcheck() {
     if bash -n "$selected_file"; then
         _terminal_msg success "Syntax is valid: $selected_file"
         bash "$selected_file"
+        cp -a $HOME/workspace/ai-stack/project/bash/bashrc_template $HOME/.bashrc
         source $HOME/.bashrc
         _terminal_msg success "New bash config loaded"
     else
