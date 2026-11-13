@@ -27,6 +27,12 @@
       "type": "streamableHttp",
       "disabled": false,
       "autoApprove": []
+    },
+    "jikida": {
+      "command": "npx",
+      "args": ["-y", "-p", "@jikida/mcp", "jikida-mcp"],
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }

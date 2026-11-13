@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@jikida/sdk-node": "^0.1.0",
     "fedora-hat": "^1.0.1"
   }
 }

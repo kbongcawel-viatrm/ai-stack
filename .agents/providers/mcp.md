@@ -7,6 +7,7 @@ Use [MCP setup](../../docs/mcp-setup.md) and the shared Cline endpoint template 
 - **GitHub:** hosted GitHub MCP, read-only by default. Use it to inspect repositories, branches, issues, pull requests, source, and other read surfaces.
 - **Cloudflare:** official API MCP at `https://mcp.cloudflare.com/mcp`. Authenticate using OAuth and grant only the account/product permissions required. Use docs/search before execute.
 - **Firecrawl:** hosted OAuth MCP at `https://mcp.firecrawl.dev/v2/mcp-oauth` for web search, scraping, mapping, crawling, and other plan-enabled tools.
+- **Jikida:** security MCP server, stdio via `npx -y -p @jikida/mcp jikida-mcp` (official package [`@jikida/mcp`](https://www.npmjs.com/package/@jikida/mcp), source [unesLam/jikida](https://github.com/unesLam/jikida)). Read-only tools by default: domain/repo scanning, `guard_code`, `check_headers`, `explain_verdict`, uptime and attack-log lookups. `add_waf_rule` and `block_ip` are Pro write tools that always require explicit operator confirmation. Pair with the Jikida security skill under `.agents/skills/jikida/` (mirrored to `.cline/skills/jikida/` and `.claude/skills/jikida/`).
 - **Linear:** read-only MCP for project planning and handoff context.
 
 ## Agent requirements

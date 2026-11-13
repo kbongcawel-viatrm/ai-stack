@@ -61,6 +61,7 @@ Use this registry when researching technology-specific tasks. Prefer the officia
 | Memory forensics framework | [volatilityfoundation/volatility3](https://github.com/volatilityfoundation/volatility3) | [Volatility 3 documentation](https://volatility3.readthedocs.io/) |
 | Pattern-based file and indicator matching | [VirusTotal/yara](https://github.com/VirusTotal/yara) | [YARA documentation](https://yara.readthedocs.io/) |
 | Linux audit userspace tools | [linux-audit/audit-userspace](https://github.com/linux-audit/audit-userspace) | [Linux Audit project](https://github.com/linux-audit) |
+| Web app/repo security scanning, WAF, uptime monitoring (Jikida MCP + security skill) | [unesLam/jikida](https://github.com/unesLam/jikida) | [Jikida documentation](https://jikida.io/docs), [MCP server](https://jikida.io/security-mcp-server) |
 
 ## Source-use workflow
 

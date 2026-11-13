@@ -9,10 +9,6 @@
   `podman machine reset` / recover rootless) before retrying. Use
   `CONTAINER_HOST=unix:///run/user/1000/podman/podman-machine-default-api.sock`
   if `podman.sock` refuses.
-- **Branch:** always work on and commit to the `devin` branch only. Before
-  any commit, verify `git branch --show-current` is `devin`. Never commit
-  to `main`, `mistral`, or any other branch unless the user explicitly
-  overrides this rule.
 - **Folder structure (scaling rule):** the repository root is organized as:
 
   ```text

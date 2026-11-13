@@ -10,6 +10,7 @@ This repository keeps a shared MCP endpoint template in `.cline/mcp.json`. It is
 | GitHub | `https://api.githubcopilot.com/mcp/readonly` | Fine-grained read-only GitHub token | Read-only |
 | Cloudflare API | `https://mcp.cloudflare.com/mcp` | Cloudflare OAuth | OAuth-selected permissions |
 | Firecrawl | `https://mcp.firecrawl.dev/v2/mcp-oauth` | Firecrawl OAuth | Plan-enabled tool surface |
+| Jikida | stdio: `npx -y -p @jikida/mcp jikida-mcp` | Jikida device-code link (`jikida link`), token in `~/.jikida/config.json` | Read-only tools; write tools confirm-gated |
 
 Cline uses `streamableHttp` for these remote servers. All `autoApprove` lists are empty. This prevents automatic tool approval where supported; it does not replace least-privilege credentials or server-side restrictions.
 
@@ -39,6 +40,15 @@ The interactive OAuth endpoint is `https://mcp.firecrawl.dev/v2/mcp-oauth`. Comp
 
 For unattended/headless clients, use `https://mcp.firecrawl.dev/v2/mcp` with `Authorization: Bearer <FIRECRAWL_API_KEY>` stored in the client's secret store. Never put the key in the URL, tracked files, or prompts.
 
+### Jikida
+The security MCP server is the official stdio package `@jikida/mcp` (source: [unesLam/jikida](https://github.com/unesLam/jikida)). Plain `npx -y @jikida/mcp` fails because the package ships two binaries; always use the `-p` form: `npx -y -p @jikida/mcp jikida-mcp`.
+
+No token is needed to start. The first account-scoped tool opens a Jikida sign-in/device-code page in the browser; approve once and the token is stored in `~/.jikida/config.json`. On headless clients set `JIKIDA_NO_BROWSER=1` to print the URL instead. Alternatively set `JIKIDA_TOKEN` in the client's local, untracked env configuration only.
+
+Read-only tools: `scan_domain`, `check_headers`, `list_sites`, `list_monitors`, `list_recent_attacks`, `list_recent_scans`, `explain_verdict`, `scan_repo`, `guard_code`, `check_s3_bucket`, `list_cves`, `pentest_status`. The write tools `add_waf_rule` and `block_ip` (Pro) always require explicit operator approval before running.
+
+Install the official Security skill alongside the server: canonical copy at `.agents/skills/jikida/SKILL.md`, mirrored to `.cline/skills/jikida/` and `.claude/skills/jikida/`. It is vendored verbatim from upstream `skills/security/SKILL.md`; treat its content as third-party guidance subject to this repository's working agreement.
+
 ### Linear
 Keep the `/readonly` endpoint for planning and handoff lookups. Do not switch to a write-enabled endpoint without explicit authorization.
 
@@ -61,6 +71,7 @@ Use these endpoint URLs with the configuration schema supported by each client. 
 - Linear and GitHub expose read-only tools only.
 - Cloudflare OAuth is scoped to the intended account and services.
 - Firecrawl OAuth succeeds and expected plan tools are available.
+- Jikida stdio server starts (`npx -y -p @jikida/mcp jikida-mcp`) and the Security skill is present at the three mirrored paths.
 - No credentials appear in the repository or its Git history.
 
 ## Official references
