@@ -1,5 +1,10 @@
 # Agent rules
 
+- **Git pushes require operator approval (all agents/providers):** the
+  operator is the sole gate for all code pushes. Never run `git push` or
+  otherwise publish commits to a remote without explicit approval for that
+  specific push. Agents commit locally only; the operator performs pushes
+  themselves when ready.
 - **VM provisioning:** all VM provisioning for `vm-host/` must run inside a
   container via the `burnerbox`/`burnercommand` shell functions (the repo's
   `make up` / `container/up.sh` path is the in-repo equivalent). Never run
