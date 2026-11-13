@@ -32,7 +32,7 @@ browser ──TLS──> Cloudflare edge (*.home-security.uk)
 | Layer | Port | Bind | Notes |
 |---|---|---|---|
 | Manager UI (`standalone.mjs`) | 5173 | **127.0.0.1** | serves `workspace/mgmt-dashboard/dist` + `/api/code-server/*` |
-| Edge proxy (`code-server-manager.mjs`) | 8080 | 127.0.0.1 | security headers, login rate limit, strips `$PASSWORD` hint, WS proxy |
+| Edge proxy (`code-server-manager.mjs`) | 8080 | 127.0.0.1 | security headers, rate limit, WS proxy |
 | code-server | 18080 | 127.0.0.1 | `--auth password`, internal only |
 | Caddy | 8443 | 127.0.0.1 | `tls internal` per-host vhosts, `auto_https disable_redirects` (rootless can't bind :80) |
 | cloudflared | — | host net | remotely-managed tunnel `vite-apps` (`832eb852-9827-45f2-97b2-0a5cd0c79a4e`), token in `.env` |
@@ -44,11 +44,12 @@ delegates scripts. systemd user unit: `deploy/vite-apps.service` via
 
 ## Auth model (final)
 
-- **Cloudflare Access** is the only public gate: self-hosted app `vite-apps`
-  covering both hostnames, GitHub IdP, allow policy = 4 known emails,
-  24h sessions. Unauthenticated → 302 to
+- **Cloudflare Access** is the only gate: self-hosted app `vite-apps`
+  covering both hostnames, GitHub IdP required (`login_method` in policy
+  `require`), allow-listed emails, 24h sessions. Unauthenticated → 302 to
   `home-security-xyz.cloudflareaccess.com/cdn-cgi/access/login/<host>`.
-- **code-server `PASSWORD`** (.env) still required at the editor login.
+- **code-server runs `--auth none`** on 127.0.0.1 — no PASSWORD anywhere;
+  the edge proxy no longer checks `code-server-session` on upgrades.
 - The manager has **no app-level login** — deliberately removed; the
   standalone server binds localhost only so its open API is never LAN-exposed.
 - Do NOT reintroduce custom OAuth/portal code — the `my.home-security.uk`
@@ -76,8 +77,6 @@ delegates scripts. systemd user unit: `deploy/vite-apps.service` via
 2. **SNI mismatch**: cloudflared sends SNI = origin host unless
    `originServerName` is set; Caddy internal certs are per-hostname → TLS
    `internal error`. Set both `originServerName` and `httpHostHeader`.
-3. **Login-page rewrite**: strip `accept-encoding` before proxying code-server
-   `/login` HTML or gzip/br defeats the `$PASSWORD`-hint removal.
 4. **Local DNS**: stub resolver may serve stale negatives for new CF records;
    test with `dig @1.1.1.1` and `curl --resolve` before assuming tunnel failure.
 5. Rootless podman **cannot bind :80** — hence `auto_https disable_redirects`.
