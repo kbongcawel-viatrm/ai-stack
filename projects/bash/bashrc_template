@@ -555,6 +555,185 @@ getaitools(){
     _terminal_msg success " Workspace AI setup complete. 🧠"
 }
 
+
+# Configure GitHub and Cloudflare MCP servers for Cline CLI.
+# CF_TOK and GH_PAT are exported to Cline; their values are never written
+# to the MCP settings file. Cline resolves ${env:NAME} at connection time.
+clinemcpsetup() {
+    local settings_file settings_dir tmp backup
+
+    if (( $# > 0 )); then
+        printf 'Usage: clinemcpsetup\n' >&2
+        return 2
+    fi
+
+    if [[ ! -v CF_TOK ]] || (( ${#CF_TOK} == 0 )); then
+        printf 'Error: CF_TOK is not set or is empty.\n' >&2
+        return 2
+    fi
+    if [[ ! -v GH_PAT ]] || (( ${#GH_PAT} == 0 )); then
+        printf 'Error: GH_PAT is not set or is empty.\n' >&2
+        return 2
+    fi
+
+    command -v cline >/dev/null 2>&1 || {
+        printf 'Error: Cline CLI is not installed or is not on PATH.\n' >&2
+        return 127
+    }
+    command -v jq >/dev/null 2>&1 || {
+        printf 'Error: jq is required to update the MCP settings safely.\n' >&2
+        return 127
+    }
+
+    # Make the values available to the Cline process launched from this shell.
+    export CF_TOK GH_PAT
+
+    # CLINE_MCP_SETTINGS_PATH overrides the file path; CLINE_DATA_DIR overrides
+    # the Cline data root. The default CLI settings file is under ~/.cline/data.
+    if [[ -n "${CLINE_MCP_SETTINGS_PATH:-}" ]]; then
+        settings_file="$CLINE_MCP_SETTINGS_PATH"
+    else
+        settings_file="${CLINE_DATA_DIR:-$HOME/.cline/data}/settings/cline_mcp_settings.json"
+    fi
+    settings_dir="$(dirname -- "$settings_file")"
+
+    if [[ -L "$settings_file" ]]; then
+        printf 'Error: Refusing to modify a symlinked MCP settings file: %s\n' "$settings_file" >&2
+        return 1
+    fi
+    if [[ -e "$settings_file" && ! -f "$settings_file" ]]; then
+        printf 'Error: MCP settings path is not a regular file: %s\n' "$settings_file" >&2
+        return 1
+    fi
+    if ! mkdir -p -- "$settings_dir"; then
+        printf 'Error: Cannot create MCP settings directory: %s\n' "$settings_dir" >&2
+        return 1
+    fi
+    chmod 700 -- "$settings_dir" || return 1
+
+    if [[ -f "$settings_file" ]]; then
+        if ! jq -e 'type == "object" and ((.mcpServers // {}) | type == "object")' \
+            "$settings_file" >/dev/null 2>&1; then
+            printf 'Error: Existing MCP settings are invalid or mcpServers is not an object. No changes made.\n' >&2
+            return 1
+        fi
+
+        backup="$(mktemp "${settings_file}.bak.XXXXXX")" || {
+            printf 'Error: Could not create a backup of existing MCP settings.\n' >&2
+            return 1
+        }
+        if ! cp -p -- "$settings_file" "$backup"; then
+            rm -f -- "$backup"
+            printf 'Error: Could not back up existing MCP settings. No changes made.\n' >&2
+            return 1
+        fi
+        chmod 600 -- "$backup" || return 1
+    fi
+
+    tmp="$(mktemp "${settings_file}.tmp.XXXXXX")" || {
+        printf 'Error: Could not create temporary MCP settings file.\n' >&2
+        return 1
+    }
+
+    if [[ -f "$settings_file" ]]; then
+        if ! jq '
+            if type != "object" then
+                error("top-level MCP settings must be an object")
+            else
+                .mcpServers = (
+                    (.mcpServers // {}) as $servers
+                    | if ($servers | type) != "object" then
+                        error("mcpServers must be an object")
+                      else
+                        $servers + {
+                            "github": {
+                                "type": "streamableHttp",
+                                "url": "https://api.githubcopilot.com/mcp/readonly",
+                                "headers": {
+                                    "Authorization": "Bearer ${env:GH_PAT}"
+                                },
+                                "disabled": false,
+                                "autoApprove": []
+                            },
+                            "cloudflare": {
+                                "type": "streamableHttp",
+                                "url": "https://mcp.cloudflare.com/mcp",
+                                "headers": {
+                                    "Authorization": "Bearer ${env:CF_TOK}"
+                                },
+                                "disabled": false,
+                                "autoApprove": []
+                            }
+                        }
+                      end
+                )
+            end
+        ' "$settings_file" > "$tmp"; then
+            rm -f -- "$tmp"
+            printf 'Error: Failed to update MCP JSON. Existing settings were not replaced.\n' >&2
+            return 1
+        fi
+    else
+        if ! jq -n '
+            {
+                "mcpServers": {
+                    "github": {
+                        "type": "streamableHttp",
+                        "url": "https://api.githubcopilot.com/mcp/readonly",
+                        "headers": {
+                            "Authorization": "Bearer ${env:GH_PAT}"
+                        },
+                        "disabled": false,
+                        "autoApprove": []
+                    },
+                    "cloudflare": {
+                        "type": "streamableHttp",
+                        "url": "https://mcp.cloudflare.com/mcp",
+                        "headers": {
+                            "Authorization": "Bearer ${env:CF_TOK}"
+                        },
+                        "disabled": false,
+                        "autoApprove": []
+                    }
+                }
+            }
+        ' > "$tmp"; then
+            rm -f -- "$tmp"
+            printf 'Error: Failed to create MCP JSON.\n' >&2
+            return 1
+        fi
+    fi
+
+    # Ensure the file keeps variable references, not resolved token values.
+    if ! jq -e '
+        .mcpServers.github.headers.Authorization == "Bearer ${env:GH_PAT}" and
+        .mcpServers.cloudflare.headers.Authorization == "Bearer ${env:CF_TOK}" and
+        .mcpServers.github.url == "https://api.githubcopilot.com/mcp/readonly" and
+        .mcpServers.cloudflare.url == "https://mcp.cloudflare.com/mcp"
+    ' "$tmp" >/dev/null; then
+        rm -f -- "$tmp"
+        printf 'Error: Generated MCP settings did not pass validation.\n' >&2
+        return 1
+    fi
+
+    chmod 600 -- "$tmp" || {
+        rm -f -- "$tmp"
+        return 1
+    }
+    if ! mv -f -- "$tmp" "$settings_file"; then
+        rm -f -- "$tmp"
+        printf 'Error: Could not install MCP settings file.\n' >&2
+        return 1
+    fi
+
+    printf 'Cline MCP settings updated: %s\n' "$settings_file"
+    printf '  GitHub:     https://api.githubcopilot.com/mcp/readonly\n'
+    printf '  Cloudflare: https://mcp.cloudflare.com/mcp\n'
+    printf 'Credentials are referenced from CF_TOK and GH_PAT; token values were not written to the file.\n'
+    printf 'Start Cline from this shell so it inherits the exported variables.\n'
+}
+
+
 mistralfix(){
 _terminal_msg normal "Running vibe fix 'pip install --user --force-reinstall vibe'"
 command -v pip >/dev/null 2>&1 && pip install --user --force-reinstall mistral-vibe || echo "pip is not installed"
@@ -2132,7 +2311,7 @@ kimctl() {
         podrecoverstate|gcloud_workspace_sync|cf_workspace_sync|\
         workspaceinstallgcloud|myusbgenpolicy|burnerbox|burnercommand|\
         gcloudtoolbox|firewall-cmd-get-active|workspaceconfigcheck|\
-        getbash|getpath|getvirtall|workspaceagent)
+        clinemcpsetup|getbash|getpath|getvirtall|workspaceagent)
             shift
             "$command_name" "$@"
             return $?
