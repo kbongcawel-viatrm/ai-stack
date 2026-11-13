@@ -807,6 +807,12 @@ echo
 _terminal_msg normal "🐧 Termination signals sent. Processes may take time to exit."
 }
 
+# restart agent
+workspaceagentrestart(){
+workspacekill
+workspaceagent
+}
+
 # Generate SSH and GPG keys for Github
 workspacegenkeys(){
 local git_name git_email key_passphrase ssh_key_name ssh_key_path gpg_key_id gpg_batch gpg_rc
