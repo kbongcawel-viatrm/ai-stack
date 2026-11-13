@@ -2321,7 +2321,7 @@ kimctl() {
         podrecoverstate|gcloud_workspace_sync|cf_workspace_sync|\
         workspaceinstallgcloud|myusbgenpolicy|burnerbox|burnercommand|\
         gcloudtoolbox|firewall-cmd-get-active|workspaceconfigcheck|\
-        clinemcpsetup|getbash|getpath|getvirtall|workspaceagent)
+        clinemcpsetup|getbash|getpath|getvirtall|workspaceagent|workspaceagentrestart)
             shift
             "$command_name" "$@"
             return $?
