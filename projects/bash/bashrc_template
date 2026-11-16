@@ -38,75 +38,44 @@ tcat() {
 }
 
 # Terminal presentation helpers.
-# Use compact panels for function summaries; retain raw output for logs, prompts,
-# command results, public keys, and other copyable diagnostic data.
+# Consistent, compact status messages for interactive and non-interactive shells.
 _terminal_msg() {
-    local status="\${1:-normal}"
-    shift || true
-    [[ "\${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-    local color icon
+    local status="${1:-normal}" label color
     case "$status" in
-        success) color='1;32'; icon='✔ ' ;;
-        error)   color='1;31'; icon='✖ ' ;;
-        warning) color='1;33'; icon='! ' ;;
-        normal)  color='1';    icon='' ;;
-        *)       color='0';    icon='' ;;
+        success|error|warning|normal) shift ;;
+        *) status=normal ;;
     esac
-    if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
-        printf '\033[%sm%s%s\033[0m\n' "$color" "$icon" "$*"
+    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    case "$status" in
+        success) label=" OK  "; color='1;32' ;;
+        error)   label="FAIL "; color='1;31' ;;
+        warning) label="WARN "; color='1;33' ;;
+        normal)  label="INFO "; color='1;36' ;;
+    esac
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        printf '  \033[%sm[%s]\033[0m %s\n' "$color" "$label" "$*"
     else
-        printf '%s%s\n' "$icon" "$*"
+        printf '  [%s] %s\n' "$label" "$*"
     fi
 }
 
-# Compact boxed status panel.
-# Usage: _terminal_panel "TITLE" "STATUS" "DETAIL" ...
-_terminal_panel() {
-    [[ "\${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-    local title="\${1:-STATUS}" status="\${2:-}" line width=54
-    shift 2 2>/dev/null || true
-    (( $# > 0 )) || set -- "No additional details."
-    printf '\n'
-    if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
-        printf '  \033[1;36m┌%s┐\033[0m\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
-        printf '  \033[1;36m│\033[0m \033[1;37m%-*s\033[0m \033[1;36m│\033[0m\n' "$((width - 4))" "$title"
-        printf '  \033[1;36m├%s┤\033[0m\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
-        if [[ -n "$status" ]]; then
-            printf '  \033[1;36m│\033[0m %-*s \033[1;36m│\033[0m\n' "$((width - 4))" "$status"
-        fi
-        for line in "$@"; do
-            printf '  \033[1;36m│\033[0m %-*s \033[1;36m│\033[0m\n' "$((width - 4))" "$line"
-        done
-        printf '  \033[1;36m└%s┘\033[0m\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
-    else
-        printf '  +%s+\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
-        printf '  | %-*s |\n' "$((width - 4))" "$title"
-        printf '  +%s+\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
-        [[ -z "$status" ]] || printf '  | %-*s |\n' "$((width - 4))" "$status"
-        for line in "$@"; do
-            printf '  | %-*s |\n' "$((width - 4))" "$line"
-        done
-        printf '  +%s+\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
-    fi
-    printf '\n'
-}
-
+# Short divider retained for compatibility with existing functions.
 _terminal_line() {
-    [[ "\${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-    local type="\${1:-normal}" width="\${2:-54}" char='─' color='1;36' line
+    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    local type="${1:-normal}" width="${2:-32}" char='─' color='1;36' line
     case "$type" in
         success) color='1;32' ;;
         warning) color='1;33' ;;
         error) color='1;31' ;;
     esac
-    (( width > 80 )) && width=80
+    (( width > 48 )) && width=48
     (( width < 8 )) && width=8
     printf -v line '%*s' "$width" ''
-    line="\${line// /$char}"
-    if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
-        printf '\033[%sm%s\033[0m\n' "$color" "$line"
+    line="${line// /$char}"
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        printf '  \033[%sm%s\033[0m\n' "$color" "$line"
     else
-        printf '%s\n' "$line"
+        printf '  %s\n' "$line"
     fi
 }
 
@@ -738,8 +707,7 @@ _terminal_msg normal "If it returns an error msg e.g. 'externally-managed-enviro
 
 # Dedicated SSH agent for the home-security key
 workspaceconnect() {
-_terminal_msg  "Creating ephemeral access."
-_terminal_line normal
+_terminal_msg normal "Creating temporary workspace access."
     local key="$HOME/.ssh/home-security"
     local agent_output
 
@@ -750,16 +718,13 @@ _terminal_line normal
     fi
 
     if [[ ! -f "$key" || ! -r "$key" ]]; then
-        _terminal_line error
-        _terminal_msg error " ERROR: SSH key missing or unreadable.⚠️ "
+        _terminal_msg error "SSH key is missing or unreadable: $key"
         return 1
     fi
 
     if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] &&
        kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
-        _terminal_line success
-        _terminal_msg success "Ephemeral access created 🔑⌛"
-        _terminal_line success
+        _terminal_msg success "Temporary workspace access is already active."
         return 0
     fi
 
@@ -771,9 +736,7 @@ _terminal_line normal
 
     # Start a dedicated agent without printing its environment.
     if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
-        _terminal_line error
-        _terminal_msg error " ERROR: Could not start ssh-agent. ⚠️ "
-        _terminal_line error
+        _terminal_msg error "Could not start the dedicated SSH agent."
         return 1
     fi
 
@@ -791,12 +754,8 @@ _terminal_line normal
 
     # Clean up this dedicated agent when the shell exits.
     trap 'workspacekill' EXIT
-    _terminal_panel "WORKSPACE CONNECTION" \
-        "STATUS       ✔ Connected" \
-        "PROCESS      $HOME_SECURITY_SSH_AGENT_PID" \
-        "DURATION     5 minutes" \
-        "SECURITY     Access ends on terminal exit"
-    _terminal_msg success "Workspace access initialized."
+    _terminal_msg success "Workspace access initialized (PID $HOME_SECURITY_SSH_AGENT_PID; key lifetime 5 minutes)."
+    _terminal_msg warning "Access is terminated when this terminal exits."
 }
 
 # Kill all ssh-agent processes owned by the current user.
@@ -819,7 +778,7 @@ workspacekill() {
     fi
     unset HOME_SECURITY_PREV_SOCK HOME_SECURITY_PREV_PID
     unset HOME_SECURITY_PREV_SOCK_SET HOME_SECURITY_PREV_PID_SET
-    _terminal_panel "WORKSPACE ACCESS" "STATUS       ✔ Terminated" "DETAIL       Dedicated SSH agent stopped"
+    _terminal_msg success "Dedicated workspace SSH agent terminated and previous agent environment restored."
 }
 
 # restart agent
@@ -2215,7 +2174,7 @@ bashconfigcheck() {
     local config="$HOME/workspace/ai-stack/projects/bash/bashrc_template"
     local syntax_output syntax_status error_line start_line end_line
 
-    _terminal_panel "BASH CONFIGURATION" "ACTION       Validate and reload" "TEMPLATE     $config" "TARGET       $HOME/.bashrc"
+    _terminal_msg normal "Validating $config before updating ~/.bashrc."
 
     # 1. Validate Bash syntax and retain stderr for diagnostics.
     syntax_output=$(bash -n "$config" 2>&1)
@@ -2264,7 +2223,7 @@ bashconfigcheck() {
         return 1
     fi
     # 4. Reload terminal
-    _terminal_panel "CONFIGURATION RESULT" "STATUS       ✔ Updated" "RELOAD       Restarting the current Bash shell"
+    _terminal_msg success "Configuration updated. Restarting the current Bash shell."
     exec bash
     return 0
 }
@@ -2397,7 +2356,7 @@ complete -F _kimctl_completion kimctl
 # Command wrapper: dispatch every defined function in the current shell.
 # This preserves prompts, TTY access, cd/export changes, traps, and return codes.
 kimctl() {
-    local command_name="\${1:-}" rc
+    local command_name="${1:-}" rc
     if (( $# == 0 )); then
         printf 'Usage: kimctl function [arguments...]\n' >&2
         return 2
@@ -2410,14 +2369,14 @@ kimctl() {
     fi
 
     shift
-    _terminal_panel "KIMCTL" "FUNCTION     $command_name" "EXECUTION    Foreground / current shell"
+    _terminal_msg normal "Running function: $command_name"
     "$command_name" "$@"
     rc=$?
 
     if (( rc == 0 )); then
-        _terminal_panel "KIMCTL RESULT" "STATUS       ✔ Success" "FUNCTION     $command_name"
+        _terminal_msg success "Completed: $command_name"
     else
-        _terminal_panel "KIMCTL RESULT" "STATUS       ✖ Failed (exit $rc)" "FUNCTION     $command_name"
+        _terminal_msg error "Failed: $command_name (exit code $rc)"
     fi
     return "$rc"
 }
