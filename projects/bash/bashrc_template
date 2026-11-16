@@ -1592,35 +1592,49 @@ podresetall() {
 
 # systemic restart
 podsystemrestart() {
-    local rc
-
-    freshstart() {
-        unset CONTAINER_HOST
-
-        _terminal_msg normal "Stopping Podman socket and service..."
-        run_with_loader "Stopping Podman socket" systemctl --user stop podman.socket || return $?
-        run_with_loader "Stopping Podman service" systemctl --user stop podman.service || return $?
-
-        _terminal_msg normal "Waiting for Podman to stop..."
-        sleep 5
-
-        _terminal_msg normal "Starting Podman socket and service..."
-        run_with_loader "Starting Podman socket" systemctl --user start podman.socket || return $?
-        run_with_loader "Starting Podman service" systemctl --user start podman.service || return $?
-
-        return 0
-    }
+    local rc=0
 
     _terminal_msg normal "Refreshing Podman resources..."
+    unset CONTAINER_HOST
 
-    if freshstart; then
+    _terminal_msg normal "Stopping Podman socket and service..."
+    if run_with_loader "Stopping Podman socket" systemctl --user stop podman.socket; then
+        :
+    else
+        rc=$?
+    fi
+    if (( rc == 0 )); then
+        if run_with_loader "Stopping Podman service" systemctl --user stop podman.service; then
+            :
+        else
+            rc=$?
+        fi
+    fi
+
+    if (( rc == 0 )); then
+        _terminal_msg normal "Waiting for Podman to stop..."
+        sleep 5
+        _terminal_msg normal "Starting Podman socket and service..."
+        if run_with_loader "Starting Podman socket" systemctl --user start podman.socket; then
+            :
+        else
+            rc=$?
+        fi
+    fi
+    if (( rc == 0 )); then
+        if run_with_loader "Starting Podman service" systemctl --user start podman.service; then
+            :
+        else
+            rc=$?
+        fi
+    fi
+
+    if (( rc == 0 )); then
         _terminal_msg success "Podman resources restarted."
         return 0
     fi
 
-    rc=$?
-    _terminal_msg warning "Direct restart failed; attempting recovery."
-
+    _terminal_msg warning "Direct restart failed (exit code $rc); attempting recovery."
     if podrootless; then
         return 0
     elif podrecoverstate; then
@@ -1632,7 +1646,6 @@ podsystemrestart() {
     _terminal_msg error "Podman recovery did not complete."
     return "$rc"
 }
-
 
 # Install gcloud
 workspaceinstallgcloud(){
@@ -1709,7 +1722,7 @@ EOF
 # Create/reuse a Fedora Toolbox, upgrade it, install Google Cloud CLI, and enter it.
 # Usage: gcloudtoolbox [container-name]
 gcloudtoolbox() {
-    local container_name="${1:-gcloud-dev}" arch
+    local container_name="${1:-gcloud-dev}" arch rc
     if (( $# > 1 )) || [[ ! "$container_name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
         printf 'Usage: gcloudtoolbox [container-name]\n' >&2
         return 2
@@ -1729,9 +1742,12 @@ gcloudtoolbox() {
         printf 'Reusing Toolbox container: %s\n' "$container_name"
     else
         printf 'Creating Toolbox container: %s\n' "$container_name"
-        if ! run_with_loader "Creating $container_name" toolbox create --container "$container_name"; then
-            _terminal_msg error "Toolbox creation failed: $container_name"
-            return 1
+        if run_with_loader "Creating $container_name" toolbox create --container "$container_name"; then
+            :
+        else
+            rc=$?
+            _terminal_msg error "Toolbox creation failed: $container_name (exit code $rc)."
+            return "$rc"
         fi
     fi
     toolbox run --container "$container_name" bash -c '
@@ -2448,11 +2464,12 @@ burnercommand() {
     local container="burnerbox"
     local project_dir="$HOME/workspace/"
     local image="registry.fedoraproject.org/fedora-toolbox:44"
+    local rc
 
     # Create or start the persistent sandbox without requiring a TTY.
     if ! podman container exists "$container"; then
         _terminal_msg normal "Creating persistent hardened sandbox..."
-        if ! run_with_loader "Creating $container" podman run -d \
+        if run_with_loader "Creating $container" podman run -d \
             --name "$container" \
             --cap-drop=ALL \
             --security-opt=no-new-privileges \
@@ -2468,16 +2485,20 @@ burnercommand() {
             -w /workspace \
             "$image" \
             sleep infinity; then
-            _terminal_msg error "Failed to create $container."
-            return 1
+            _terminal_msg success "Sandbox container created."
+        else
+            rc=$?
+            _terminal_msg error "Failed to create $container (exit code $rc)."
+            return "$rc"
         fi
-        _terminal_msg success "Sandbox container created."
     elif [[ "$(podman inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" != "true" ]]; then
-        if ! run_with_loader "Starting $container" podman start "$container"; then
-            _terminal_msg error "Failed to start $container."
-            return 1
+        if run_with_loader "Starting $container" podman start "$container"; then
+            _terminal_msg success "Sandbox container started."
+        else
+            rc=$?
+            _terminal_msg error "Failed to start $container (exit code $rc)."
+            return "$rc"
         fi
-        _terminal_msg success "Sandbox container started."
     else
         _terminal_msg success "Sandbox container is already running."
     fi
@@ -2488,7 +2509,7 @@ burnercommand() {
         return $?
     fi
 
-    # Preserve arguments as individual shell words.
+    # Pass the requested command text to the container's Bash shell.
     local tty_flags=(-i)
     [[ -t 0 && -t 1 ]] && tty_flags=(-it)
     podman exec "${tty_flags[@]}" "$container" /bin/bash -c "$*"
