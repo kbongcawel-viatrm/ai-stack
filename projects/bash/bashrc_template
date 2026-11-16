@@ -2096,15 +2096,148 @@ run0ctl restart  usbguard.service
 run0ctl status usbguard.service
 }
 
-bashconfigbackup(){
-_terminal_msg normal "Validating .bashrc before creating backup."
-if bash -n "$HOME/.bashrc"; then
-    _terminal_msg success "Syntax is valid  ☕ "
-    cp -a $HOME/.bashrc $HOME/workspace/ai-stack/diskless-os/bashrc_template
-else
-    _terminal_msg error "Syntax error detected. Aborting. 👹 " >&2
-    exit 1
-fi
+# connection check
+# Verify the dedicated workspace SSH agent.
+connectioncheck() {
+    local agent_pid="${HOME_SECURITY_SSH_AGENT_PID:-}"
+    local agent_sock="${HOME_SECURITY_SSH_AUTH_SOCK:-}"
+
+    if [[ ! "$agent_pid" =~ ^[0-9]+$ ]] ||
+       [[ -z "$agent_sock" || ! -S "$agent_sock" ]] ||
+       ! kill -0 "$agent_pid" 2>/dev/null; then
+        _terminal_msg error "Dedicated SSH agent is not running or its socket is unavailable."
+        return 1
+    fi
+
+    if ! command -v ssh-add >/dev/null 2>&1; then
+        _terminal_msg error "ssh-add is unavailable."
+        return 1
+    fi
+
+    if ! SSH_AUTH_SOCK="$agent_sock" \
+         SSH_AGENT_PID="$agent_pid" \
+         ssh-add -l >/dev/null 2>&1; then
+        _terminal_msg error "SSH agent is reachable, but no usable identity is loaded."
+        return 1
+    fi
+
+    _terminal_msg success "Dedicated SSH agent is active."
+    return 0
+}
+
+
+# pull updates from git
+# Fetch and update ai-stack from origin/main.
+getupdates() {
+    local repo_dir="${AI_STACK_DIR:-$HOME/workspace/ai-stack}"
+    local config_file="$repo_dir/projects/bash/bashrc_template"
+    local branch
+
+    # 1. Verify SSH access.
+    _terminal_msg normal "Checking temporary SSH access..."
+
+    if ! connectioncheck; then
+        _terminal_msg warning "Run workspaceconnect and try again."
+        return 1
+    fi
+
+    # Ensure Git inherits the dedicated SSH agent environment.
+    export SSH_AUTH_SOCK="$HOME_SECURITY_SSH_AUTH_SOCK"
+    export SSH_AGENT_PID="$HOME_SECURITY_SSH_AGENT_PID"
+
+    # 2. Verify repository.
+    if ! command -v git >/dev/null 2>&1 ||
+       ! git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        _terminal_msg error "ai-stack repository not found: $repo_dir"
+        return 1
+    fi
+
+    # 3. Verify current branch.
+    branch=$(git -C "$repo_dir" branch --show-current) || {
+        _terminal_msg error "Could not determine the current Git branch."
+        return 1
+    }
+
+    if [[ "$branch" != "main" ]]; then
+        _terminal_msg error "Expected main branch; current branch is '${branch:-detached HEAD}'."
+        return 1
+    fi
+
+    # 4. Protect uncommitted changes.
+    if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
+        _terminal_msg warning "Working tree is not clean."
+        _terminal_msg warning "Commit, stash, or discard changes before updating."
+        git -C "$repo_dir" status --short
+        return 1
+    fi
+
+    # 5. Fetch remote updates.
+    _terminal_msg normal "Fetching updates from origin..."
+
+    if ! git -C "$repo_dir" fetch --prune origin; then
+        _terminal_msg error "Git fetch failed."
+        return 1
+    fi
+
+    # 6. Verify origin/main exists.
+    if ! git -C "$repo_dir" show-ref --verify --quiet refs/remotes/origin/main; then
+        _terminal_msg error "Remote branch origin/main was not found."
+        return 1
+    fi
+
+    # 7. Fast-forward only.
+    _terminal_msg normal "Updating main branch..."
+
+    if ! git -C "$repo_dir" merge --ff-only origin/main; then
+        _terminal_msg error "Fast-forward failed. Manual Git reconciliation is required."
+        return 1
+    fi
+
+    _terminal_msg success "Repository synchronized with origin/main."
+
+    # 8. Validate configuration file.
+    if [[ ! -r "$config_file" ]]; then
+        _terminal_msg error "Configuration file is missing or unreadable."
+        return 1
+    fi
+
+    _terminal_msg normal "Checking Bash syntax..."
+
+    if ! bash -n "$config_file"; then
+        _terminal_msg error "Syntax validation failed. Configuration was not loaded."
+        return 1
+    fi
+
+    _terminal_msg success "Bash syntax is valid."
+
+    # 9. Load updated configuration.
+    _terminal_msg normal "Loading updated Bash configuration..."
+
+    if ! source "$config_file"; then
+        _terminal_msg error "Failed to load updated configuration."
+        return 1
+    fi
+
+    # 10. Restore the dedicated SSH agent environment.
+    # The template intentionally unsets SSH_AUTH_SOCK when sourced.
+    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" &&
+          -n "${HOME_SECURITY_SSH_AUTH_SOCK:-}" &&
+          -S "$HOME_SECURITY_SSH_AUTH_SOCK" ]] &&
+       kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
+
+        export SSH_AUTH_SOCK="$HOME_SECURITY_SSH_AUTH_SOCK"
+        export SSH_AGENT_PID="$HOME_SECURITY_SSH_AGENT_PID"
+
+    else
+        unset SSH_AUTH_SOCK SSH_AGENT_PID
+        _terminal_msg warning "Configuration loaded, but the temporary SSH agent is no longer available."
+        return 1
+    fi
+
+    _terminal_msg success "Updated Bash configuration loaded."
+    _terminal_msg success "SSH agent environment restored."
+
+    return 0
 }
 
 # print all emoji for terminal
