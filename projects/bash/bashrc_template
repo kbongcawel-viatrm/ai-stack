@@ -148,6 +148,12 @@ run_with_loader() {
     return "$exit_code"
 }
 
+# Double echo oreoreore
+givemespace(){
+  echo
+  echo
+}
+
 # END OF GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
 # Display the customization notice once per interactive shell session.
@@ -237,7 +243,7 @@ getvirtall() {
 
 # download nvm node and npm
 getnvm(){
-echo
+givemespace
 _terminal_msg normal '🚀 Downloading latest NVM.'
 run_with_loader "Running" bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/HEAD/install.sh | bash' || return $?
 export NVM_DIR="$HOME/.nvm"
@@ -246,19 +252,19 @@ run_with_loader "Running" nvm install --lts || return $?
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-echo
+givemespace
 _terminal_msg success '🚀 Finished downloading'
-echo
+givemespace
 _terminal_msg normal '📦 Rebuilding workspace.'
 run_with_loader "Running" npm rebuild || return $?
 _terminal_msg success '🚀 Finished rebuilding'
-echo 
+givemespace
 _terminal_msg normal  '⚙️  Fetching versions...'
-echo
+givemespace
 _terminal_msg normal 🟢'nvm:'$(nvm -v)
 _terminal_msg normal 🟢'node:'$(node -v)
 _terminal_msg normal 🟢'npm:'$(npm -v)
-echo
+givemespace
 }
 
 # empowered
@@ -269,15 +275,15 @@ whoseyourdaddy() {
 workspaceconfigcheck() {
     _terminal_line normal
     _terminal_msg normal "Checklist initialize 📋"
-    echo
+    givemespace
     getpath
-    echo
+    givemespace
     getbash
-    echo
+    givemespace
     _terminal_line success
     _terminal_msg normal "Done with all checks..."
     _terminal_msg success "Enjoy 🎉"
-    echo
+    givemespace
 }
 
 # Workspace navigator
@@ -736,6 +742,7 @@ _terminal_line normal
        kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
         _terminal_line success
         _terminal_msg success "Ephemeral access created 🔑⌛"
+        _terminal_line success
         return 0
     fi
 
@@ -749,6 +756,7 @@ _terminal_line normal
     if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
         _terminal_line error
         _terminal_msg error " ERROR: Could not start ssh-agent. ⚠️ "
+        _terminal_line error
         return 1
     fi
 
@@ -758,25 +766,31 @@ _terminal_line normal
     HOME_SECURITY_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
     # Load the key for 5 minutes; show ssh-add output on the terminal.
-    if ! ssh-add -t 300 "$key" > /dev/tty 2>&1; then
+    if ! ssh-add -t 300 "$key" > /dev/null 2>&1; then
 	workspacekill
         _terminal_line error
         _terminal_msg error " ERROR: Could not load the SSH key. ⚠️ "
+        _terminal_line error
         return 1
     fi
 
     # Clean up this dedicated agent when the shell exits.
     trap 'workspacekill' EXIT
     _terminal_line success
-    _terminal_msg success "Ephemeral access (PID $HOME_SECURITY_SSH_AGENT_PID):"
-    _terminal_msg normal "Short-lived access:"
+    _terminal_msg normal "Short-lived access (PID $HOME_SECURITY_SSH_AGENT_PID):"
     _terminal_msg success "Connected"
     _terminal_msg normal  "Duration:"
     _terminal_msg success "5 minutes"
+    _terminal_line success
+    givemespace
     _terminal_line warning
     _terminal_msg normal  "Note: Access is terminated on terminal exit. 🔑🔥"
+    _terminal_line warning
+    givemespace
     _terminal_line success
     _terminal_msg success "Done"
+    _terminal_line success
+    givemespace
 }
 
 # Kill all ssh-agent processes owned by the current user.
@@ -1431,8 +1445,7 @@ podrecoverstate() {
     # --------------------------------------------------
     # 12. Final verification
     # --------------------------------------------------
-
-    echo
+    givemespace
     _terminal_line success
 
     _terminal_msg success "Rootless Podman recovery completed."
@@ -1447,7 +1460,7 @@ podrecoverstate() {
     printf 'Socket:      %s\n' "$("${systemctl_cmd[@]}" show -p ActiveState --value podman.socket)"
     printf 'Service:     %s\n' "$("${systemctl_cmd[@]}" show -p ActiveState --value podman.service)"
     printf 'Docker Host: %s\n' "$DOCKER_HOST"
-    echo
+    givemespace
 
     _terminal_msg success "Podman API is operational."
     _terminal_msg normal "No containers, images, or volumes were removed."
@@ -1492,11 +1505,10 @@ podresetall() {
         _terminal_msg error "Error: Podman is not operational"
         return 1
     fi
-
-    echo
+    givemespace
     echo "Socket: $(systemctl --user show -p ActiveState,SubState --value podman.socket | paste -sd '/') ✅"
     echo "Service: $(systemctl --user show -p ActiveState,SubState --value podman.service | paste -sd '/')"
-    echo
+    givemespace
 
     # Prune Podman resources.
     _terminal_line normal
@@ -1540,10 +1552,10 @@ podresetall() {
         return 1
     fi
 
-    echo
+    givemespace
     echo "Socket: $(systemctl --user show -p ActiveState,SubState --value podman.socket | paste -sd '/') ✅"
     echo "Service: $(systemctl --user show -p ActiveState,SubState --value podman.service | paste -sd '/')"
-    echo
+    givemespace
 
     # Configure automatic startup.
     _terminal_line normal
@@ -2124,60 +2136,59 @@ _terminal_msg normal "Smileys & Emotion"
 _terminal_line normal
 echo " 😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 🥸 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖 💋 💌 💘 💝 💖 💗 💓 💞 💕 💟 ❣️ 💔 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 💯 💢 💥 💫 💦 💨 🕳️ 💣 💬 🗨️ 🗯️ 💭 💤 "
 
-echo
-echo
+givemespace
 
 _terminal_msg normal "People & Body"
 _terminal_line normal
 echo " 👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦿 🦵 🦶 👂 🦻 👃 🧠 🫀 🫁 🦷 🦴 👀 👁️ 👅 👄 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 👮 🕵️ 💂 🥷 👷 🤴 👸 👳 👲 🧕 🤵 👰 🤰 🤱 👼 🎅 🤶 🦸 🦹 🧙 🧚 🧛 🧜 🧝 🧞 🧟 💆 💇 🚶 🧍 🧎 🏃 💃 🕺 🕴️ 👯 🧖 🧗 🤺 🏇 ⛷️ 🏂 🏌️ 🏄 🚣 🏊 ⛹️ 🏋️ 🚴 🚵 🤸 🤼 🤽 🤾 🤹 🧘 🛀 🛌 👭 👫 👬 💏 💑 👪 🗣️ 👤 👥 🫂 👣 "
 
-echo
-echo
+givemespace
 
 _terminal_msg normal "Animals & Nature"
 _terminal_line normal
 echo " 🐵 🐒 🦍 🦧 🐶 🐕 🦮 🐕 🦺 🐩 🐺 🦊 🦝 🐱 🐈 🐈 ⬛ 🦁 🐯 🐅 🐆 🐴 🐎 🦄 🦓 🦌 🦬 🐮 🐂 🐃 🐄 🐷 🐖 🐗 🐽 🐏 🐑 🐐 🐪 🐫 🦙 🦒 🐘 🦣 🦏 🦛 🐭 🐁 🐀 🐹 🐰 🐇 🐿️ 🦫 🦔 🦇 🐻 🐻 ❄️  🐨 🐼 🦥 🦦 🦨 🦘 🦡 🐾 🦃 🐔 🐓 🐣 🐤 🐥 🐦 🐧 🕊️ 🦅 🦆 🦢 🦉 🦤 🪶 🦩 🦚 🦜 🐸 🐊 🐢 🦎 🐍 🐲 🐉 🦕 🦖 🐳 🐋 🐬 🦭 🐟 🐠 🐡 🦈 🐙 🐚 🐌 🦋 🐛 🐜 🐝 🪲 🐞 🦗 🪳 🕷️ 🕸️ 🦂 🦟 🪰 🪱 🦠 💐 🌸 💮 🏵️ 🌹 🥀 🌺 🌻 🌼 🌷 🌱 🪴 🌲 🌳 🌴 🌵 🌾 🌿 ☘️ 🍀 🍁 🍂 🍃 "
 
-echo
-echo
+
+givemespace
 
 _terminal_msg normal "Food & Drink"
 _terminal_line normal
 echo " 🍇 🍈 🍉 🍊 🍋 🍌 🍍 🥭 🍎 🍏 🍐 🍑 🍒 🍓 🫐 🥝 🍅 🫒 🥥 🥑 🍆 🥔 🥕 🌽 🌶️ 🫑 🥒 🥬 🥦 🧄 🧅 🍄 🥜 🌰 🍞 🥐 🥖 🫓 🥨 🥯 🥞 🧇 🧀 🍖 🍗 🥩 🥓 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🫔 🥙 🧆 🥚 🍳 🥘 🍲 🫕 🥣 🥗 🍿 🧈 🧂 🥫 🍱 🍘 🍙 🍚 🍛 🍜 🍝 🍠 🍢 🍣 🍤 🍥 🥮 🍡 🥟 🥠 🥡 🦀 🦞 🦐 🦑 🦪 🍦 🍧 🍨 🍩 🍪 🎂 🍰 🧁 🥧 🍫 🍬 🍭 🍮 🍯 🍼 🥛 ☕ 🫖 🍵 🍶 🍾 🍷 🍸 🍹 🍺 🍻 🥂 🥃 🥤 🧋 🧃 🧉 🧊 🥢 🍽️ 🍴 🥄 🔪 🏺 "
 
-echo
-echo
+
+givemespace
 
 _terminal_msg normal "Travel & Places"
 _terminal_line normal
 echo " 🌍 🌎 🌏 🌐 🗺️ 🗾 🧭 🏔️ ⛰️ 🌋 🗻 🏕️ 🏖️ 🏜️ 🏝️ 🏞️ 🏟️ 🏛️ 🏗️ 🧱 🪨 🪵 🛖 🏘️ 🏚️ 🏠 🏡 🏢 🏣 🏤 🏥 🏦 🏨 🏩 🏪 🏫 🏬 🏭 🏯 🏰 💒 🗼 🗽 ⛪ 🕌 🛕 🕍 ⛩️ 🕋 ⛲ ⛺ 🌁 🌃 🏙️ 🌄 🌅 🌆 🌇 🌉 ♨️ 🎠 🎡 🎢 💈 🎪 🚂 🚃 🚄 🚅 🚆 🚇 🚈 🚉 🚊 🚝 🚞 🚋 🚌 🚍 🚎 🚐 🚑 🚒 🚓 🚔 🚕 🚖 🚗 🚘 🚙 🛻 🚚 🚛 🚜 🏎️ 🏍️ 🛵 🦽 🦼 🛺 🚲 🛴 🛹 🛼 🚏 🛣️ 🛤️ 🛢️ ⛽ 🚨 🚥 🚦 🛑 🚧 ⚓ ⛵ 🛶 🚤 🛳️ ⛴️ 🛥️ 🚢 ✈️ 🛩️ 🛫 🛬 🪂 💺 🚁 🚟 🚠 🚡 🛰️ 🚀 🛸 🛎️ 🧳 ⌛ ⏳ ⌚ ⏰ ⏱️ ⏲️ 🕰️ 🕛 🌑 🌒 🌓 🌔 🌕 🌖 🌗 🌘 🌙 🌚 🌛 🌜 🌡️ ☀️ 🌝 🌞 🪐 ⭐ 🌟 🌠 🌌 ☁️ ⛅ ⛈️ 🌤️ 🌥️ 🌦️ 🌧️ 🌨️ 🌩️ 🌪️ 🌫️ 🌬️ 🌀 🌈 🌂 ☂️ ☔ ⛱️ ⚡ ❄️ ☃️ ⛄ ☄️ 🔥 💧 🌊 "
 
-echo
-echo
+
+givemespace
 
 _terminal_msg normal "Activities"
 _terminal_line normal
 echo " 🎃 🎄 🎆 🎇 🧨 ✨ 🎈 🎉 🎊 🎋 🎍 🎎 🎏 🎐 🎑 🧧 🎀 🎁 🎗️ 🎟️ 🎫 🎖️ 🏆 🏅 🥇 🥈 🥉 ⚽ ⚾ 🥎 🏀 🏐 🏈 🏉 🎾 🥏 🎳 🏏 🏑 🏒 🥍 🏓 🏸 🥊 🥋 🥅 ⛳ ⛸️ 🎣 🤿 🎽 🎿 🛷 🥌 🎯 🪀 🪁 🎱 🔮 🪄 🧿 🎮 🕹️ 🎰 🎲 🧩 🧸 🪅 🪩 🪆 ♠️ ♥️ ♦️ ♣️ ♟️ 🃏 🀄 🎴 🎭 🖼️ 🎨 🧵 🪡 🧶 🪢 "
 
-echo
-echo
+
+givemespace
 
 _terminal_msg normal "Objects"
 _terminal_line normal
 echo " 👓 🕶️ 🥽 🥼 🦺 👔 👕 👖 🧣 🧤 🧥 🧦 👗 👘 🥻 🩱 🩲 🩳 👙 👚 👛 👜 👝 🛍️ 🎒 🩴 👞 👟 🥾 🥿 👠 👡 🩰 👢 👑 👒 🎩 🎓 🧢 🪖 ⛑️ 📿 💄 💍 💎 🔇 🔈 🔉 🔊 📢 📣 📯 🔔 🔕 🎼 🎵 🎶 🎙️ 🎚️ 🎛️ 🎤 🎧 📻 🎷 🪗 🎸 🎹 🎺 🎻 🪕 🥁 🪘 📱 📲 ☎️ 📞 📟 📠 🔋 🔌 💻 🖥️ 🖨️ ⌨️ 🖱️ 🖲️ 💽 💾 💿 📀 🧮 🎥 🎞️ 📽️ 🎬 📺 📷 📸 📹 📼 🔍 🔎 🕯️ 💡 🔦 🏮 🪔 📔 📕 📖 📗 📘 📙 📚 📓 📒 📃 📜 📄 📰 🗞️ 📑 🔖 🏷️ 💰 🪙 💴 💵 💶 💷 💸 💳 🧾 💹 ✉️ 📧 📨 📩 📤 📥 📦 📫 📪 📬 📭 📮 🗳️ ✏️ ✒️ 🖋️ 🖊️ 🖌️ 🖍️ 📝 💼 📁 📂 🗂️ 📅 📆 🗒️ 🗓️ 📇 📈 📉 📊 📋 📌 📍 📎 🖇️ 📏 📐 ✂️ 🗃️ 🗄️ 🗑️ 🔒 🔓 🔏 🔐 🔑 🗝️ 🔨 🪓 ⛏️ ⚒️ 🛠️ 🗡️ ⚔️ 🔫 🪃 🏹 🛡️ 🪚 🔧 🪛 🔩 ⚙️ 🗜️ ⚖️ 🦯 🔗 ⛓️ 🪝 🧰 🧲 🪜 ⚗️ 🧪 🧫 🧬 🔬 🔭 📡 💉 🩸 💊 🩹 🩺 🚪 🛗 🪞 🪟 🛏️ 🛋️ 🪑 🚽 🪠 🚿 🛁 🪤 🪒 🧴 🧷 🧹 🧺 🧻 🪣 🧼 🪥 🧽 🧯 🛒 🚬 ⚰️ 🪦 ⚱️ 🗿 🪧 "
 
-echo echo
+
+givemespace
 
 _terminal_msg normal "Symbols"
 _terminal_line normal
 echo " 🏧 🚮 🚰 ♿ 🚹 🚺 🚻 🚼 🚾 🛂 🛃 🛄 🛅 ⚠️ 🚸 ⛔ 🚫 🚳 🚭 🚯 🚱 🚷 📵 🔞 ☢️ ☣️ ⬆️ ↗️ ➡️ ↘️ ⬇️ ↙️ ⬅️ ↖️ ↕️ ↔️ ↩️ ↪️ ⤴️ ⤵️ 🔃 🔄 🔙 🔚 🔛 🔜 🔝 🛐 ⚛️ 🕉️ ✡️ ☸️ ☯️ ✝️ ☦️ ☪️ ☮️ 🕎 🔯 ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ ⛎ 🔀 🔁 🔂 ▶️ ⏩ ⏭️ ⏯️ ◀️ ⏪ ⏮️ 🔼 ⏫ 🔽 ⏬ ⏸️ ⏹️ ⏺️ ⏏️ 🎦 🔅 🔆 📶 📳 📴 ♀️ ♂️ ⚧️ ✖️ ➕ ➖ ➗ ♾️ ‼️ ⁉️ ❓ ❔ ❕ ❗ 〰️ 💱 💲 ⚕️ ♻️ ⚜️ 🔱 📛 🔰 ⭕ ✅ ☑️ ✔️ ❌ ❎ ➰ ➿ 〽️ ✳️ ✴️ ❇️ ©️ ®️ ™️ #️⃣ *️⃣ 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🔠 🔡 🔢 🔣 🔤 🅰️ 🆎 🅱️ 🆑 🆒 🆓 ℹ️ 🆔 Ⓜ️ 🆕 🆖 🅾️ 🆗 🅿️ 🆘 🆙 🆚 🈁 🈂️ 🈷️ 🈶 🈯 🉐 🈹 🈚 🈲 🉑 🈸 🈴 🈳 ㊗️ ㊙️ 🈺 🈵 🔴 🟠 🟡 🟢 🔵 🟣 🟤 ⚫ ⚪ 🟥 🟧 🟨 🟩 🟦 🟪 🟫 ⬛ ⬜ ◼️ ◻️ ◾ ◽ ▪️ ▫️ 🔶 🔷 🔸 🔹 🔺 🔻 💠 🔘 🔳 🔲 "
 
-echo
-echo
+givemespace
 
 _terminal_msg normal "Flags"
 _terminal_line normal
 echo " 🏁 🚩 🎌 🏴 🏳️ 🏳️🌈 🏳️ ⚧️  ☠️  "
+givemespace
 }
 
 # Check Bash syntax and show diagnostics before replacing ~/.bashrc.
