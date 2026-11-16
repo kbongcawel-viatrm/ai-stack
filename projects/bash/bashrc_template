@@ -37,61 +37,84 @@ tcat() {
     command cat -- "$@" > /dev/tty
 }
 
-# Better than echo ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+# Terminal presentation helpers.
+# Use compact panels for function summaries; retain raw output for logs, prompts,
+# command results, public keys, and other copyable diagnostic data.
 _terminal_msg() {
-    local status="$1"
-    shift
-    
-    # ⚠️  Take note: this is part of kimctl()
-    # Suppress direct terminal messages when running through kimctl.
+    local status="${1:-normal}"
+    shift || true
+
     [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-   
+
     local color icon
     case "$status" in
-        success) color='1;32'; icon='✅ ' ;;  # Bold Green + Check
-        error)   color='1;31'; icon='❌ ' ;;  # Bold Red + Cross
-        warning) color='1;33'; icon='⚠️ ' ;;  # Bold Yellow + Warning
-        normal)  color='1';    icon=''    ;;  # Bold default
-        *)       color='0';    icon=''    ;;  # Reset/Plain
+        success) color='1;32'; icon='✔ ' ;;
+        error)   color='1;31'; icon='✖ ' ;;
+        warning) color='1;33'; icon='! ' ;;
+        normal)  color='1';    icon='' ;;
+        *)       color='0';    icon='' ;;
     esac
 
-    local colors=0
-    if [[ -z "${NO_COLOR:-}" ]] && command -v tput >/dev/null 2>&1; then
-        colors=$(tput colors </dev/tty 2>/dev/null || echo 0)
-    fi
-
-    if (( colors >= 8 )); then
-        printf '\033[%sm%s%s\033[0m\n' "$color" "$icon" "$*" | tcat
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        printf '\\033[%sm%s%s\\033[0m\\n' "$color" "$icon" "$*" 
     else
-        printf '%s%s\n' "$icon" "$*" | tcat
+        printf '%s%s\\n' "$icon" "$*"
     fi
 }
 
-# Prints a full-width status divider line
-# Usage: _terminal_line [normal|success|warning|error] [optional_width]
-_terminal_line() {
+# Compact boxed status panel.
+# Usage: _terminal_panel "TITLE" "STATUS" "DETAIL" ...
+_terminal_panel() {
     [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
 
-    local type="${1:-normal}"
-    local width="${2:-${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}}"
-    local char='━'
-    local color
+    local title="${1:-STATUS}" status="${2:-}" line width=54 color='36'
+    shift 2 2>/dev/null || true
+    (( $# > 0 )) || set -- "No additional details."
 
-    case "$type" in
-        normal)  color='1;97' ;;        # Bright White (Bold)
-        success) color='1;32' ;;        # Green (Bold)
-        warning) color='1;38;5;208' ;;  # Orange (256-color Bold)
-        error)   color='1;31' ;;        # Red (Bold)
-        *)       color='1;97' ;;        # Fallback to Normal
-    esac
-
-    local line
-    printf -v line '%*s' "$width" ''
-    line="${line// /$char}"
-
-    printf '\033[%sm%s\033[0m\n' "$color" "$line" | tcat
+    printf '\\n'
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        printf '  \\033[1;36m┌%s┐\\033[0m\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
+        printf '  \\033[1;36m│\\033[0m \\033[1;37m%-*s\\033[0m \\033[1;36m│\\033[0m\\n' "$((width - 4))" "$title"
+        printf '  \\033[1;36m├%s┤\\033[0m\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
+        if [[ -n "$status" ]]; then
+            printf '  \\033[1;36m│\\033[0m %-*s \\033[1;36m│\\033[0m\\n' "$((width - 4))" "$status"
+        fi
+        for line in "$@"; do
+            printf '  \\033[1;36m│\\033[0m %-*s \\033[1;36m│\\033[0m\\n' "$((width - 4))" "$line"
+        done
+        printf '  \\033[1;36m└%s┘\\033[0m\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
+    else
+        printf '  +%s+\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
+        printf '  | %-*s |\\n' "$((width - 4))" "$title"
+        printf '  +%s+\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
+        [[ -z "$status" ]] || printf '  | %-*s |\\n' "$((width - 4))" "$status"
+        for line in "$@"; do
+            printf '  | %-*s |\\n' "$((width - 4))" "$line"
+        done
+        printf '  +%s+\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
+    fi
+    printf '\\n'
 }
 
+# Compatibility divider; prefer _terminal_panel for status summaries.
+_terminal_line() {
+    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    local type="${1:-normal}" width="${2:-54}" char='─' color='1;36' line
+    case "$type" in
+        success) color='1;32' ;;
+        warning) color='1;33' ;;
+        error) color='1;31' ;;
+    esac
+    (( width > 80 )) && width=80
+    (( width < 8 )) && width=8
+    printf -v line '%*s' "$width" ''
+    line="${line// /$char}"
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        printf '\\033[%sm%s\\033[0m\\n' "$color" "$line"
+    else
+        printf '%s\\n' "$line"
+    fi
+}
 
 # Unified command loader.
 # Use only for non-interactive commands. Do not wrap prompts, TTY applications,
@@ -765,50 +788,51 @@ _terminal_line normal
     HOME_SECURITY_SSH_AGENT_PID="$SSH_AGENT_PID"
     HOME_SECURITY_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
-    # Load the key for 5 minutes; show ssh-add output on the terminal.
-    if ! ssh-add -t 300 "$key" > /dev/null 2>&1; then
-	workspacekill
-        _terminal_line error
-        _terminal_msg error " ERROR: Could not load the SSH key. ⚠️ "
-        _terminal_line error
+    # Load the key for 5 minutes; suppress routine ssh-add confirmation output.
+    if ! ssh-add -t 300 "$key" >/dev/null; then
+        workspacekill
+        _terminal_msg error "Could not load the SSH key."
         return 1
     fi
 
     # Clean up this dedicated agent when the shell exits.
     trap 'workspacekill' EXIT
-    _terminal_line success
-    _terminal_msg normal "Short-lived access (PID $HOME_SECURITY_SSH_AGENT_PID):"
-    _terminal_msg success "Connected"
-    _terminal_msg normal  "Duration:"
-    _terminal_msg success "5 minutes"
-    _terminal_line success
-    givemespace
-    _terminal_line warning
-    _terminal_msg normal  "Note: Access is terminated on terminal exit. 🔑🔥"
-    _terminal_line warning
-    givemespace
-    _terminal_line success
-    _terminal_msg success "Done"
-    _terminal_line success
-    givemespace
+    _terminal_panel "WORKSPACE CONNECTION" \
+        "STATUS       ✔ Connected" \
+        "PROCESS      $HOME_SECURITY_SSH_AGENT_PID" \
+        "DURATION     5 minutes" \
+        "SECURITY     Access ends on terminal exit"
+    _terminal_msg success "Workspace access initialized."
 }
 
 # Kill all ssh-agent processes owned by the current user.
 workspacekill() {
-_terminal_line normal
-_terminal_msg normal ' Terminating all sessions.'
-run0 pkill -f 'ssh-agent'
-_terminal_msg normal ' Post termination checks'
-run0 ps -aux | grep 'ssh-agent'
-_terminal_msg success " Done. You can now reconnect."
+    _terminal_msg normal "Terminating dedicated workspace SSH agent."
+    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] && kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
+        kill "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || return 1
+        wait "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || :
+    fi
+    unset HOME_SECURITY_SSH_AGENT_PID HOME_SECURITY_SSH_AUTH_SOCK
+    if [[ -n "${HOME_SECURITY_PREV_SOCK_SET:-}" ]]; then
+        export SSH_AUTH_SOCK="$HOME_SECURITY_PREV_SOCK"
+    else
+        unset SSH_AUTH_SOCK
+    fi
+    if [[ -n "${HOME_SECURITY_PREV_PID_SET:-}" ]]; then
+        export SSH_AGENT_PID="$HOME_SECURITY_PREV_PID"
+    else
+        unset SSH_AGENT_PID
+    fi
+    unset HOME_SECURITY_PREV_SOCK HOME_SECURITY_PREV_PID
+    unset HOME_SECURITY_PREV_SOCK_SET HOME_SECURITY_PREV_PID_SET
+    _terminal_panel "WORKSPACE ACCESS" "STATUS       ✔ Terminated" "DETAIL       Dedicated SSH agent stopped"
 }
 
 # restart agent
-workspacerestart(){
-_terminal_line
-_terminal_msg normal "Attempting to reconnect"
-workspacekill
-workspaceconnect
+workspacerestart() {
+    _terminal_msg normal "Restarting workspace access."
+    workspacekill || return $?
+    workspaceconnect
 }
 
 # Generate SSH and GPG keys for Github
@@ -2197,10 +2221,7 @@ bashconfigcheck() {
     local config="$HOME/workspace/ai-stack/projects/bash/bashrc_template"
     local syntax_output syntax_status error_line start_line end_line
 
-    _terminal_line normal
-    _terminal_msg normal "Template: $config"
-    _terminal_msg normal "Target: $HOME/.bashrc"
-    _terminal_line normal
+    _terminal_panel "BASH CONFIGURATION" "ACTION       Validate and reload" "TEMPLATE     $config" "TARGET       $HOME/.bashrc"
 
     # 1. Validate Bash syntax and retain stderr for diagnostics.
     syntax_output=$(bash -n "$config" 2>&1)
@@ -2231,11 +2252,11 @@ bashconfigcheck() {
         return 1
     fi
 
-    _terminal_msg success " Syntax: OK"
+    _terminal_msg success "Bash syntax validation passed."
 
     # 2. Copy configuration only after syntax validation succeeds.
     if cp -f "$config" "$HOME/.bashrc"; then
-        _terminal_msg success " Copy: OK"
+        _terminal_msg success "Configuration copied to ~/.bashrc."
     else
         _terminal_msg error "Configuration copy: FAILED"
         return 1
@@ -2243,16 +2264,13 @@ bashconfigcheck() {
 
     # 3. Reload configuration and preserve any error output.
     if source "$config"; then
-        _terminal_msg success " Source: OK"
+        _terminal_msg success "Configuration sourced successfully."
     else
         _terminal_msg error "Configuration reload: FAILED"
         return 1
     fi
     # 4. Reload terminal
-    _terminal_line normal
-    _terminal_msg normal "Reloading..."
-    sleep 1
-    sleep 1
+    _terminal_panel "CONFIGURATION RESULT" "STATUS       ✔ Updated" "RELOAD       Restarting the current Bash shell"
     exec bash
     return 0
 }
