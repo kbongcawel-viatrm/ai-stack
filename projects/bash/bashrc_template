@@ -267,16 +267,16 @@ whoseyourdaddy() {
 }
 
 workspaceconfigcheck() {
+    _terminal_line normal
     _terminal_msg normal "Checklist initialize 📋"
     echo
     getpath
     echo
     getbash
     echo
+    _terminal_line success
     _terminal_msg normal "Done with all checks..."
     _terminal_msg success "Enjoy 🎉"
-    echo
-    _terminal_line normal
     echo
 }
 
@@ -714,8 +714,8 @@ _terminal_msg normal "If it returns an error msg e.g. 'externally-managed-enviro
 }
 
 # Dedicated SSH agent for the home-security key
-workspacea() {
-_terminal_line normal "Creating ephemeral access."
+workspaceconnect() {
+_terminal_msg  "Creating ephemeral access."
 _terminal_line normal
     local key="$HOME/.ssh/home-security"
     local agent_output
@@ -728,8 +728,7 @@ _terminal_line normal
 
     if [[ ! -f "$key" || ! -r "$key" ]]; then
         _terminal_line error
-        _terminal_msg error "🔴 ERROR: SSH key missing or unreadable."
-        _terminal_line error
+        _terminal_msg error " ERROR: SSH key missing or unreadable.⚠️ "
         return 1
     fi
 
@@ -737,9 +736,6 @@ _terminal_line normal
        kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
         _terminal_line success
         _terminal_msg success "Ephemeral access created 🔑⌛"
-        _terminal_msg normal "Duration: 15 minutes. 1️⃣ 5️⃣ ⌛
-        _terminal_msg normal "Note: Access is terminated on terminal exit. 🔑🔥"
-        _terminal_line success
         return 0
     fi
 
@@ -752,50 +748,53 @@ _terminal_line normal
     # Start a dedicated agent without printing its environment.
     if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
         _terminal_line error
-        _terminal_msg error "🔴 ERROR: Could not start ssh-agent."
-        _terminal_line error
+        _terminal_msg error " ERROR: Could not start ssh-agent. ⚠️ "
         return 1
     fi
 
-    eval "$agent_output" >/dev/null 2>&1
+    eval "$agent_output" >/dev/null
 
     HOME_SECURITY_SSH_AGENT_PID="$SSH_AGENT_PID"
     HOME_SECURITY_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
-    # Load the key for 15 minutes; show ssh-add output on the terminal.
-    if ! ssh-add -t 900 "$key" > /dev/tty 2>&1; then
+    # Load the key for 5 minutes; show ssh-add output on the terminal.
+    if ! ssh-add -t 300 "$key" > /dev/tty 2>&1; then
 	workspacekill
         _terminal_line error
-        _terminal_msg error "🔴 ERROR: Could not load the SSH key."
+        _terminal_msg error " ERROR: Could not load the SSH key. ⚠️ "
         return 1
-        _terminal_line error
     fi
 
     # Clean up this dedicated agent when the shell exits.
     trap 'workspacekill' EXIT
     _terminal_line success
-    _terminal_msg success \
-        "🔑✅ Ephemeral access started (PID $HOME_SECURITY_SSH_AGENT_PID)."
-    _terminal_msg normal "Short-lived access: 15 minutes. 1️⃣ 5️⃣ ⌛
-    _terminal_msg normal "Note: Access is terminated on terminal exit.⚠️ 🔑🔥"
+    _terminal_msg success "Ephemeral access (PID $HOME_SECURITY_SSH_AGENT_PID):"
+    _terminal_msg normal "Short-lived access:"
+    _terminal_msg success "Connected"
+    _terminal_msg normal  "Duration:"
+    _terminal_msg success "5 minutes"
+    _terminal_line warning
+    _terminal_msg normal  "Note: Access is terminated on terminal exit. 🔑🔥"
     _terminal_line success
+    _terminal_msg success "Done"
 }
 
 # Kill all ssh-agent processes owned by the current user.
 workspacekill() {
-_terminal_msg red '🚨 Terminating all sessions.'
+_terminal_line normal
+_terminal_msg normal ' Terminating all sessions.'
 run0 pkill -f 'ssh-agent'
-_terminal_msg normal '👁️ Post termination checks'
-echo
+_terminal_msg normal ' Post termination checks'
 run0 ps -aux | grep 'ssh-agent'
-echo
-_terminal_msg normal "🐧 Termination signals sent. Processes may take time to exit."
+_terminal_msg success " Done. You can now reconnect."
 }
 
 # restart agent
-workspaceagentrestart(){
+workspacerestart(){
+_terminal_line
+_terminal_msg normal "Attempting to reconnect"
 workspacekill
-workspaceagent
+workspaceconnect
 }
 
 # Generate SSH and GPG keys for Github
@@ -2221,24 +2220,29 @@ bashconfigcheck() {
         return 1
     fi
 
-    _terminal_msg success "Syntax check: OK"
+    _terminal_msg success " Syntax: OK"
 
     # 2. Copy configuration only after syntax validation succeeds.
     if cp -f "$config" "$HOME/.bashrc"; then
-        _terminal_msg success "Configuration copy: OK"
+        _terminal_msg success " Copy: OK"
     else
         _terminal_msg error "Configuration copy: FAILED"
         return 1
     fi
 
     # 3. Reload configuration and preserve any error output.
-    if source "$HOME/.bashrc"; then
-        _terminal_msg success "Configuration reload: OK"
+    if source "$config"; then
+        _terminal_msg success " Source: OK"
     else
         _terminal_msg error "Configuration reload: FAILED"
         return 1
     fi
-
+    # 4. Reload terminal
+    _terminal_line normal
+    _terminal_msg normal "Reloading..."
+    sleep 1
+    sleep 1
+    exec bash
     return 0
 }
 
@@ -2385,7 +2389,7 @@ kimctl() {
         podrecoverstate|gcloud_workspace_sync|cf_workspace_sync|\
         workspaceinstallgcloud|myusbgenpolicy|burnerbox|burnercommand|\
         gcloudtoolbox|firewall-cmd-get-active|workspaceconfigcheck|\
-        clinemcpsetup|getbash|getpath|getvirtall|workspaceagent|workspaceagentrestart)
+        clinemcpsetup|getbash|getpath|getvirtall|workspaceconnect|workspacerestart|workspacekill)
             shift
             "$command_name" "$@"
             return $?
