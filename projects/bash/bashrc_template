@@ -11,7 +11,6 @@ for dir in "$HOME/.local/bin" "$HOME/bin" "$HOME/.mistral/bin"; do
     fi
 done
 unset dir
-export PATH
 
 # User specific aliases and functions
 if [ -d ~/.bashrc.d ]; then
@@ -151,9 +150,12 @@ run_with_loader() {
 
 # END OF GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
 
-#  INTRO MESSAGES          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-_terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
-_terminal_line warning
+# Display the customization notice once per interactive shell session.
+if [[ $- == *i* && -z "${BASHRC_CUSTOM_NOTICE_SHOWN:-}" ]]; then
+    _terminal_msg warning "Important: This shell configuration has been customized."
+    _terminal_line warning
+    BASHRC_CUSTOM_NOTICE_SHOWN=1
+fi
 
 #  DECLARATIVE CONFIG      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
@@ -162,10 +164,6 @@ grep -qxF 'set noswapfile' ~/.vimrc 2>/dev/null || \
 printf '\n" Disable swap files\nset noswapfile\n' >> ~/.vimrc
 
 # Default visual and editor
-export EDITOR=/usr/bin/vim
-export VISUAL=/usr/bin/vim
-export BUN_JSC_useJIT=1 cline=1 cline
-export JavaScriptCoreUseJIT=1
 # Ensure newly created files/folders are completely private to the owner
 umask 077 2>/dev/null
 
@@ -180,47 +178,20 @@ PATH="$(printf '%s' "$PATH" | awk -v RS=: '
         printf "%s", $0
     }
 ')"
-export PATH
 
 # Prevents the shell and its children from creating memory core dumps on crash
 ulimit -c 0
 
 # ignorespace: Hidden from history if command starts with a space
 # ignoredups: Do not record sequential duplicate commands
-export HISTCONTROL=ignoreboth
 
 # Erase specific high-risk command names entirely from being recorded
-export HISTIGNORE="passwd:run0*:sudo*:*api_key*:*token*:*secret*:run0edit:workspace*:kses*:shazam*"
 
 # Force immediate history append instead of overwriting on shell exit
 shopt -s histappend 2>/dev/null
-export PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
 
 # Automatically log out of the shell session after 10 minutes of inactivity (600 seconds)
-# If not yet set to readonly else set it.
-if [[ "${TMOUT@a}" != *r* ]]; then
-    export TMOUT=600
-    readonly TMOUT
-fi
-
 # ALIAS     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
-alias cline='cline --auto-approve false'
-alias distro='distrobox'
-alias tlbx='toolbox'
-alias tlbxen='toolbox enter'
-alias tlbxli='toolbox list'
-alias tlbxcr='toolbox create'
-alias rm='rm -rf'
-alias ls='ls -alt'
-alias ps='ps -aux'
-alias run0ctl='run0 systemctl'
-alias run0ctlrestart='run0 systemctl restart'
-alias run0ctlstart='run0 systemctl start'
-alias run0ctlstatus='run0 systemctl status'
-alias run0ctlenable='run0 systemctl enable --now'
-alias run0ctlstop='run0 systemctl stop'
-alias run0journal='run0 journalctl -u'
-alias vibe='vibe --continue --yolo'
 # Protect custom privileged-command wrappers against runtime redefinition.
 for fn in run0 sudo; do
     if declare -F "$fn" >/dev/null 2>&1; then
@@ -1847,8 +1818,6 @@ gcloud_workspace_sync() {
 # Sync ~/workspace with Cloudflare R2 via the S3-compatible API.
 # Requires R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to be exported
 # (create an R2 API token in the Cloudflare dashboard).
-export R2_ACCESS_KEY_ID=
-export R2_SECRET_ACCESS_KEY=
 
 cf_workspace_sync() {
     local R2_ENDPOINT="https://2b35063950967e6ee34d1708bcc5c221.r2.cloudflarestorage.com"
@@ -2727,9 +2696,53 @@ TOOLBOX_SETUP
 }
 
 
-# >>> Mistral >>>
-export PATH="/home/kim/.mistral/bin:$PATH"
-# <<< Mistral <<<
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
 # rootless socket can exist (podman.service exits 125). Containers run
 # rootless in the podman machine instead.
+# -----------------------------------------------------------------------------
+# GLOBAL ENVIRONMENT AND ALIASES
+# Kept after function definitions so aliases cannot rewrite commands inside them.
+# -----------------------------------------------------------------------------
+
+# Export PATH after the early PATH bootstrap and bashrc.d loading.
+export PATH
+
+# Default visual and editor
+export EDITOR=/usr/bin/vim
+export VISUAL=/usr/bin/vim
+export BUN_JSC_useJIT=1 cline=1 cline
+export JavaScriptCoreUseJIT=1
+
+# Shell history behavior
+export HISTCONTROL=ignoreboth
+export HISTIGNORE="passwd:run0*:sudo*:*api_key*:*token*:*secret*:run0edit:workspace*:kses*:shazam*"
+export PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
+
+# Automatically log out after 10 minutes of inactivity, unless already readonly.
+if [[ "${TMOUT@a}" != *r* ]]; then
+    export TMOUT=600
+    readonly TMOUT
+fi
+
+# Cloudflare R2 credentials are intentionally blank; supply them securely at runtime.
+export R2_ACCESS_KEY_ID=
+export R2_SECRET_ACCESS_KEY=
+
+# Aliases
+alias cline='cline --auto-approve false'
+alias distro='distrobox'
+alias tlbx='toolbox'
+alias tlbxen='toolbox enter'
+alias tlbxli='toolbox list'
+alias tlbxcr='toolbox create'
+alias rm='rm -rf'
+alias ls='ls -alt'
+alias ps='ps -aux'
+alias run0ctl='run0 systemctl'
+alias run0ctlrestart='run0 systemctl restart'
+alias run0ctlstart='run0 systemctl start'
+alias run0ctlstatus='run0 systemctl status'
+alias run0ctlenable='run0 systemctl enable --now'
+alias run0ctlstop='run0 systemctl stop'
+alias run0journal='run0 journalctl -u'
+alias vibe='vibe --continue --yolo'
