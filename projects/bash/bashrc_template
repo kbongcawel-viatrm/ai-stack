@@ -1869,7 +1869,118 @@ gcloud_workspace_sync() {
         return "$exit_code"
     fi
 }
+# Upload to cf secureblue-oci"
+# export R2_ACCESS_KEY_ID
+# export R2_SECRET_ACCESS_KEY
 
+
+cf_secureblue_upload(){
+    local R2_ENDPOINT="https://dc72437808379d99f940be2e42e36b9e.r2.cloudflarestorage.com"
+    local BUCKET="s3://secureblue-oci/snapshots"
+    local LOCAL_DIR="$HOME/workspace/secureblue-oci/snapshots"
+    local REMOTE_DIR="$BUCKET"
+    local direction="${1:-}"
+    local SOURCE_DIR DESTINATION_DIR
+    local exit_code=0
+    local r2_log
+
+    # Validate required commands.
+    for cmd in aws tput sleep mktemp; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            _terminal_msg error "Required command not found: $cmd ⚠️ "
+            return 1
+        fi
+    done
+
+    # Validate R2 credentials.
+    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
+        _terminal_msg error "R2 credentials missing. Export R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY first ⚠️ "
+        return 1
+    fi
+
+    # Resolve direction: argument first, then interactive prompt.
+    case "$direction" in
+        up|upload|push)   direction="up" ;;
+        down|download|pull) direction="down" ;;
+        "")
+            if [[ ! -t 0 ]]; then
+                _terminal_msg error "No direction given and stdin is not a TTY. Usage: $FUNCNAME [up|down] ⚠️ "
+                return 1
+            fi
+            _terminal_msg normal "Cloudflare R2 sync 📦"
+            _terminal_msg normal "  1) Upload   $LOCAL_DIR -> $REMOTE_DIR"
+            _terminal_msg normal "  2) Download $REMOTE_DIR -> $LOCAL_DIR"
+            printf "Choose direction [1/2]: "
+            read -r choice
+            case "$choice" in
+                1) direction="up" ;;
+                2) direction="down" ;;
+                *)
+                    _terminal_msg error "Invalid choice: $choice ⚠️ "
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            _terminal_msg error "Invalid direction: $direction (expected up|down) ⚠️ "
+            return 1
+            ;;
+    esac
+
+    if [[ "$direction" == "up" ]]; then
+        SOURCE_DIR="$LOCAL_DIR"
+        DESTINATION_DIR="$REMOTE_DIR"
+        if [[ ! -d "$SOURCE_DIR" ]]; then
+            _terminal_msg error "Source directory does not exist: $SOURCE_DIR ⚠️ "
+            return 1
+        fi
+    else
+        SOURCE_DIR="$REMOTE_DIR"
+        DESTINATION_DIR="$LOCAL_DIR"
+        mkdir -p "$DESTINATION_DIR" || {
+            _terminal_msg error "Could not create destination directory: $DESTINATION_DIR ⚠️ "
+            return 1
+        }
+    fi
+
+    # Create temporary error log.
+    r2_log=$(mktemp "${TMPDIR:-/tmp}/r2-sync.XXXXXX") || {
+        _terminal_msg error "Could not create temporary log. ⚠️"
+        return 1
+    }
+
+    _terminal_msg normal "Direction: $([[ "$direction" == up ]] && echo 'Upload 📤' || echo 'Download 📥')"
+    _terminal_msg normal "Source: $SOURCE_DIR"
+    _terminal_msg normal "Destination: $DESTINATION_DIR"
+
+    # Animate only the non-interactive sync phase.
+    run_with_loader "Running" bash -c '
+        AWS_ACCESS_KEY_ID="$1" \
+        AWS_SECRET_ACCESS_KEY="$2" \
+        AWS_REGION=auto \
+        aws s3 sync "$3" "$4" \
+            --endpoint-url "$5" --only-show-errors \
+            >/dev/null 2>"$6"
+    ' _ "$R2_ACCESS_KEY_ID" "$R2_SECRET_ACCESS_KEY" \
+        "$SOURCE_DIR" "$DESTINATION_DIR" "$R2_ENDPOINT" "$r2_log"
+    exit_code=$?
+
+    # Display final result.
+    if (( exit_code == 0 )); then
+        rm -f -- "$r2_log"
+        _terminal_msg success "Cloudflare R2 $([[ "$direction" == up ]] && echo 'upload' || echo 'download') completed! 🚀"
+        return 0
+    else
+        _terminal_msg error \
+            "Cloudflare R2 sync failed (exit code: $exit_code). ⚠️ "
+
+        _terminal_msg warning "R2 error details: ⚠️ "
+        tcat "$r2_log"
+
+        _terminal_msg normal "Error log: $r2_log ⚠️"
+        return "$exit_code"
+    fi
+}
 # Sync ~/workspace with Cloudflare R2 via the S3-compatible API.
 # Requires R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to be exported
 # (create an R2 API token in the Cloudflare dashboard).
@@ -2551,25 +2662,53 @@ burnercommand() {
 # Configure Podman image trust for one registry/repository.
 # Defaults to Fedora Toolbox 44 when no image scope is supplied.
 podimagetrust() {
-    local input_path="${1:-registry.fedoraproject.org/fedora-toolbox:44}" repo_scope
-    if (( $# > 1 )); then printf 'Usage: podimagetrust [registry/repository[:tag][@digest]]\n' >&2; return 2; fi
-    case "$input_path" in
-        docker://*) input_path="${input_path#docker://}" ;;
-        *://*) printf 'Error: Specify a registry/image without a URL scheme.\n' >&2; return 2 ;;
-    esac
-    repo_scope="${input_path%%@*}"
-    if [[ "$repo_scope" == */* && "${repo_scope##*/}" == *:* ]]; then repo_scope="${repo_scope%:*}"; fi
-    if [[ ! "$repo_scope" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]*(/[A-Za-z0-9._-]+)*$ ]]; then
-        printf 'Error: Invalid registry/repository scope: %s\n' "$repo_scope" >&2
-        return 2
-    fi
-    printf 'Setting Podman image trust to accept for: %s\n' "$repo_scope"
-    podman image trust set --type accept "$repo_scope" || {
-        printf 'Error: Podman failed to update image trust for %s.\n' "$repo_scope" >&2
+    local registry="${1:-}"
+    local policy_file="${2:-}"
+
+    if [[ -z "$registry" || -z "$policy_file" ]]; then
+        _terminal_msg error "Usage: podimagetrust <registry> <policy_file> ⚠️ "
         return 1
-    }
-    podman image trust show
+    fi
+
+    _terminal_msg normal "Adding trust to the registry: $registry"
+
+    if podman image trust set --signature-policy "$policy_file" --type accept "$registry"; then
+        _terminal_msg success "Trust successfully added for $registry 🚀"
+        return 0
+    else
+        local exit_code=$?
+        _terminal_msg error "Failed to add trust for $registry (exit code: $exit_code) ⚠️ "
+        return "$exit_code"
+    fi
+
 }
+
+podimagepull() {
+    local registry="${1:-}"
+    local policy_file="${2:-}"
+
+    if [[ -z "$registry" || -z "$policy_file" ]]; then
+        _terminal_msg error "Usage: podimagetrust <registry> <policy_file> ⚠️ "
+        return 1
+    fi
+
+    _terminal_msg normal "Adding trust to the registry: $registry"
+
+    if podman image trust set --signature-policy "$policy_file" --type accept "$registry"; then
+        _terminal_msg success "Trust successfully added for $registry 🚀"
+        _terminal_msg normal "Pulling image now..."
+        podman pull --signature-policy $policy_file $registry
+        return 0
+    else
+        local exit_code=$?
+        _terminal_msg error "Failed to add trust for $registry (exit code: $exit_code) ⚠️ "
+        return "$exit_code"
+    fi
+    
+    
+
+}
+
 
 # EOF
 firewall-cmd-get-active(){
@@ -2616,8 +2755,8 @@ kimctl() {
 }
 
 # sretoolbox
-sretoolbox() {
-    local name="sre-devops-f44"
+securebluebox() {
+    local name="secureblue-oci"
     local image="${SRE_TOOLBOX_IMAGE:-registry.fedoraproject.org/fedora-toolbox:44}"
     local enter_after=0 name_set=0
     local cache_dir setup_script log_file rc cmd
@@ -2678,7 +2817,7 @@ USAGE
         fi
     done
 
-    cache_dir="$HOME/.cache/sre-toolbox"
+    cache_dir="$HOME/.cache/secureblue-oci"
     if ! mkdir -p -m 700 "$cache_dir"; then
         printf 'Error: Cannot create cache directory: %s\n' "$cache_dir" >&2
         return 1
@@ -2714,13 +2853,13 @@ command -v sudo >/dev/null 2>&1 || {
     exit 127
 }
 
-workdir=$(mktemp -d "${TMPDIR:-/tmp}/sre-toolbox.XXXXXX")
+workdir=$(mktemp -d "${TMPDIR:-/tmp}/secureblue-oci.XXXXXX")
 trap 'rm -rf -- "$workdir"' EXIT
 
 printf '\n==> Refreshing Fedora package metadata and upgrading installed packages\n'
 sudo dnf upgrade --refresh -y
 
-printf '\n==> Installing base SRE/DevOps packages\n'
+printf '\n==> Installing base Secureblue OCI packages\n'
 base_packages=(
     git git-lfs gh
     curl wget ca-certificates
@@ -2847,7 +2986,7 @@ for app in ansible-lint checkov pre-commit; do
 done
 
 printf '\n==> Configuring Toolbox-only shell environment\n'
-cat > "$HOME/.bashrc.d/95-sre-toolbox.sh" <<'TOOLBOX_RC'
+cat > "$HOME/.bashrc.d/96-secureblue-oci.sh" <<'TOOLBOX_RC'
 # SRE/DevOps tools installed for Toolbox. Do not alter host-shell behavior.
 if [[ -f /run/.containerenv ]]; then
     export PATH="$HOME/.local/bin:$PATH"
@@ -2868,7 +3007,7 @@ if [[ -f /run/.containerenv ]]; then
     }
 fi
 TOOLBOX_RC
-chmod 0644 "$HOME/.bashrc.d/95-sre-toolbox.sh"
+chmod 0644 "$HOME/.bashrc.d/96-secureblue-oci.sh"
 
 printf '\n==> Provisioning completed. Installed command availability:\n'
 for tool in git gh aws az gcloud cloudflared terraform ansible kubectl helm k9s trivy lynis aide clamscan freshclam nvm node npm cline claude devin gke-gcloud-auth-plugin; do
@@ -3044,9 +3183,18 @@ if [[ "${TMOUT@a}" != *r* ]]; then
     readonly TMOUT
 fi
 
-# Cloudflare R2 credentials are intentionally blank; supply them securely at runtime.
-export R2_ACCESS_KEY_ID=
-export R2_SECRET_ACCESS_KEY=
+
+if [[ -f /run/.toolboxenv ]] && grep -q 'name="sre-devops-f44"' /run/.containerenv 2>/dev/null; then
+    # Cloudflare R2 credentials are intentionally blank; supply them securely at runtime.
+		export R2_ACCESS_KEY_ID=72b63760a561da96261ad9672845ceda
+		export R2_SECRET_ACCESS_KEY=b6bb0ba2591db2b216e1a8aa3fed81fb58d3679bfcf3f04b66334040e42336b8
+fi
+
+if [[ -f /run/.toolboxenv ]] && grep -q 'name="secureblue-oci"' /run/.containerenv 2>/dev/null; then
+    # Cloudflare R2 credentials are intentionally blank; supply them securely at runtime.
+		export R2_ACCESS_KEY_ID=de0697f2e7cb313cd723460c68741b97
+		export R2_SECRET_ACCESS_KEY=30afb7d1fcd4ae0e94b79ca2ccaf03af9fc6b3ca8abaae3771b5808059e5a2a2
+fi
 
 # Aliases
 alias cline='cline --auto-approve false'
