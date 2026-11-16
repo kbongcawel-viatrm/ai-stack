@@ -26,8 +26,8 @@ unset DEBUGINFOD_URLS
 unset SSH_AUTH_SOCK
 unset P11_KIT_SERVER_ADDRESS
 
-#  GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   
-#  Display file contents directly in the terminal 
+#  GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+#  Display file contents directly in the terminal
 tcat() {
     [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
     if [[ ! -w /dev/tty ]]; then
@@ -41,11 +41,9 @@ tcat() {
 # Use compact panels for function summaries; retain raw output for logs, prompts,
 # command results, public keys, and other copyable diagnostic data.
 _terminal_msg() {
-    local status="${1:-normal}"
+    local status="\${1:-normal}"
     shift || true
-
-    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-
+    [[ "\${KIMCTL_QUIET:-0}" == 1 ]] && return 0
     local color icon
     case "$status" in
         success) color='1;32'; icon='✔ ' ;;
@@ -54,52 +52,48 @@ _terminal_msg() {
         normal)  color='1';    icon='' ;;
         *)       color='0';    icon='' ;;
     esac
-
-    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-        printf '\\033[%sm%s%s\\033[0m\\n' "$color" "$icon" "$*" 
+    if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
+        printf '\033[%sm%s%s\033[0m\n' "$color" "$icon" "$*"
     else
-        printf '%s%s\\n' "$icon" "$*"
+        printf '%s%s\n' "$icon" "$*"
     fi
 }
 
 # Compact boxed status panel.
 # Usage: _terminal_panel "TITLE" "STATUS" "DETAIL" ...
 _terminal_panel() {
-    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-
-    local title="${1:-STATUS}" status="${2:-}" line width=54 color='36'
+    [[ "\${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    local title="\${1:-STATUS}" status="\${2:-}" line width=54
     shift 2 2>/dev/null || true
     (( $# > 0 )) || set -- "No additional details."
-
-    printf '\\n'
-    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-        printf '  \\033[1;36m┌%s┐\\033[0m\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
-        printf '  \\033[1;36m│\\033[0m \\033[1;37m%-*s\\033[0m \\033[1;36m│\\033[0m\\n' "$((width - 4))" "$title"
-        printf '  \\033[1;36m├%s┤\\033[0m\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
+    printf '\n'
+    if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
+        printf '  \033[1;36m┌%s┐\033[0m\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
+        printf '  \033[1;36m│\033[0m \033[1;37m%-*s\033[0m \033[1;36m│\033[0m\n' "$((width - 4))" "$title"
+        printf '  \033[1;36m├%s┤\033[0m\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
         if [[ -n "$status" ]]; then
-            printf '  \\033[1;36m│\\033[0m %-*s \\033[1;36m│\\033[0m\\n' "$((width - 4))" "$status"
+            printf '  \033[1;36m│\033[0m %-*s \033[1;36m│\033[0m\n' "$((width - 4))" "$status"
         fi
         for line in "$@"; do
-            printf '  \\033[1;36m│\\033[0m %-*s \\033[1;36m│\\033[0m\\n' "$((width - 4))" "$line"
+            printf '  \033[1;36m│\033[0m %-*s \033[1;36m│\033[0m\n' "$((width - 4))" "$line"
         done
-        printf '  \\033[1;36m└%s┘\\033[0m\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
+        printf '  \033[1;36m└%s┘\033[0m\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '─')"
     else
-        printf '  +%s+\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
-        printf '  | %-*s |\\n' "$((width - 4))" "$title"
-        printf '  +%s+\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
-        [[ -z "$status" ]] || printf '  | %-*s |\\n' "$((width - 4))" "$status"
+        printf '  +%s+\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
+        printf '  | %-*s |\n' "$((width - 4))" "$title"
+        printf '  +%s+\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
+        [[ -z "$status" ]] || printf '  | %-*s |\n' "$((width - 4))" "$status"
         for line in "$@"; do
-            printf '  | %-*s |\\n' "$((width - 4))" "$line"
+            printf '  | %-*s |\n' "$((width - 4))" "$line"
         done
-        printf '  +%s+\\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
+        printf '  +%s+\n' "$(printf '%*s' "$((width - 2))" '' | tr ' ' '-')"
     fi
-    printf '\\n'
+    printf '\n'
 }
 
-# Compatibility divider; prefer _terminal_panel for status summaries.
 _terminal_line() {
-    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
-    local type="${1:-normal}" width="${2:-54}" char='─' color='1;36' line
+    [[ "\${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    local type="\${1:-normal}" width="\${2:-54}" char='─' color='1;36' line
     case "$type" in
         success) color='1;32' ;;
         warning) color='1;33' ;;
@@ -108,11 +102,11 @@ _terminal_line() {
     (( width > 80 )) && width=80
     (( width < 8 )) && width=8
     printf -v line '%*s' "$width" ''
-    line="${line// /$char}"
-    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-        printf '\\033[%sm%s\\033[0m\\n' "$color" "$line"
+    line="\${line// /$char}"
+    if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
+        printf '\033[%sm%s\033[0m\n' "$color" "$line"
     else
-        printf '%s\\n' "$line"
+        printf '%s\n' "$line"
     fi
 }
 
@@ -177,7 +171,7 @@ givemespace(){
   echo
 }
 
-# END OF GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+# END OF GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
 # Display the customization notice once per interactive shell session.
 if [[ $- == *i* && -z "${BASHRC_CUSTOM_NOTICE_SHOWN:-}" ]]; then
@@ -228,7 +222,7 @@ for fn in run0 sudo; do
     fi
 done
 
-# FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+# FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
 getbash() {
     if [[ -f "$HOME/.bashrc" ]]; then
@@ -273,7 +267,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 run_with_loader "Running" nvm install --lts || return $?
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 givemespace
 _terminal_msg success '🚀 Finished downloading'
@@ -545,14 +539,14 @@ getaitools(){
     else
         _terminal_msg success " Devin CLI is already installed."
     fi
-    
+
     if ! command -v mistral >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/mistral" ]]; then
         _terminal_msg normal "Installing Mistral CLI..."
         run_with_loader "Running" bash -c 'curl -fsSL https://mistral.ai/vibe/install.sh | bash && uv tool install mistral-vibe' || return $?
     else
         _terminal_msg success " Mistral CLI is already installed."
     fi
-    
+
 
     _terminal_msg success " Workspace AI setup complete. 🧠"
 }
@@ -1556,7 +1550,7 @@ podresetall() {
     _terminal_msg success "Podman resources have been reset."
 
     # Re-check Podman socket after pruning.
-    _terminal_line normal 
+    _terminal_line normal
     _terminal_msg normal "Re-checking Podman socket after pruning 🚀"
 
     if ! systemctl --user is-active --quiet podman.socket; then
@@ -2097,7 +2091,7 @@ mynetworkfix() {
 # Restart a systemd service
 mysystemdrestart(){
     local keyword="$1"
-    
+
     # Prompt for a keyword if none was passed as an argument
     if [[ -z "$keyword" ]]; then
         read -rp "Enter service keyword: " keyword
@@ -2316,7 +2310,7 @@ burnerbox() {
     /bin/bash
 
 _terminal_msg normal "Verify created podman container"
-podman ps -a 
+podman ps -a
 
 }
 
@@ -2400,34 +2394,32 @@ _kimctl_completion() {
 }
 complete -F _kimctl_completion kimctl
 
-# Command wrapper.
-# Interactive, TTY-dependent, and current-shell functions run in foreground.
+# Command wrapper: dispatch every defined function in the current shell.
+# This preserves prompts, TTY access, cd/export changes, traps, and return codes.
 kimctl() {
-    local command_name="${1:-}"
+    local command_name="\${1:-}" rc
     if (( $# == 0 )); then
         printf 'Usage: kimctl function [arguments...]\n' >&2
         return 2
     fi
-    if ! declare -F "$command_name" >/dev/null 2>&1; then
+    if [[ ! "$command_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] ||
+       ! declare -F "$command_name" >/dev/null 2>&1; then
         printf 'Error: Function not found: %s\n' "$command_name" >&2
         return 127
     fi
-    case "$command_name" in
-        workspace|workspaceshortcuts|workspacegenkeys|whoseyourdaddy|workspacekill|\
-        bashconfigcheck|bashconfigbackup|mysystemdrestart|podimage|podimagetrust|\
-        podrecoverstate|gcloud_workspace_sync|cf_workspace_sync|\
-        workspaceinstallgcloud|myusbgenpolicy|burnerbox|burnercommand|\
-        gcloudtoolbox|firewall-cmd-get-active|workspaceconfigcheck|\
-        clinemcpsetup|getbash|getpath|getvirtall|workspaceconnect|workspacerestart|workspacekill)
-            shift
-            "$command_name" "$@"
-            return $?
-            ;;
-    esac
-    shift
-    run_with_loader "Running: $command_name" "$command_name" "$@"
-}
 
+    shift
+    _terminal_panel "KIMCTL" "FUNCTION     $command_name" "EXECUTION    Foreground / current shell"
+    "$command_name" "$@"
+    rc=$?
+
+    if (( rc == 0 )); then
+        _terminal_panel "KIMCTL RESULT" "STATUS       ✔ Success" "FUNCTION     $command_name"
+    else
+        _terminal_panel "KIMCTL RESULT" "STATUS       ✖ Failed (exit $rc)" "FUNCTION     $command_name"
+    fi
+    return "$rc"
+}
 
 # sretoolbox
 sretoolbox() {
