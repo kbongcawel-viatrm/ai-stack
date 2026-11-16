@@ -29,7 +29,7 @@ unset P11_KIT_SERVER_ADDRESS
 #  GLOBAL FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 #  Display file contents directly in the terminal
 tcat() {
-    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    [[ "${BASHCTL_QUIET:-0}" == 1 ]] && return 0
     if [[ ! -w /dev/tty ]]; then
         printf 'Error: No writable terminal available.\n' >&2
         return 1
@@ -45,7 +45,7 @@ _terminal_msg() {
         success|error|warning|normal) shift ;;
         *) status=normal ;;
     esac
-    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    [[ "${BASHCTL_QUIET:-0}" == 1 ]] && return 0
     case "$status" in
         success) label=" OK  "; color='1;32' ;;
         error)   label="FAIL "; color='1;31' ;;
@@ -61,7 +61,7 @@ _terminal_msg() {
 
 # Short divider retained for compatibility with existing functions.
 _terminal_line() {
-    [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
+    [[ "${BASHCTL_QUIET:-0}" == 1 ]] && return 0
     local type="${1:-normal}" width="${2:-32}" char='─' color='1;36' line
     case "$type" in
         success) color='1;32' ;;
@@ -98,7 +98,7 @@ run_with_loader() {
     esac
 
     {
-        KIMCTL_QUIET=1 "$@" </dev/null >/dev/null 2>&1 &
+        BASHCTL_QUIET=1 "$@" </dev/null >/dev/null 2>&1 &
         pid=$!
     } 2>/dev/null
 
@@ -720,10 +720,10 @@ mistralfix() {
     fi
 }
 
-# Dedicated SSH agent for the home-security key
+# Dedicated SSH agent for the workspace key
 workspaceconnect() {
 _terminal_msg normal "Creating temporary workspace access."
-    local key="$HOME/.ssh/home-security"
+    local key="$HOME/.ssh/workspace"
     local agent_output
 
     if ! declare -F tcat >/dev/null ||
@@ -737,17 +737,17 @@ _terminal_msg normal "Creating temporary workspace access."
         return 1
     fi
 
-    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] &&
-       kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
+    if [[ -n "${WORKSPACE_SSH_AGENT_PID:-}" ]] &&
+       kill -0 "$WORKSPACE_SSH_AGENT_PID" 2>/dev/null; then
         _terminal_msg success "Temporary workspace access is already active."
         return 0
     fi
 
     # Preserve the current SSH agent environment.
-    HOME_SECURITY_PREV_SOCK="${SSH_AUTH_SOCK-}"
-    HOME_SECURITY_PREV_PID="${SSH_AGENT_PID-}"
-    HOME_SECURITY_PREV_SOCK_SET=${SSH_AUTH_SOCK+x}
-    HOME_SECURITY_PREV_PID_SET=${SSH_AGENT_PID+x}
+    WORKSPACE_PREV_SOCK="${SSH_AUTH_SOCK-}"
+    WORKSPACE_PREV_PID="${SSH_AGENT_PID-}"
+    WORKSPACE_PREV_SOCK_SET=${SSH_AUTH_SOCK+x}
+    WORKSPACE_PREV_PID_SET=${SSH_AGENT_PID+x}
 
     # Start a dedicated agent without printing its environment.
     if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
@@ -757,8 +757,8 @@ _terminal_msg normal "Creating temporary workspace access."
 
     eval "$agent_output" >/dev/null
 
-    HOME_SECURITY_SSH_AGENT_PID="$SSH_AGENT_PID"
-    HOME_SECURITY_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
+    WORKSPACE_SSH_AGENT_PID="$SSH_AGENT_PID"
+    WORKSPACE_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
     # Load the key for 5 minutes; suppress routine ssh-add confirmation output.
     if ! ssh-add -t 300 "$key" >/dev/null; then
@@ -769,30 +769,30 @@ _terminal_msg normal "Creating temporary workspace access."
 
     # Clean up this dedicated agent when the shell exits.
     trap 'workspacekill' EXIT
-    _terminal_msg success "Workspace access initialized (PID $HOME_SECURITY_SSH_AGENT_PID; key lifetime 5 minutes)."
+    _terminal_msg success "Workspace access initialized (PID $WORKSPACE_SSH_AGENT_PID; key lifetime 5 minutes)."
     _terminal_msg warning "Access is terminated when this terminal exits."
 }
 
 # Kill all ssh-agent processes owned by the current user.
 workspacekill() {
     _terminal_msg normal "Terminating dedicated workspace SSH agent."
-    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] && kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
-        kill "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || return 1
-        wait "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || :
+    if [[ -n "${WORKSPACE_SSH_AGENT_PID:-}" ]] && kill -0 "$WORKSPACE_SSH_AGENT_PID" 2>/dev/null; then
+        kill "$WORKSPACE_SSH_AGENT_PID" 2>/dev/null || return 1
+        wait "$WORKSPACE_SSH_AGENT_PID" 2>/dev/null || :
     fi
-    unset HOME_SECURITY_SSH_AGENT_PID HOME_SECURITY_SSH_AUTH_SOCK
-    if [[ -n "${HOME_SECURITY_PREV_SOCK_SET:-}" ]]; then
-        export SSH_AUTH_SOCK="$HOME_SECURITY_PREV_SOCK"
+    unset WORKSPACE_SSH_AGENT_PID WORKSPACE_SSH_AUTH_SOCK
+    if [[ -n "${WORKSPACE_PREV_SOCK_SET:-}" ]]; then
+        export SSH_AUTH_SOCK="$WORKSPACE_PREV_SOCK"
     else
         unset SSH_AUTH_SOCK
     fi
-    if [[ -n "${HOME_SECURITY_PREV_PID_SET:-}" ]]; then
-        export SSH_AGENT_PID="$HOME_SECURITY_PREV_PID"
+    if [[ -n "${WORKSPACE_PREV_PID_SET:-}" ]]; then
+        export SSH_AGENT_PID="$WORKSPACE_PREV_PID"
     else
         unset SSH_AGENT_PID
     fi
-    unset HOME_SECURITY_PREV_SOCK HOME_SECURITY_PREV_PID
-    unset HOME_SECURITY_PREV_SOCK_SET HOME_SECURITY_PREV_PID_SET
+    unset WORKSPACE_PREV_SOCK WORKSPACE_PREV_PID
+    unset WORKSPACE_PREV_SOCK_SET WORKSPACE_PREV_PID_SET
     _terminal_msg success "Dedicated workspace SSH agent terminated and previous agent environment restored."
 }
 
@@ -1775,8 +1775,8 @@ EOF
 # Prompts for direction interactively, or pass "up"/"down" (aliases: upload/download)
 # to skip the prompt. Neither direction uses --delete.
 gcloud_workspace_sync() {
-    local PROJECT_ID="home-security-511714"
-    local BUCKET="gs://home-security-bucket"
+    local PROJECT_ID="your-gcp-project-id"
+    local BUCKET="gs://your-gcs-bucket"
     local LOCAL_DIR="$HOME/workspace"
     local REMOTE_DIR="$BUCKET/workspace"
     local direction="${1:-}"
@@ -1875,9 +1875,9 @@ gcloud_workspace_sync() {
 # (create an R2 API token in the Cloudflare dashboard).
 
 cf_workspace_sync() {
-    local R2_ENDPOINT="https://2b35063950967e6ee34d1708bcc5c221.r2.cloudflarestorage.com"
-    local BUCKET="s3://backups/workspace"
-    local PUBLIC_URL="https://pub-33db5eb700004f5f8fe4b7430303bbf5.r2.dev/workspace"
+    local R2_ENDPOINT="https://<r2-account-id>.r2.cloudflarestorage.com"
+    local BUCKET="s3://your-r2-bucket/workspace"
+    local PUBLIC_URL="https://<r2-public-id>.r2.dev/workspace"
     local LOCAL_DIR="$HOME/workspace"
     local REMOTE_DIR="$BUCKET"
     local direction="${1:-}"
@@ -2153,8 +2153,8 @@ run0ctl status usbguard.service
 # connection check
 # Verify the dedicated workspace SSH agent.
 connectioncheck() {
-    local agent_pid="${HOME_SECURITY_SSH_AGENT_PID:-}"
-    local agent_sock="${HOME_SECURITY_SSH_AUTH_SOCK:-}"
+    local agent_pid="${WORKSPACE_SSH_AGENT_PID:-}"
+    local agent_sock="${WORKSPACE_SSH_AUTH_SOCK:-}"
 
     if [[ ! "$agent_pid" =~ ^[0-9]+$ ]] ||
        [[ -z "$agent_sock" || ! -S "$agent_sock" ]] ||
@@ -2196,8 +2196,8 @@ getupdates() {
     fi
 
     # Ensure Git inherits the dedicated SSH agent environment.
-    export SSH_AUTH_SOCK="$HOME_SECURITY_SSH_AUTH_SOCK"
-    export SSH_AGENT_PID="$HOME_SECURITY_SSH_AGENT_PID"
+    export SSH_AUTH_SOCK="$WORKSPACE_SSH_AUTH_SOCK"
+    export SSH_AGENT_PID="$WORKSPACE_SSH_AGENT_PID"
 
     # 2. Verify repository.
     if ! command -v git >/dev/null 2>&1 ||
@@ -2274,13 +2274,13 @@ getupdates() {
 
     # 10. Restore the dedicated SSH agent environment.
     # The template intentionally unsets SSH_AUTH_SOCK when sourced.
-    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" &&
-          -n "${HOME_SECURITY_SSH_AUTH_SOCK:-}" &&
-          -S "$HOME_SECURITY_SSH_AUTH_SOCK" ]] &&
-       kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
+    if [[ -n "${WORKSPACE_SSH_AGENT_PID:-}" &&
+          -n "${WORKSPACE_SSH_AUTH_SOCK:-}" &&
+          -S "$WORKSPACE_SSH_AUTH_SOCK" ]] &&
+       kill -0 "$WORKSPACE_SSH_AGENT_PID" 2>/dev/null; then
 
-        export SSH_AUTH_SOCK="$HOME_SECURITY_SSH_AUTH_SOCK"
-        export SSH_AGENT_PID="$HOME_SECURITY_SSH_AGENT_PID"
+        export SSH_AUTH_SOCK="$WORKSPACE_SSH_AUTH_SOCK"
+        export SSH_AGENT_PID="$WORKSPACE_SSH_AGENT_PID"
 
     else
         unset SSH_AUTH_SOCK SSH_AGENT_PID
@@ -2323,8 +2323,10 @@ getupdates() {
     esac
 
     return 0
-}
 
+    # 12. Kill the connection once done.
+    workspacekill
+}
 # print all emoji for terminal
 printemoji(){
 _terminal_msg normal "Smileys & Emotion"
@@ -2576,26 +2578,26 @@ for zone in $(sudo firewall-cmd --get-active-zones | grep -v '^[[:space:]]'); do
 done
 }
 
-# Bash completion for kimctl: complete currently defined shell functions.
-_kimctl_completion() {
+# Bash completion for bashctl: complete currently defined shell functions.
+_bashctl_completion() {
     local current="${COMP_WORDS[COMP_CWORD]}"
     COMPREPLY=()
     (( COMP_CWORD == 1 )) || return 0
-    mapfile -t COMPREPLY < <(compgen -A function -- "$current" | grep -v '^_kimctl_completion$')
+    mapfile -t COMPREPLY < <(compgen -A function -- "$current" | grep -v '^_bashctl_completion$')
 }
-complete -F _kimctl_completion kimctl
+complete -F _bashctl_completion bashctl
 
 # Command wrapper: dispatch every defined function in the current shell.
 # This preserves prompts, TTY access, cd/export changes, traps, and return codes.
-kimctl() {
+bashctl() {
     local command_name="${1:-}" rc
     if (( $# == 0 )); then
-        printf 'Usage: kimctl function [arguments...]\n' >&2
+        printf 'Usage: bashctl function [arguments...]\n' >&2
         return 2
     fi
     if [[ ! "$command_name" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]] ||
        ! declare -F "$command_name" >/dev/null 2>&1 ||
-       [[ "$command_name" == kimctl ]]; then
+       [[ "$command_name" == bashctl ]]; then
         printf 'Error: Function not found: %s\n' "$command_name" >&2
         return 127
     fi
@@ -2969,7 +2971,7 @@ export JavaScriptCoreUseJIT=1
 
 # Shell history behavior
 export HISTCONTROL=ignoreboth
-export HISTIGNORE="passwd:run0*:sudo*:*api_key*:*token*:*secret*:run0edit:workspace*:kses*:shazam*"
+export HISTIGNORE="passwd:run0*:sudo*:*api_key*:*token*:*secret*:run0edit:workspace*"
 export PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
 
 # Automatically log out after 10 minutes of inactivity, unless already readonly.
