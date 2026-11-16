@@ -714,7 +714,9 @@ _terminal_msg normal "If it returns an error msg e.g. 'externally-managed-enviro
 }
 
 # Dedicated SSH agent for the home-security key
-workspaceagent() {
+workspacea() {
+_terminal_line normal "Creating ephemeral access."
+_terminal_line normal
     local key="$HOME/.ssh/home-security"
     local agent_output
 
@@ -725,13 +727,19 @@ workspaceagent() {
     fi
 
     if [[ ! -f "$key" || ! -r "$key" ]]; then
+        _terminal_line error
         _terminal_msg error "🔴 ERROR: SSH key missing or unreadable."
+        _terminal_line error
         return 1
     fi
 
     if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] &&
        kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
-        _terminal_msg success "🚀 Home-security SSH agent is already running."
+        _terminal_line success
+        _terminal_msg success "Ephemeral access created 🔑⌛"
+        _terminal_msg normal "Duration: 15 minutes. 1️⃣ 5️⃣ ⌛
+        _terminal_msg normal "Note: Access is terminated on terminal exit. 🔑🔥"
+        _terminal_line success
         return 0
     fi
 
@@ -743,7 +751,9 @@ workspaceagent() {
 
     # Start a dedicated agent without printing its environment.
     if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
+        _terminal_line error
         _terminal_msg error "🔴 ERROR: Could not start ssh-agent."
+        _terminal_line error
         return 1
     fi
 
@@ -755,17 +765,20 @@ workspaceagent() {
     # Load the key for 15 minutes; show ssh-add output on the terminal.
     if ! ssh-add -t 900 "$key" > /dev/tty 2>&1; then
 	workspacekill
+        _terminal_line error
         _terminal_msg error "🔴 ERROR: Could not load the SSH key."
         return 1
+        _terminal_line error
     fi
 
     # Clean up this dedicated agent when the shell exits.
     trap 'workspacekill' EXIT
-
+    _terminal_line success
     _terminal_msg success \
-        "🚀 Home-security session started (PID $HOME_SECURITY_SSH_AGENT_PID)."
-    _terminal_msg normal "🔑 Key lifetime: 15 minutes."
-
+        "🔑✅ Ephemeral access started (PID $HOME_SECURITY_SSH_AGENT_PID)."
+    _terminal_msg normal "Short-lived access: 15 minutes. 1️⃣ 5️⃣ ⌛
+    _terminal_msg normal "Note: Access is terminated on terminal exit.⚠️ 🔑🔥"
+    _terminal_line success
 }
 
 # Kill all ssh-agent processes owned by the current user.
