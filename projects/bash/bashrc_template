@@ -2951,7 +2951,71 @@ TOOLBOX_SETUP
     fi
 }
 
+# top 10 ps result
+pstop10(){
+   command ps -eo rss,%cpu,ppid,comm | awk '{key=$3"\t"$4; mem[key]+=$1; cpu[key]+=$2} END {for (i in mem) {print mem[i]/1024 " MB\t" cpu[i] "%\t" i}}' | sort -rn | head -n 10
+}
 
+# export podman logs
+# copy from container
+# Copies to your current directory
+# podmanexportlogs my-suricata-container
+#
+# Copies to a specific custom directory
+# podmanexportlogs my-suricata-container ~/workspace/suricata-analysis/
+podmanexportlogs() {
+    # Check for help flags
+    if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+        echo "Usage Options:"
+        echo "  podmanexportlogs <container_name_or_id> [destination_path]"
+        echo ""
+        echo "Examples:"
+        echo "  # Copies to your current directory"
+        echo "  podmanexportlogs my-suricata-container"
+        echo ""
+        echo "  # Copies to a specific custom directory"
+        echo "  podmanexportlogs my-suricata-container ~/workspace/suricata-analysis/"
+        return 0
+    fi
+
+    if [ -z "$1" ]; then
+        echo "Error: Please provide the Podman container name or ID."
+        echo "Type 'podmanexportlogs --help' for examples."
+        return 1
+    fi
+
+    local CONTAINER="$1"
+    local DEST="${2:-.}"
+    local SRC_PATH="/var/log/suricata/"
+     
+    _terminal_line normal
+    _terminal_msg normal "Fetching logs from '$CONTAINER'..."
+
+    # Run podman cp
+    if podman cp "${CONTAINER}:${SRC_PATH}" "$DEST"; then
+        givemespace
+        _terminal_line success
+        _terminal_msg success "Successfully copied suricata logs to: $(realpath "$DEST")"
+        
+        # Give ownership to nonroot users  
+        local TARGET_DIR="${DEST%/}/suricata"  
+       
+        if [ -d "$TARGET_DIR" ]; then
+           _terminal_msg normal "Adjusting permissions for $TARGET_DIR..."
+           chmod 775 -R "$TARGET_DIR"
+           chown kim:kim -R "$TARGET_DIR"
+           _terminal_msg success "Done granting access to nonroot users."
+        fi
+    else
+        _terminal_line error
+        _terminal_msg error "Failed to copy logs. Please check if the container name is correct and running."
+        return 1
+    fi
+}
+
+
+
+# copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
 # rootless socket can exist (podman.service exits 125). Containers run
 # rootless in the podman machine instead.
@@ -2992,7 +3056,7 @@ alias tlbxen='toolbox enter'
 alias tlbxli='toolbox list'
 alias tlbxcr='toolbox create'
 alias rm='rm -rf'
-alias ls='ls -alt'
+alias ls='ls -laht --group-directories-first --color=auto | sort -n'
 alias ps='ps -aux'
 alias run0ctl='run0 systemctl'
 alias run0ctlrestart='run0 systemctl restart'
