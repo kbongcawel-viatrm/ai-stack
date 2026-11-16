@@ -68,30 +68,31 @@ _terminal_msg() {
     fi
 }
 
-# Prints a line ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+# Prints a full-width status divider line
+# Usage: _terminal_line [normal|success|warning|error] [optional_width]
 _terminal_line() {
     [[ "${KIMCTL_QUIET:-0}" == 1 ]] && return 0
 
-    local style="${1:-thin}"
-    local color="${2:-38;5;244}"
-    local width="${3:-50}"
-    local char
+    local type="${1:-normal}"
+    local width="${2:-${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}}"
+    local char='━'
+    local color
 
-    case "$style" in
-        thin)   char='─' ;;
-        bold)   char='━' ;;
-        double) char='═' ;;
-        dash)   char='┄' ;;
-        dot)    char='·' ;;
-        *)      char="$style" ;;
+    case "$type" in
+        normal)  color='1;97' ;;        # Bright White (Bold)
+        success) color='1;32' ;;        # Green (Bold)
+        warning) color='1;38;5;208' ;;  # Orange (256-color Bold)
+        error)   color='1;31' ;;        # Red (Bold)
+        *)       color='1;97' ;;        # Fallback to Normal
     esac
 
-    local line=""
+    local line
     printf -v line '%*s' "$width" ''
     line="${line// /$char}"
 
     printf '\033[%sm%s\033[0m\n' "$color" "$line" | tcat
 }
+
 
 # Unified command loader.
 # Use only for non-interactive commands. Do not wrap prompts, TTY applications,
@@ -152,7 +153,7 @@ run_with_loader() {
 
 #  INTRO MESSAGES          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 _terminal_msg warning " Important: This shell configuration has been customized. ⚠️"
-_terminal_line bold "1;32" 35
+_terminal_line warning
 
 #  DECLARATIVE CONFIG      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
@@ -304,7 +305,7 @@ workspaceconfigcheck() {
     _terminal_msg normal "Done with all checks..."
     _terminal_msg success "Enjoy 🎉"
     echo
-    _terminal_line bold "1;32" 35
+    _terminal_line normal
     echo
 }
 
@@ -337,7 +338,7 @@ workspace() {
     while true; do
         printf '\n'
         _terminal_msg normal ' Which folder do you want to enter? 📂 '
-        _terminal_line thin "1;32" 35
+        _terminal_line normal
 
         printf '\nAvailable workspaces:\n'
 
@@ -882,7 +883,7 @@ _terminal_msg warning "  🔑 SSH public key : (Proceed to add in GH)"
 cat "${ssh_key_path}.pub"
 sleep 2
 
-_terminal_line bold "1;32" 35
+_terminal_line normal
 
 _terminal_msg warning"  🔑 GPG public key: (Proceed to add in GH)"
 gpg --armor --export "$gpg_key_id"
@@ -1449,7 +1450,7 @@ podrecoverstate() {
     # --------------------------------------------------
 
     echo
-    _terminal_line bold "1;32" 35
+    _terminal_line success
 
     _terminal_msg success "Rootless Podman recovery completed."
 
@@ -1475,7 +1476,7 @@ podresetall() {
     local uid
     uid=$(id -u)
 
-    _terminal_line bold "1;32" 35
+    _terminal_line normal
     _terminal_msg normal "Checking Podman socket and service 🚀"
 
     # Recover Podman socket if inactive.
@@ -1515,7 +1516,7 @@ podresetall() {
     echo
 
     # Prune Podman resources.
-    _terminal_line bold "1;32" 35
+    _terminal_line normal
     _terminal_msg normal "Pruning Podman resources ✂️"
 
     if ! run_with_loader "Running" podman stop --all; then
@@ -1536,7 +1537,7 @@ podresetall() {
     _terminal_msg success "Podman resources have been reset."
 
     # Re-check Podman socket after pruning.
-    _terminal_line bold "1;32" 35
+    _terminal_line normal 
     _terminal_msg normal "Re-checking Podman socket after pruning 🚀"
 
     if ! systemctl --user is-active --quiet podman.socket; then
@@ -1562,7 +1563,7 @@ podresetall() {
     echo
 
     # Configure automatic startup.
-    _terminal_line bold "1;32" 35
+    _terminal_line normal
     _terminal_msg normal "Ensuring Podman socket starts automatically 🚀"
 
     if ! run_with_loader "Running" loginctl enable-linger "$USER"; then
@@ -1596,7 +1597,7 @@ podresetall() {
         return 1
     fi
 
-    _terminal_line bold "1;32" 35
+    _terminal_line normal
     _terminal_msg success "Podman reset completed successfully."
     _terminal_msg normal "Podman socket is enabled, active, and configured for automatic startup."
     _terminal_msg normal "DOCKER_HOST=${DOCKER_HOST}"
@@ -2136,49 +2137,106 @@ else
 fi
 }
 
+# print all emoji for terminal
+printemoji(){
+_terminal_msg normal "Smileys & Emotion"
+_terminal_line normal
+echo " 😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 🥸 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖 💋 💌 💘 💝 💖 💗 💓 💞 💕 💟 ❣️ 💔 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 💯 💢 💥 💫 💦 💨 🕳️ 💣 💬 🗨️ 🗯️ 💭 💤 "
+
+echo
+echo
+
+_terminal_msg normal "People & Body"
+_terminal_line normal
+echo " 👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦿 🦵 🦶 👂 🦻 👃 🧠 🫀 🫁 🦷 🦴 👀 👁️ 👅 👄 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 👮 🕵️ 💂 🥷 👷 🤴 👸 👳 👲 🧕 🤵 👰 🤰 🤱 👼 🎅 🤶 🦸 🦹 🧙 🧚 🧛 🧜 🧝 🧞 🧟 💆 💇 🚶 🧍 🧎 🏃 💃 🕺 🕴️ 👯 🧖 🧗 🤺 🏇 ⛷️ 🏂 🏌️ 🏄 🚣 🏊 ⛹️ 🏋️ 🚴 🚵 🤸 🤼 🤽 🤾 🤹 🧘 🛀 🛌 👭 👫 👬 💏 💑 👪 🗣️ 👤 👥 🫂 👣 "
+
+echo
+echo
+
+_terminal_msg normal "Animals & Nature"
+_terminal_line normal
+echo " 🐵 🐒 🦍 🦧 🐶 🐕 🦮 🐕 🦺 🐩 🐺 🦊 🦝 🐱 🐈 🐈 ⬛ 🦁 🐯 🐅 🐆 🐴 🐎 🦄 🦓 🦌 🦬 🐮 🐂 🐃 🐄 🐷 🐖 🐗 🐽 🐏 🐑 🐐 🐪 🐫 🦙 🦒 🐘 🦣 🦏 🦛 🐭 🐁 🐀 🐹 🐰 🐇 🐿️ 🦫 🦔 🦇 🐻 🐻 ❄️  🐨 🐼 🦥 🦦 🦨 🦘 🦡 🐾 🦃 🐔 🐓 🐣 🐤 🐥 🐦 🐧 🕊️ 🦅 🦆 🦢 🦉 🦤 🪶 🦩 🦚 🦜 🐸 🐊 🐢 🦎 🐍 🐲 🐉 🦕 🦖 🐳 🐋 🐬 🦭 🐟 🐠 🐡 🦈 🐙 🐚 🐌 🦋 🐛 🐜 🐝 🪲 🐞 🦗 🪳 🕷️ 🕸️ 🦂 🦟 🪰 🪱 🦠 💐 🌸 💮 🏵️ 🌹 🥀 🌺 🌻 🌼 🌷 🌱 🪴 🌲 🌳 🌴 🌵 🌾 🌿 ☘️ 🍀 🍁 🍂 🍃 "
+
+echo
+echo
+
+_terminal_msg normal "Food & Drink"
+_terminal_line normal
+echo " 🍇 🍈 🍉 🍊 🍋 🍌 🍍 🥭 🍎 🍏 🍐 🍑 🍒 🍓 🫐 🥝 🍅 🫒 🥥 🥑 🍆 🥔 🥕 🌽 🌶️ 🫑 🥒 🥬 🥦 🧄 🧅 🍄 🥜 🌰 🍞 🥐 🥖 🫓 🥨 🥯 🥞 🧇 🧀 🍖 🍗 🥩 🥓 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🫔 🥙 🧆 🥚 🍳 🥘 🍲 🫕 🥣 🥗 🍿 🧈 🧂 🥫 🍱 🍘 🍙 🍚 🍛 🍜 🍝 🍠 🍢 🍣 🍤 🍥 🥮 🍡 🥟 🥠 🥡 🦀 🦞 🦐 🦑 🦪 🍦 🍧 🍨 🍩 🍪 🎂 🍰 🧁 🥧 🍫 🍬 🍭 🍮 🍯 🍼 🥛 ☕ 🫖 🍵 🍶 🍾 🍷 🍸 🍹 🍺 🍻 🥂 🥃 🥤 🧋 🧃 🧉 🧊 🥢 🍽️ 🍴 🥄 🔪 🏺 "
+
+echo
+echo
+
+_terminal_msg normal "Travel & Places"
+_terminal_line normal
+echo " 🌍 🌎 🌏 🌐 🗺️ 🗾 🧭 🏔️ ⛰️ 🌋 🗻 🏕️ 🏖️ 🏜️ 🏝️ 🏞️ 🏟️ 🏛️ 🏗️ 🧱 🪨 🪵 🛖 🏘️ 🏚️ 🏠 🏡 🏢 🏣 🏤 🏥 🏦 🏨 🏩 🏪 🏫 🏬 🏭 🏯 🏰 💒 🗼 🗽 ⛪ 🕌 🛕 🕍 ⛩️ 🕋 ⛲ ⛺ 🌁 🌃 🏙️ 🌄 🌅 🌆 🌇 🌉 ♨️ 🎠 🎡 🎢 💈 🎪 🚂 🚃 🚄 🚅 🚆 🚇 🚈 🚉 🚊 🚝 🚞 🚋 🚌 🚍 🚎 🚐 🚑 🚒 🚓 🚔 🚕 🚖 🚗 🚘 🚙 🛻 🚚 🚛 🚜 🏎️ 🏍️ 🛵 🦽 🦼 🛺 🚲 🛴 🛹 🛼 🚏 🛣️ 🛤️ 🛢️ ⛽ 🚨 🚥 🚦 🛑 🚧 ⚓ ⛵ 🛶 🚤 🛳️ ⛴️ 🛥️ 🚢 ✈️ 🛩️ 🛫 🛬 🪂 💺 🚁 🚟 🚠 🚡 🛰️ 🚀 🛸 🛎️ 🧳 ⌛ ⏳ ⌚ ⏰ ⏱️ ⏲️ 🕰️ 🕛 🌑 🌒 🌓 🌔 🌕 🌖 🌗 🌘 🌙 🌚 🌛 🌜 🌡️ ☀️ 🌝 🌞 🪐 ⭐ 🌟 🌠 🌌 ☁️ ⛅ ⛈️ 🌤️ 🌥️ 🌦️ 🌧️ 🌨️ 🌩️ 🌪️ 🌫️ 🌬️ 🌀 🌈 🌂 ☂️ ☔ ⛱️ ⚡ ❄️ ☃️ ⛄ ☄️ 🔥 💧 🌊 "
+
+echo
+echo
+
+_terminal_msg normal "Activities"
+_terminal_line normal
+echo " 🎃 🎄 🎆 🎇 🧨 ✨ 🎈 🎉 🎊 🎋 🎍 🎎 🎏 🎐 🎑 🧧 🎀 🎁 🎗️ 🎟️ 🎫 🎖️ 🏆 🏅 🥇 🥈 🥉 ⚽ ⚾ 🥎 🏀 🏐 🏈 🏉 🎾 🥏 🎳 🏏 🏑 🏒 🥍 🏓 🏸 🥊 🥋 🥅 ⛳ ⛸️ 🎣 🤿 🎽 🎿 🛷 🥌 🎯 🪀 🪁 🎱 🔮 🪄 🧿 🎮 🕹️ 🎰 🎲 🧩 🧸 🪅 🪩 🪆 ♠️ ♥️ ♦️ ♣️ ♟️ 🃏 🀄 🎴 🎭 🖼️ 🎨 🧵 🪡 🧶 🪢 "
+
+echo
+echo
+
+_terminal_msg normal "Objects"
+_terminal_line normal
+echo " 👓 🕶️ 🥽 🥼 🦺 👔 👕 👖 🧣 🧤 🧥 🧦 👗 👘 🥻 🩱 🩲 🩳 👙 👚 👛 👜 👝 🛍️ 🎒 🩴 👞 👟 🥾 🥿 👠 👡 🩰 👢 👑 👒 🎩 🎓 🧢 🪖 ⛑️ 📿 💄 💍 💎 🔇 🔈 🔉 🔊 📢 📣 📯 🔔 🔕 🎼 🎵 🎶 🎙️ 🎚️ 🎛️ 🎤 🎧 📻 🎷 🪗 🎸 🎹 🎺 🎻 🪕 🥁 🪘 📱 📲 ☎️ 📞 📟 📠 🔋 🔌 💻 🖥️ 🖨️ ⌨️ 🖱️ 🖲️ 💽 💾 💿 📀 🧮 🎥 🎞️ 📽️ 🎬 📺 📷 📸 📹 📼 🔍 🔎 🕯️ 💡 🔦 🏮 🪔 📔 📕 📖 📗 📘 📙 📚 📓 📒 📃 📜 📄 📰 🗞️ 📑 🔖 🏷️ 💰 🪙 💴 💵 💶 💷 💸 💳 🧾 💹 ✉️ 📧 📨 📩 📤 📥 📦 📫 📪 📬 📭 📮 🗳️ ✏️ ✒️ 🖋️ 🖊️ 🖌️ 🖍️ 📝 💼 📁 📂 🗂️ 📅 📆 🗒️ 🗓️ 📇 📈 📉 📊 📋 📌 📍 📎 🖇️ 📏 📐 ✂️ 🗃️ 🗄️ 🗑️ 🔒 🔓 🔏 🔐 🔑 🗝️ 🔨 🪓 ⛏️ ⚒️ 🛠️ 🗡️ ⚔️ 🔫 🪃 🏹 🛡️ 🪚 🔧 🪛 🔩 ⚙️ 🗜️ ⚖️ 🦯 🔗 ⛓️ 🪝 🧰 🧲 🪜 ⚗️ 🧪 🧫 🧬 🔬 🔭 📡 💉 🩸 💊 🩹 🩺 🚪 🛗 🪞 🪟 🛏️ 🛋️ 🪑 🚽 🪠 🚿 🛁 🪤 🪒 🧴 🧷 🧹 🧺 🧻 🪣 🧼 🪥 🧽 🧯 🛒 🚬 ⚰️ 🪦 ⚱️ 🗿 🪧 "
+
+echo echo
+
+_terminal_msg normal "Symbols"
+_terminal_line normal
+echo " 🏧 🚮 🚰 ♿ 🚹 🚺 🚻 🚼 🚾 🛂 🛃 🛄 🛅 ⚠️ 🚸 ⛔ 🚫 🚳 🚭 🚯 🚱 🚷 📵 🔞 ☢️ ☣️ ⬆️ ↗️ ➡️ ↘️ ⬇️ ↙️ ⬅️ ↖️ ↕️ ↔️ ↩️ ↪️ ⤴️ ⤵️ 🔃 🔄 🔙 🔚 🔛 🔜 🔝 🛐 ⚛️ 🕉️ ✡️ ☸️ ☯️ ✝️ ☦️ ☪️ ☮️ 🕎 🔯 ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ ⛎ 🔀 🔁 🔂 ▶️ ⏩ ⏭️ ⏯️ ◀️ ⏪ ⏮️ 🔼 ⏫ 🔽 ⏬ ⏸️ ⏹️ ⏺️ ⏏️ 🎦 🔅 🔆 📶 📳 📴 ♀️ ♂️ ⚧️ ✖️ ➕ ➖ ➗ ♾️ ‼️ ⁉️ ❓ ❔ ❕ ❗ 〰️ 💱 💲 ⚕️ ♻️ ⚜️ 🔱 📛 🔰 ⭕ ✅ ☑️ ✔️ ❌ ❎ ➰ ➿ 〽️ ✳️ ✴️ ❇️ ©️ ®️ ™️ #️⃣ *️⃣ 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🔠 🔡 🔢 🔣 🔤 🅰️ 🆎 🅱️ 🆑 🆒 🆓 ℹ️ 🆔 Ⓜ️ 🆕 🆖 🅾️ 🆗 🅿️ 🆘 🆙 🆚 🈁 🈂️ 🈷️ 🈶 🈯 🉐 🈹 🈚 🈲 🉑 🈸 🈴 🈳 ㊗️ ㊙️ 🈺 🈵 🔴 🟠 🟡 🟢 🔵 🟣 🟤 ⚫ ⚪ 🟥 🟧 🟨 🟩 🟦 🟪 🟫 ⬛ ⬜ ◼️ ◻️ ◾ ◽ ▪️ ▫️ 🔶 🔷 🔸 🔹 🔺 🔻 💠 🔘 🔳 🔲 "
+
+echo
+echo
+
+_terminal_msg normal "Flags"
+_terminal_line normal
+echo " 🏁 🚩 🎌 🏴 🏳️ 🏳️🌈 🏳️ ⚧️  ☠️  "
+}
+
 # Check Bash syntax; default target is ~/.bashrc.
-# Usage: bashconfigcheck [file-path|filename-keyword]
+# Usage: bashconfigcheck
 bashconfigcheck() {
-    local search_input="${1:-$HOME/.bashrc}" selected_file="" file
-    local -a matches=()
-    (( $# <= 1 )) || { printf 'Usage: bashconfigcheck [file-path|keyword]\n' >&2; return 2; }
-    if [[ "$search_input" == '~/'* ]]; then search_input="$HOME/${search_input#~/}"; fi
-    if [[ -f "$search_input" ]]; then
-        selected_file="$search_input"
-    elif [[ -z "${1:-}" ]]; then
-        printf 'Error: Default file not found: %s\n' "$search_input" >&2
+_terminal_line normal
+_terminal_msg normal "Template: $HOME/workspace/ai-stack/projects/bash/bashrc_template"
+_terminal_msg normal "Target: $HOME/.bashrc"
+_terminal_line normal
+    local config="$HOME/workspace/ai-stack/projects/bash/bashrc_template"
+
+    # 1. Validate Bash syntax
+    if bash -n "$config" 2>/dev/null; then
+        _terminal_msg success "Syntax check: OK"
+    else
+        _terminal_msg error "Syntax check: FAILED"
+        sleep 3
         return 1
-    else
-        while IFS= read -r -d '' file; do matches+=("$file"); done \
-            < <(find . -maxdepth 4 -type f -iname "*${search_input}*" -print0 2>/dev/null)
-        if (( ${#matches[@]} == 0 )); then
-            printf "No files found matching '%s'.\n" "$search_input"
-            return 1
-        fi
-        _terminal_msg normal "Select the number of the file you want to check:"
-        PS3="Enter choice (number): "
-        select file in "${matches[@]}" "Cancel"; do
-            if [[ "$file" == Cancel ]]; then _terminal_msg error "Operation cancelled."; return 0
-            elif [[ -n "$file" ]]; then selected_file="$file"; break
-            else _terminal_msg warning "Invalid selection. Please enter a valid number."
-            fi
-        done
     fi
-    [[ -s "$selected_file" ]] || { printf "Error: '%s' is empty or unreadable.\n" "$selected_file" >&2; return 1; }
-    _terminal_msg normal "Checking Bash syntax: $selected_file"
-    if bash -n "$selected_file"; then
-        _terminal_msg success "Syntax is valid: $selected_file"
-        bash "$selected_file"
-        cp -a $HOME/workspace/ai-stack/projects/bash/bashrc_template $HOME/.bashrc
-        source $HOME/.bashrc
-        _terminal_msg success "New bash config loaded"
+
+    # 2. Copy configuration
+    if cp -f "$config" "$HOME/.bashrc" 2>/dev/null; then
+        _terminal_msg success "Configuration copy: OK"
     else
-        _terminal_msg error "Syntax error detected in '$selected_file'. Execution aborted." >&2
+        _terminal_msg error "Configuration copy: FAILED"
+        sleep 3
+        return 1
+    fi
+
+    # 3. Reload configuration
+    if source "$HOME/.bashrc" 2>/dev/null; then
+        _terminal_msg success "Configuration reload: OK"
+    else
+        _terminal_msg error "Configuration reload: FAILED"
+        sleep 3
         return 1
     fi
 }
 
-
+# Sanboxed container
 burnerbox() {
   local project_dir="${1:-.}"
   local image="${2:-registry.fedoraproject.org/fedora-toolbox:44}"
@@ -2667,6 +2725,7 @@ TOOLBOX_SETUP
         return $?
     fi
 }
+
 
 # >>> Mistral >>>
 export PATH="/home/kim/.mistral/bin:$PATH"
