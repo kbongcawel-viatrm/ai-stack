@@ -2291,6 +2291,37 @@ getupdates() {
     _terminal_msg success "Updated Bash configuration loaded."
     _terminal_msg success "SSH agent environment restored."
 
+    # 11. Optionally restart temporary workspace access.
+    local reconnect
+    if [[ -t 0 ]]; then
+        printf '\n'
+        read -r -p "Reconnect workspace access now? (Y/n): " reconnect
+    else
+        reconnect="n"
+        _terminal_msg warning "No interactive terminal detected; skipping workspace reconnection."
+    fi
+
+    case "$reconnect" in
+        [Yy]|[Yy][Ee][Ss])
+            if ! declare -F workspacerestart >/dev/null 2>&1; then
+                _terminal_msg error "workspacerestart function is not available."
+                return 127
+            fi
+
+            _terminal_msg normal "Restarting workspace access..."
+            if workspacerestart; then
+                _terminal_msg success "Workspace access reconnected."
+            else
+                local restart_rc=$?
+                _terminal_msg error "Workspace reconnection failed (exit code $restart_rc)."
+                return "$restart_rc"
+            fi
+            ;;
+        *)
+            _terminal_msg normal "Keeping the current workspace connection."
+            ;;
+    esac
+
     return 0
 }
 
