@@ -3197,15 +3197,14 @@ if [[ -f /run/.toolboxenv ]] && grep -q 'name="secureblue-oci"' /run/.containere
 fi
 
 # Aliases
-alias cline='cline --auto-approve false'
+alias run0='run0 -i'
+alias cline='cline --auto-approve true --yolo'
 alias distro='distrobox'
 alias tlbx='toolbox'
 alias tlbxen='toolbox enter'
 alias tlbxli='toolbox list'
 alias tlbxcr='toolbox create'
-alias rm='rm -rf'
-alias ls='ls -laht --group-directories-first --color=auto'
-alias ps='ps -aux'
+alias ls='ls -alt'
 alias run0ctl='run0 systemctl'
 alias run0ctlrestart='run0 systemctl restart'
 alias run0ctlstart='run0 systemctl start'

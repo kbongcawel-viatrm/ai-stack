@@ -26,6 +26,18 @@
   data-structure techniques in the Google Harness² guidance to reduce search
   space, tool calls, and iteration time while preserving correctness, validation,
   and minimum blast radius; do not optimize speed by skipping safety gates.
+- **Timebox tasks and blockers:** set a reasonable time or probe-cycle budget
+  for each task and blocker. Default to 10 minutes or 3 focused probe cycles per
+  blocker, whichever comes first, unless the operator specifies otherwise. At
+  the limit, promptly report findings, remaining uncertainty, and the next
+  proposed action; do not silently spin or abandon the main goal.
+- **Do not add approval friction to routine commands:** run ordinary
+  non-destructive inspection, diagnostic, and validation commands without
+  asking the operator for an extra conversational approval. When an authorized
+  diagnostic needs `run0`, invoke it interactively (without `--no-ask-password`)
+  so polkit can present its own authorization prompt. This does not authorize
+  destructive or consequential actions, and polkit authorization does not
+  replace any required operator approval for those actions.
 - **VM provisioning:** all VM provisioning for `vm-host/` must run inside a
   container via the `burnerbox`/`burnercommand` shell functions (the repo's
   `make up` / `container/up.sh` path is the in-repo equivalent). Never run

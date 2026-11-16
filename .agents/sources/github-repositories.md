@@ -42,6 +42,8 @@ Use this registry when researching technology-specific tasks. Prefer the officia
 |---|---|---|
 | Secureblue image, hardening defaults, system commands, updates, and troubleshooting | [secureblue/secureblue](https://github.com/secureblue/secureblue) | [Secureblue documentation](https://secureblue.dev/), [FAQ](https://secureblue.dev/faq), [Features](https://secureblue.dev/features), [Post-install](https://secureblue.dev/post-install), [Kernel arguments](https://secureblue.dev/articles/kargs) |
 | Fedora Atomic / rpm-ostree behavior | [coreos/rpm-ostree](https://github.com/coreos/rpm-ostree) | [rpm-ostree documentation](https://coreos.github.io/rpm-ostree/) |
+| bootc bootable OCI image lifecycle, image building, install, updates, and trust | [bootc-dev/bootc](https://github.com/bootc-dev/bootc) | [Official bootc guide](https://bootc.dev/bootc/), [image building](https://bootc.dev/bootc/building/bootc-building-images.7.html), [installation](https://bootc.dev/bootc/bootc-installation.7.html), [rpm-ostree relationship](https://bootc.dev/bootc/bootc-relationships.7.html), [security](https://bootc.dev/bootc/bootc-security.7.html) |
+| composefs filesystem and verified bootable OS image examples | [composefs/composefs-rs](https://github.com/composefs/composefs-rs) | [Examples README](https://github.com/composefs/composefs-rs/blob/main/examples/README.md), [composefs documentation](https://github.com/composefs/composefs-rs/tree/main/docs) |
 
 ## Host integrity and auditing
 
