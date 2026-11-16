@@ -2181,41 +2181,65 @@ _terminal_line normal
 echo " 🏁 🚩 🎌 🏴 🏳️ 🏳️🌈 🏳️ ⚧️  ☠️  "
 }
 
-# Check Bash syntax; default target is ~/.bashrc.
+# Check Bash syntax and show diagnostics before replacing ~/.bashrc.
 # Usage: bashconfigcheck
 bashconfigcheck() {
-_terminal_line normal
-_terminal_msg normal "Template: $HOME/workspace/ai-stack/projects/bash/bashrc_template"
-_terminal_msg normal "Target: $HOME/.bashrc"
-_terminal_line normal
     local config="$HOME/workspace/ai-stack/projects/bash/bashrc_template"
+    local syntax_output syntax_status error_line start_line end_line
 
-    # 1. Validate Bash syntax
-    if bash -n "$config" 2>/dev/null; then
-        _terminal_msg success "Syntax check: OK"
-    else
+    _terminal_line normal
+    _terminal_msg normal "Template: $config"
+    _terminal_msg normal "Target: $HOME/.bashrc"
+    _terminal_line normal
+
+    # 1. Validate Bash syntax and retain stderr for diagnostics.
+    syntax_output=$(bash -n "$config" 2>&1)
+    syntax_status=$?
+
+    if (( syntax_status != 0 )); then
         _terminal_msg error "Syntax check: FAILED"
-        sleep 3
+        printf '%s\n' "$syntax_output" >&2
+
+        # Show the reported line and nearby context when Bash provides a line number.
+        if [[ "$syntax_output" =~ line[[:space:]]+([0-9]+) ]]; then
+            error_line="${BASH_REMATCH[1]}"
+            start_line=$(( error_line > 3 ? error_line - 3 : 1 ))
+            end_line=$(( error_line + 3 ))
+
+            _terminal_msg warning "Problem area (line $error_line):"
+            awk -v start="$start_line" -v end="$end_line" -v error="$error_line" '
+                NR >= start && NR <= end {
+                    marker = (NR == error ? ">>>" : "   ")
+                    printf "%s %6d | %s\n", marker, NR, $0
+                }
+            ' "$config"
+        else
+            _terminal_msg warning "Bash did not report a line number; inspect the diagnostic above."
+        fi
+
+        _terminal_msg error "Configuration was not copied."
         return 1
     fi
 
-    # 2. Copy configuration
-    if cp -f "$config" "$HOME/.bashrc" 2>/dev/null; then
+    _terminal_msg success "Syntax check: OK"
+
+    # 2. Copy configuration only after syntax validation succeeds.
+    if cp -f "$config" "$HOME/.bashrc"; then
         _terminal_msg success "Configuration copy: OK"
     else
         _terminal_msg error "Configuration copy: FAILED"
-        sleep 3
         return 1
     fi
 
-    # 3. Reload configuration
-    if source "$HOME/.bashrc" 2>/dev/null; then
+    # 3. Reload configuration and preserve any error output.
+    if source "$HOME/.bashrc"; then
         _terminal_msg success "Configuration reload: OK"
     else
         _terminal_msg error "Configuration reload: FAILED"
-        sleep 3
         return 1
     fi
+
+    return 0
 }
 
 # Sanboxed container
