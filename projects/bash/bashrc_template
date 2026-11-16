@@ -699,10 +699,25 @@ clinemcpsetup() {
 }
 
 
-mistralfix(){
-_terminal_msg normal "Running vibe fix 'pip install --user --force-reinstall vibe'"
-command -v pip >/dev/null 2>&1 && pip install --user --force-reinstall mistral-vibe || echo "pip is not installed"
-_terminal_msg normal "If it returns an error msg e.g. 'externally-managed-environment', run this command 'pipx install mistral-vibe' or 'uv tool install mistral-vibe'"
+mistralfix() {
+    local rc
+
+    if ! command -v pip >/dev/null 2>&1; then
+        _terminal_msg error "pip is not installed."
+        return 127
+    fi
+
+    _terminal_msg normal "Repairing Mistral Vibe installation..."
+
+    if run_with_loader "Reinstalling Mistral Vibe" pip install --user --force-reinstall mistral-vibe; then
+        _terminal_msg success "Mistral Vibe installation repaired."
+        return 0
+    else
+        rc=$?
+        _terminal_msg error "Mistral Vibe repair failed (exit code $rc)."
+        _terminal_msg warning "For externally-managed-environment errors, use: pipx install mistral-vibe or uv tool install mistral-vibe."
+        return "$rc"
+    fi
 }
 
 # Dedicated SSH agent for the home-security key
@@ -1576,26 +1591,46 @@ podresetall() {
 }
 
 # systemic restart
-podsystemrestart(){
+podsystemrestart() {
+    local rc
 
-   freshstart(){
-      unset CONTAINER_HOST
-      _terminal_msg normal "Stopping podman resources...⌛"
-      systemctl --user stop podman.socket
-      systemctl --user stop podman.service
-      _terminal_msg normal "Inprogress... ⏳🌐 "
-      sleep 5
-      systemctl --user start podman.socket
-      systemctl --user start podman.service
-      _terminal_msg success "Started podman resources. 🟢"
-   }
+    freshstart() {
+        unset CONTAINER_HOST
 
-   _terminal_msg normal "Attempting to refresh podman resources ⚠️ "
-   if freshstart; then
-      _terminal_msg success "Refreshed. ✅"
-   else
-      if podrootless; then :; elif podmanrecover; then :; elif podmanresetall; then :; fi
-   fi
+        _terminal_msg normal "Stopping Podman socket and service..."
+        run_with_loader "Stopping Podman socket" systemctl --user stop podman.socket || return $?
+        run_with_loader "Stopping Podman service" systemctl --user stop podman.service || return $?
+
+        _terminal_msg normal "Waiting for Podman to stop..."
+        sleep 5
+
+        _terminal_msg normal "Starting Podman socket and service..."
+        run_with_loader "Starting Podman socket" systemctl --user start podman.socket || return $?
+        run_with_loader "Starting Podman service" systemctl --user start podman.service || return $?
+
+        return 0
+    }
+
+    _terminal_msg normal "Refreshing Podman resources..."
+
+    if freshstart; then
+        _terminal_msg success "Podman resources restarted."
+        return 0
+    fi
+
+    rc=$?
+    _terminal_msg warning "Direct restart failed; attempting recovery."
+
+    if podrootless; then
+        return 0
+    elif podrecoverstate; then
+        return 0
+    elif podresetall; then
+        return 0
+    fi
+
+    _terminal_msg error "Podman recovery did not complete."
+    return "$rc"
 }
 
 
@@ -1694,7 +1729,10 @@ gcloudtoolbox() {
         printf 'Reusing Toolbox container: %s\n' "$container_name"
     else
         printf 'Creating Toolbox container: %s\n' "$container_name"
-        toolbox create --container "$container_name" || return $?
+        if ! run_with_loader "Creating $container_name" toolbox create --container "$container_name"; then
+            _terminal_msg error "Toolbox creation failed: $container_name"
+            return 1
+        fi
     fi
     toolbox run --container "$container_name" bash -c '
         set -Eeuo pipefail
@@ -2407,45 +2445,54 @@ podman ps -a
 }
 
 burnercommand() {
-  local container="burnerbox"
-  local project_dir="$HOME/workspace/"
-  local image="registry.fedoraproject.org/fedora-toolbox:44"
+    local container="burnerbox"
+    local project_dir="$HOME/workspace/"
+    local image="registry.fedoraproject.org/fedora-toolbox:44"
 
-  # 1. Start the hardened background container if it does not exist yet
-  if ! podman container exists "$container"; then
-    echo "Creating persistent hardened sandbox '$container'..."
-    podman run -d \
-      --name "$container" \
-      --cap-drop=ALL \
-      --security-opt=no-new-privileges \
-      --read-only \
-      --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
-      --tmpfs /var/tmp:rw,noexec,nosuid,nodev,size=256m \
-      --pids-limit=512 \
-      --memory=4g \
-      --cpus=2 \
-      --network=host \
-      --userns=keep-id \
-      -v "${project_dir}:/workspace:Z" \
-      -w /workspace \
-      "$image" \
-      sleep infinity >/dev/null
-  elif [ "$(podman inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
-    podman start "$container" >/dev/null
-  fi
+    # Create or start the persistent sandbox without requiring a TTY.
+    if ! podman container exists "$container"; then
+        _terminal_msg normal "Creating persistent hardened sandbox..."
+        if ! run_with_loader "Creating $container" podman run -d \
+            --name "$container" \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
+            --tmpfs /var/tmp:rw,noexec,nosuid,nodev,size=256m \
+            --pids-limit=512 \
+            --memory=4g \
+            --cpus=2 \
+            --network=host \
+            --userns=keep-id \
+            -v "${project_dir}:/workspace:Z" \
+            -w /workspace \
+            "$image" \
+            sleep infinity; then
+            _terminal_msg error "Failed to create $container."
+            return 1
+        fi
+        _terminal_msg success "Sandbox container created."
+    elif [[ "$(podman inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" != "true" ]]; then
+        if ! run_with_loader "Starting $container" podman start "$container"; then
+            _terminal_msg error "Failed to start $container."
+            return 1
+        fi
+        _terminal_msg success "Sandbox container started."
+    else
+        _terminal_msg success "Sandbox container is already running."
+    fi
 
-  # 2. If no command is passed, open an interactive bash shell
-  if [ $# -eq 0 ]; then
-    podman exec -it "$container" /bin/bash
-    return
-  fi
+    # Keep interactive shell sessions in the foreground.
+    if (( $# == 0 )); then
+        podman exec -it "$container" /bin/bash
+        return $?
+    fi
 
-  # 3. Pass all arguments into the container
-  local tty_flags="-i"
-  [[ -t 0 && -t 1 ]] && tty_flags="-it"
-  podman exec $tty_flags "$container" /bin/bash -c "$*"
+    # Preserve arguments as individual shell words.
+    local tty_flags=(-i)
+    [[ -t 0 && -t 1 ]] && tty_flags=(-it)
+    podman exec "${tty_flags[@]}" "$container" /bin/bash -c "$*"
 }
-
 
 # Configure Podman image trust for one registry/repository.
 # Defaults to Fedora Toolbox 44 when no image scope is supplied.
