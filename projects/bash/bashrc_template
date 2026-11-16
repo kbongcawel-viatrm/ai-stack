@@ -2402,8 +2402,9 @@ kimctl() {
         printf 'Usage: kimctl function [arguments...]\n' >&2
         return 2
     fi
-    if [[ ! "$command_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] ||
-       ! declare -F "$command_name" >/dev/null 2>&1; then
+    if [[ ! "$command_name" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]] ||
+       ! declare -F "$command_name" >/dev/null 2>&1 ||
+       [[ "$command_name" == kimctl ]]; then
         printf 'Error: Function not found: %s\n' "$command_name" >&2
         return 127
     fi
