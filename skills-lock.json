@@ -7,6 +7,12 @@
       "skillPath": "crates/openfang-skills/bundled/git-expert/SKILL.md",
       "computedHash": "099dbe0e40b09b1d802757f045ed4cf63bd63b0e96ae435fb7827e39824ddfba"
     },
+    "wrangler": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/wrangler/SKILL.md",
+      "computedHash": "91960832cf8735975bb74c1dcada8163910631ce3217d2555127469e0120049f"
+    },
     "github-actions": {
       "source": "callstackincubator/agent-skills",
       "sourceType": "github",
