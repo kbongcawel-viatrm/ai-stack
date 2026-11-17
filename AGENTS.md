@@ -1,5 +1,18 @@
 # Agent rules
 
+- **Listen to the operator's instruction always:** the operator knows what is
+  happening at a high level. Follow their direction explicitly; do not
+  substitute your own judgment for theirs on workflow, staging, or deployment
+  decisions.
+- **Ask when not sure — verify with the operator or MCP tools:** the operator
+  and available MCP integrations (including Firecrawl) are authoritative
+  sources of exact information. Never guess, assume, or infer operational
+  details that can be confirmed. If in doubt, ask first.
+- **Validate and review before staging or committing:** before presenting
+  changes for staging or committing, perform a self-review. Verify diffs,
+  file contents, cross-references, and logic against the source of truth.
+  Do not submit for validation without having first validated yourself.
+
 - **Git pushes require operator approval (all agents/providers):** the
   operator is the sole gate for all code pushes. Never run `git push` or
   otherwise publish commits to a remote without explicit approval for that
