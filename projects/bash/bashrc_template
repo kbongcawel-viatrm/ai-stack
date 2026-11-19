@@ -3291,7 +3291,7 @@ loadsoftaskill(){
 
 
 # Backup firewall config
-backupfirewalld(){
+firewallbackup(){
 
 local backup_root="${1:-/var/home/kim/workspace/firewall/backups/}"
 
@@ -3504,6 +3504,147 @@ killaitools(){
     done
 
     echo -e "${GREEN}[+] All Devin and Cline processes terminated.${NC}"
+}
+# setup firewall
+firewallsetup() {
+    run0 bash -s << 'EOF'
+set -euo pipefail
+
+echo "[*] Resetting firewalld to clean defaults..."
+firewall-cmd --complete-reload >/dev/null 2>&1 || true
+
+# ==============================================================================
+# 1. INBOUND ZONE: FedoraWorkstation (Strict DROP, No Forwarding, Ping + PMTUD)
+# ==============================================================================
+echo "[*] Configuring FedoraWorkstation (Inbound DROP)..."
+firewall-cmd --permanent --zone=FedoraWorkstation --add-interface=enp1s0 2>/dev/null || true
+firewall-cmd --permanent --zone=FedoraWorkstation --set-target=DROP
+firewall-cmd --permanent --zone=FedoraWorkstation --remove-forward
+
+# Remove all default inbound services and ports
+for svc in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-services); do
+    firewall-cmd --permanent --zone=FedoraWorkstation --remove-service="$svc"
+done
+for prt in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-ports); do
+    firewall-cmd --permanent --zone=FedoraWorkstation --remove-port="$prt"
+done
+firewall-cmd --permanent --zone=FedoraWorkstation --remove-protocol=icmp 2>/dev/null || true
+
+# Configure ICMP using block-inversion:
+# ONLY listed ICMP types are permitted; all other ICMP types are dropped.
+firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block-inversion
+for icmptype in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-icmp-blocks); do
+    firewall-cmd --permanent --zone=FedoraWorkstation --remove-icmp-block="$icmptype"
+done
+
+# Allow Ping + PMTUD essentials (prevents stalled HTTPS/TLS packets)
+firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=echo-request
+firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=echo-reply
+firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=destination-unreachable
+firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=packet-too-big
+
+# ==============================================================================
+# 2. CLEAN UP PUBLIC ZONE (Ensure 8123/tcp & fallback ports stay closed)
+# ==============================================================================
+echo "[*] Hardening fallback public zone..."
+firewall-cmd --permanent --zone=public --set-target=DROP
+firewall-cmd --permanent --zone=public --remove-forward
+for svc in $(firewall-cmd --permanent --zone=public --list-services); do
+    firewall-cmd --permanent --zone=public --remove-service="$svc"
+done
+for prt in $(firewall-cmd --permanent --zone=public --list-ports); do
+    firewall-cmd --permanent --zone=public --remove-port="$prt"
+done
+
+# ==============================================================================
+# 3. OUTBOUND POLICY: host-to-outbound (Strict Allowlist, 5555 Blocked)
+# ==============================================================================
+echo "[*] Configuring host-to-outbound policy..."
+if ! firewall-cmd --permanent --get-policies | grep -qw "host-to-outbound"; then
+    firewall-cmd --permanent --new-policy=host-to-outbound
+fi
+
+firewall-cmd --permanent --policy=host-to-outbound --set-target=DROP
+firewall-cmd --permanent --policy=host-to-outbound --set-priority=-1
+firewall-cmd --permanent --policy=host-to-outbound --remove-forward 2>/dev/null || true
+
+# Bind HOST -> FedoraWorkstation
+firewall-cmd --permanent --policy=host-to-outbound --add-ingress-zone=HOST
+firewall-cmd --permanent --policy=host-to-outbound --add-egress-zone=FedoraWorkstation
+
+# Outbound Services: DNS (53), DoT (853), HTTP (80), HTTPS (443), NTP (123)
+for svc in dns dns-over-tls http https ntp; do
+    firewall-cmd --permanent --policy=host-to-outbound --add-service="$svc" 2>/dev/null || true
+done
+
+# Outbound Ports: HTTP/3 QUIC (443/udp), DoT (853/tcp), Cloudflare Tunnel (7844/tcp & udp)
+for prt in 443/udp 853/tcp 7844/tcp 7844/udp; do
+    firewall-cmd --permanent --policy=host-to-outbound --add-port="$prt" 2>/dev/null || true
+done
+
+# Preserved Rich Rule: Allow SSH outbound only to 10.1.29.4
+firewall-cmd --permanent --policy=host-to-outbound \
+    --add-rich-rule='rule family="ipv4" destination address="10.1.29.4" service name="ssh" accept' 2>/dev/null || true
+
+# ==============================================================================
+# 4. DIRECT RULES (Preserved 8022/tcp rule & IPS/IDS NFQUEUE Hooks)
+# ==============================================================================
+echo "[*] Applying direct filter rules and NFQUEUE hooks..."
+while read -r line; do
+    [[ -n "$line" ]] && firewall-cmd --permanent --direct --remove-rule $line 2>/dev/null || true
+done < <(firewall-cmd --permanent --direct --get-all-rules)
+
+# Preserved custom outbound rule to 192.168.2.246:8022
+firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 \
+    -p tcp -d 192.168.2.246 --dport 8022 -j ACCEPT
+
+# Preserved IPS/IDS NFQUEUE inspection hooks on enp1s0 (IPv4 & IPv6)
+firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 \
+    -o enp1s0 -m mark '!' --mark 0x1/0x1 -j NFQUEUE --queue-num 0 --queue-bypass
+firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 \
+    -i enp1s0 -m mark '!' --mark 0x1/0x1 -j NFQUEUE --queue-num 0 --queue-bypass
+firewall-cmd --permanent --direct --add-rule ipv6 filter INPUT 0 \
+    -i enp1s0 -m mark '!' --mark 0x1/0x1 -j NFQUEUE --queue-num 0 --queue-bypass
+firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 0 \
+    -o enp1s0 -m mark '!' --mark 0x1/0x1 -j NFQUEUE --queue-num 0 --queue-bypass
+
+# ==============================================================================
+# 5. RELOAD & VERIFY
+# ==============================================================================
+echo "[*] Reloading firewalld..."
+firewall-cmd --reload
+
+echo -e "\n[+] Firewall recreation complete! Active summary:"
+firewall-cmd --zone=FedoraWorkstation --list-all
+firewall-cmd --policy=host-to-outbound --list-all
+firewall-cmd --direct --get-all-rules
+EOF
+}
+
+# allow Github SSH
+workspacegithubsetup(){
+_terminal_msg normal "Preparing ssh/config for Github"
+if [ ! -d ~/.ssh ]; then
+    mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    echo "[+] Created ~/.ssh directory."
+else
+    terminal_msg normal "[*] ~/.ssh already exists, skipping directory creation."
+fi
+
+if ! grep -q "Host github.com" ~/.ssh/config 2>/dev/null; then
+    cat << 'EOF' >> ~/.ssh/config
+
+Host github.com
+    Hostname ://github.com
+    Port 443
+    User git
+EOF
+    chmod 600 ~/.ssh/config
+    _terminal_msg success "[+] Added GitHub port 443 SSH config."
+else
+    _terminal_msg normal "[*] Host github.com already exists in ~/.ssh/config, skipping."
+fi
+
 }
 
 # copy from container
