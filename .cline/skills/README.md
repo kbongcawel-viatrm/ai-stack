@@ -10,15 +10,17 @@ The canonical cross-agent skill source is `.agents/skills/`; matching copies are
 - `bash-scripting`
 - `container-tuning`
 - `data-stream-planning`
+- `elevenlabs-speech-to-text` - ElevenLabs speech-to-text transcription (Scribe v3)
 - `fluent-bit-generator`
 - `fluent-bit-validator`
+- `google-harness2` - Google Harness² recursive agent improvement framework
 - `linear-session-workflow`
 - `ollama-llm-training`
 - `openobserve-operations`
 - `podman-container-management`
 - `python-development`
 - `php-patch-automation`
-- `security-forensics-analysis`
+- `security-forensics-analysis
 
 - `git-operations` is the Git/GitHub workflow skill. Its canonical source is `.agents/skills/git-operations/SKILL.md`; keep both copies identical.
 

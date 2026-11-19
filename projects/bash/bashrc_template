@@ -521,9 +521,10 @@ getaitools(){
 }
 
 
-# Configure GitHub and Cloudflare MCP servers for Cline CLI.
-# CF_TOK and GH_PAT are exported to Cline; their values are never written
-# to the MCP settings file. Cline resolves ${env:NAME} at connection time.
+# Configure GitHub, Cloudflare, and Firecrawl MCP servers for Cline CLI.
+# CF_TOK, GH_PAT, and FIRECRAWL_TOKEN are exported to Cline; their values are
+# never written to the MCP settings file. Cline resolves ${env:NAME} at
+# connection time.
 clinemcpsetup() {
     local settings_file settings_dir tmp backup
 
@@ -540,6 +541,10 @@ clinemcpsetup() {
         printf 'Error: GH_PAT is not set or is empty.\n' >&2
         return 2
     fi
+    if [[ ! -v FIRECRAWL_TOKEN ]] || (( ${#FIRECRAWL_TOKEN} == 0 )); then
+        printf 'Error: FIRECRAWL_TOKEN is not set or is empty.\n' >&2
+        return 2
+    fi
 
     command -v cline >/dev/null 2>&1 || {
         printf 'Error: Cline CLI is not installed or is not on PATH.\n' >&2
@@ -551,7 +556,7 @@ clinemcpsetup() {
     }
 
     # Make the values available to the Cline process launched from this shell.
-    export CF_TOK GH_PAT
+    export CF_TOK GH_PAT FIRECRAWL_TOKEN
 
     # CLINE_MCP_SETTINGS_PATH overrides the file path; CLINE_DATA_DIR overrides
     # the Cline data root. The default CLI settings file is under ~/.cline/data.
@@ -628,6 +633,15 @@ clinemcpsetup() {
                                 },
                                 "disabled": false,
                                 "autoApprove": []
+                            },
+                            "firecrawl": {
+                                "type": "streamableHttp",
+                                "url": "https://mcp.firecrawl.dev/v2/mcp",
+                                "headers": {
+                                    "Authorization": "Bearer ${env:FIRECRAWL_TOKEN}"
+                                },
+                                "disabled": false,
+                                "autoApprove": []
                             }
                         }
                       end
@@ -659,6 +673,15 @@ clinemcpsetup() {
                         },
                         "disabled": false,
                         "autoApprove": []
+                    },
+                    "firecrawl": {
+                        "type": "streamableHttp",
+                        "url": "https://mcp.firecrawl.dev/v2/mcp",
+                        "headers": {
+                            "Authorization": "Bearer ${env:FIRECRAWL_TOKEN}"
+                        },
+                        "disabled": false,
+                        "autoApprove": []
                     }
                 }
             }
@@ -673,8 +696,10 @@ clinemcpsetup() {
     if ! jq -e '
         .mcpServers.github.headers.Authorization == "Bearer ${env:GH_PAT}" and
         .mcpServers.cloudflare.headers.Authorization == "Bearer ${env:CF_TOK}" and
+        .mcpServers.firecrawl.headers.Authorization == "Bearer ${env:FIRECRAWL_TOKEN}" and
         .mcpServers.github.url == "https://api.githubcopilot.com/mcp/readonly" and
-        .mcpServers.cloudflare.url == "https://mcp.cloudflare.com/mcp"
+        .mcpServers.cloudflare.url == "https://mcp.cloudflare.com/mcp" and
+        .mcpServers.firecrawl.url == "https://mcp.firecrawl.dev/v2/mcp"
     ' "$tmp" >/dev/null; then
         rm -f -- "$tmp"
         printf 'Error: Generated MCP settings did not pass validation.\n' >&2
@@ -694,7 +719,8 @@ clinemcpsetup() {
     printf 'Cline MCP settings updated: %s\n' "$settings_file"
     printf '  GitHub:     https://api.githubcopilot.com/mcp/readonly\n'
     printf '  Cloudflare: https://mcp.cloudflare.com/mcp\n'
-    printf 'Credentials are referenced from CF_TOK and GH_PAT; token values were not written to the file.\n'
+    printf '  Firecrawl:  https://mcp.firecrawl.dev/v2/mcp\n'
+    printf 'Credentials are referenced from CF_TOK, GH_PAT, and FIRECRAWL_TOKEN; token values were not written to the file.\n'
     printf 'Start Cline from this shell so it inherits the exported variables.\n'
 }
 
@@ -3151,7 +3177,166 @@ podmanexportlogs() {
         return 1
     fi
 }
+# validate policy .json
+podpolicyvalidate(){
+   _terminal_msg normal "Validate policy.json file"
+   python3 -m json.tool /etc/containers/policy.json > /dev/null && echo "Valid JSON"
+}
 
+# prune --dry-run and prune ( Destructive ) But intended for recreatable environments. Refer to sretoolbox()
+prunecheckandexecute(){
+  local prune_all=false
+  [[ "$1" == "-a" || "$1" == "--all" ]] && prune_all=true
+
+  echo "=== DRY RUN (podman): Resources eligible for pruning ==="
+
+  echo -e "\n[Stopped Containers]"
+  podman ps -a --filter "status=exited" --filter "status=created" \
+    --format "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}"
+
+  echo -e "\n[Orphaned / Dangling Volumes]"
+  podman volume ls --filter "dangling=true" --format "table {{.Name}}\t{{.Driver}}"
+
+  echo -e "\n[All Unused Volumes (native --dry-run)]"
+  podman volume prune --all --dry-run
+
+  echo -e "\n[Images]"
+  if $prune_all; then
+    podman images --format "table {{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}"
+  else
+    podman images --filter "dangling=true" --format "table {{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}"
+  fi
+
+  echo -e "\n[Estimated Reclaimable Space]"
+  podman system df
+
+  echo ""
+  read -r -p "Proceed with pruning these resources? [Y/n] " reply
+  reply=${reply:-Y}
+
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    podman system prune $( [[ "$prune_all" == true ]] && echo "-a" ) --volumes -f
+    podman volume prune --filter "dangling=true" -f
+  else
+    echo "Prune aborted. Nothing was deleted."
+  fi
+}
+# softaskill
+loadsoftaskill(){
+  _terminal_msg normal "Loadem up deps"
+  getnv
+  _terminal_msg normal "Loadem up"
+  npx skills add softaworks/agent-toolkit
+}
+
+
+# Backup firewall config
+backupfirewalld(){
+
+local backup_root="${1:-/var/backups/firewalld}"
+
+run0 bash -s -- "$backup_root" <<'ROOT_SCRIPT'
+set -Eeuo pipefail
+umask 077
+
+BACKUP_ROOT="${1:-/var/home/kim/workspace/firewall/}"
+TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
+BACKUP_NAME="firewalld-${TIMESTAMP}"
+WORK_DIR=""
+
+cleanup() {
+    if [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
+        rm -rf -- "$WORK_DIR"
+    fi
+}
+trap cleanup EXIT
+
+for cmd in firewall-cmd tar sha256sum hostname; do
+    command -v "$cmd" >/dev/null 2>&1 || {
+        echo "ERROR: Missing dependency: $cmd"
+        exit 1
+    }
+done
+
+[[ -d /etc/firewalld ]] || {
+    echo "ERROR: /etc/firewalld does not exist."
+    exit 1
+}
+
+mkdir -p -- "$BACKUP_ROOT"
+
+ARCHIVE="${BACKUP_ROOT%/}/${BACKUP_NAME}.tar.gz"
+CHECKSUM="${ARCHIVE}.sha256"
+
+[[ ! -e "$ARCHIVE" ]] || {
+    _terminal_msg error "ERROR: Backup archive already exists: $ARCHIVE"
+    exit 1
+}
+
+WORK_DIR="$(mktemp -d "${BACKUP_ROOT%/}/.${BACKUP_NAME}.XXXXXX")"
+mkdir -p "$WORK_DIR/snapshots"
+
+capture() {
+    local filename="$1"
+    shift
+
+    if "$@" > "$WORK_DIR/snapshots/$filename" 2>&1; then
+        echo "[OK] $filename"
+    else
+        local rc=$?
+        echo "[WARNING] $filename failed (exit $rc)"
+        printf '\n[Snapshot command failed: exit %s]\n' "$rc" \
+            >> "$WORK_DIR/snapshots/$filename"
+    fi
+}
+
+capture runtime-zones.txt \
+    firewall-cmd --list-all-zones
+
+capture runtime-policies.txt \
+    firewall-cmd --list-all-policies
+
+capture runtime-active-zones.txt \
+    firewall-cmd --get-active-zones
+
+capture permanent-zones.txt \
+    firewall-cmd --permanent --list-all-zones
+
+capture permanent-policies.txt \
+    firewall-cmd --permanent --list-all-policies
+
+capture permanent-active-zones.txt \
+    firewall-cmd --permanent --get-active-zones
+
+{
+    echo "Backup date: $(date --iso-8601=seconds)"
+    echo "Hostname: $(hostname)"
+    echo "Firewalld version: $(firewall-cmd --version)"
+    echo "Source: /etc/firewalld"
+} > "$WORK_DIR/backup-info.txt"
+
+tar -czf "$ARCHIVE" \
+    -C /etc firewalld \
+    -C "$WORK_DIR" snapshots backup-info.txt
+
+tar -tzf "$ARCHIVE" >/dev/null
+
+(
+    cd "$BACKUP_ROOT"
+    sha256sum "$(basename "$ARCHIVE")" \
+        > "$(basename "$CHECKSUM")"
+    sha256sum --check "$(basename "$CHECKSUM")"
+)
+
+echo
+_terminal_msg success "Firewalld backup completed."
+echo "Archive:  $ARCHIVE"
+echo "Checksum: $CHECKSUM"
+echo
+echo "Inspect archive:"
+echo "tar -tzf '$ARCHIVE'"
+ROOT_SCRIPT
+}
 
 
 # copy from container
@@ -3198,7 +3383,7 @@ fi
 
 # Aliases
 alias run0='run0 -i'
-alias cline='cline --auto-approve true --yolo'
+alias cline='cline --auto-approve'
 alias distro='distrobox'
 alias tlbx='toolbox'
 alias tlbxen='toolbox enter'
