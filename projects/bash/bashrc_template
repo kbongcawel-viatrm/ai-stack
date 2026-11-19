@@ -890,9 +890,9 @@ workspacekill() {
     if pgrep -u root -x ssh-agent >/dev/null 2>&1; then
         _terminal_msg warning "Root-owned ssh-agent process(es) detected. Terminating via run0..."
         if [[ "$EUID" -eq 0 ]]; then
-            pkill -x ssh-agent 2>/dev/null || true
-        elif command -v run0 >/dev/null 2>&1; then
             run0 pkill -x ssh-agent 2>/dev/null || true
+        elif command -v run0 >/dev/null 2>&1; then
+            run0 run0 pkill -x ssh-agent 2>/dev/null || true
         fi
     fi
 
