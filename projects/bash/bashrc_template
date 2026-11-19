@@ -3417,6 +3417,57 @@ for name, service in config["services"].items():
 PY
 }
 
+# adb connect to gondar
+workspaceadb() {
+    local TARGET="${1:-10.1.29.4:5555}"
+
+    # Define the kill switch cleanup routine
+    cleanup() {
+        echo -e "\n[!] Shutting down ADB connection to $TARGET..."
+        adb disconnect "$TARGET" >/dev/null 2>&1
+        adb kill-server >/dev/null 2>&1
+
+        # Ensure no lingering adb daemon processes remain
+        if pgrep -x "adb" >/dev/null 2>&1; then
+            pkill -9 -x "adb" >/dev/null 2>&1
+        fi
+        _terminal_msg success "[+] ADB connection and server killed."
+    }
+
+    # Trap normal exit (EXIT), window close (HUP), Ctrl+C (INT), and termination (TERM)
+    trap cleanup EXIT HUP INT TERM
+
+    _terminal_msg normal "[*] Connecting to $TARGET..."
+    adb connect "$TARGET"
+
+    _terminal_msg normal "[*] Session active. Type 'exit' or close the window to trigger the kill switch."
+    # Launch an interactive subshell; closing it triggers the trap
+    bash
+}
+
+# adb nuke
+
+workspaceadbkill() {
+    local CYAN='\033[0;36m'
+    local YELLOW='\033[1;33m'
+    local GREEN='\033[0;32m'
+    local NC='\033[0m' # No Color
+
+    echo -e "${CYAN}[*] Disconnecting all wireless ADB devices...${NC}"
+    adb disconnect >/dev/null 2>&1
+
+    echo -e "${CYAN}[*] Stopping ADB server gracefully...${NC}"
+    adb kill-server >/dev/null 2>&1
+
+    # Force-kill any stuck adb processes
+    if pgrep -x "adb" >/dev/null 2>&1; then
+        echo -e "${YELLOW}[!] Lingering adb processes found. Force killing...${NC}"
+        pkill -9 -x "adb" >/dev/null 2>&1
+    fi
+
+    echo -e "${GREEN}[+] All ADB connections and processes terminated.${NC}"
+}
+
 # copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
 # rootless socket can exist (podman.service exits 125). Containers run
