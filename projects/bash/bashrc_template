@@ -871,48 +871,124 @@ workspaceconnect() {
 }
 
 
-# Kill all ssh-agent processes owned by the current user.
+# Kill all ssh-agent processes owned by all users.
+
 workspacekill() {
-    _terminal_msg normal "Terminating dedicated workspace SSH agent."
+    local agent_pid agent_sock agent_dir
+    local remaining=0
+    local attempts=0
+    local initial_count=0
 
-    # 1. Terminate the tracked user-level dedicated SSH agent
-    if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] && kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
-        kill "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || return 1
-        wait "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || :
+    _terminal_msg normal "Terminating all SSH agent sessions."
+
+    # 1. Terminate the dedicated workspace SSH agent
+    agent_pid="${HOME_SECURITY_SSH_AGENT_PID:-}"
+    agent_sock="${HOME_SECURITY_SSH_AUTH_SOCK:-}"
+
+    if [[ "$agent_pid" =~ ^[0-9]+$ ]] && kill -0 "$agent_pid" 2>/dev/null; then
+        _terminal_msg normal "Terminating dedicated workspace SSH agent (PID: $agent_pid)."
+
+        kill -TERM "$agent_pid" 2>/dev/null || true
+        wait "$agent_pid" 2>/dev/null || true
     fi
 
-    # 2. Remove the dedicated socket directory if it still exists
-    if [[ -n "${HOME_SECURITY_SSH_AUTH_SOCK:-}" ]] && [[ -S "$HOME_SECURITY_SSH_AUTH_SOCK" ]]; then
-        rm -rf "$(dirname "$HOME_SECURITY_SSH_AUTH_SOCK")" 2>/dev/null || true
+    # 2. Discover all running SSH agent processes
+    initial_count=$(pgrep -x ssh-agent 2>/dev/null | wc -l)
+    initial_count=${initial_count//[[:space:]]/}
+
+    if (( initial_count > 0 )); then
+        _terminal_msg warning "Found $initial_count SSH agent process(es). Terminating system-wide."
+    else
+        _terminal_msg normal "No running SSH agent processes detected."
     fi
 
-    # 3. Terminate any ssh-agent processes spawned on root access
-    if pgrep -u root -x ssh-agent >/dev/null 2>&1; then
-        _terminal_msg warning "Root-owned ssh-agent process(es) detected. Terminating via run0..."
+    # 3. Terminate all SSH agents, including root-owned processes
+    if (( initial_count > 0 )); then
         if [[ "$EUID" -eq 0 ]]; then
-            run0 pkill -x ssh-agent 2>/dev/null || true
+            pkill -TERM -x ssh-agent 2>/dev/null || true
+
         elif command -v run0 >/dev/null 2>&1; then
-            run0 run0 pkill -x ssh-agent 2>/dev/null || true
+            run0 pkill -TERM -x ssh-agent 2>/dev/null || true
+
+        else
+            _terminal_msg error "Cannot terminate system-wide SSH agents: run0 is unavailable."
+            return 1
+        fi
+
+        # 4. Allow agents time to terminate gracefully (2 seconds)
+        while (( attempts < 10 )); do
+            if ! pgrep -x ssh-agent >/dev/null 2>&1; then
+                break
+            fi
+
+            sleep 0.2
+            ((attempts++))
+        done
+
+        # 5. Force termination of remaining SSH agents
+        if pgrep -x ssh-agent >/dev/null 2>&1; then
+            _terminal_msg warning "Some SSH agents remain. Escalating to SIGKILL."
+
+            if [[ "$EUID" -eq 0 ]]; then
+                pkill -KILL -x ssh-agent 2>/dev/null || true
+            else
+                run0 pkill -KILL -x ssh-agent 2>/dev/null || true
+            fi
         fi
     fi
 
-    # 4. Clean up tracking variables and restore the previous agent environment
-    unset HOME_SECURITY_SSH_AGENT_PID HOME_SECURITY_SSH_AUTH_SOCK
-    if [[ -n "${HOME_SECURITY_PREV_SOCK_SET:-}" ]]; then
+    # 6. Verify termination
+    if pgrep -x ssh-agent >/dev/null 2>&1; then
+        remaining=$(pgrep -x ssh-agent | wc -l)
+        _terminal_msg error "Failed to terminate all SSH agents. Remaining: $remaining"
+    fi
+
+    # 7. Clean up dedicated workspace socket
+    if [[ -n "$agent_sock" ]]; then
+        agent_dir="$(dirname -- "$agent_sock")"
+
+        if [[ -S "$agent_sock" ]]; then
+            rm -f -- "$agent_sock" 2>/dev/null || true
+        fi
+
+        # Remove only if the directory is empty
+        if [[ -d "$agent_dir" ]]; then
+            rmdir -- "$agent_dir" 2>/dev/null || true
+        fi
+    fi
+
+    # 8. Restore previous SSH agent environment
+    unset HOME_SECURITY_SSH_AGENT_PID
+    unset HOME_SECURITY_SSH_AUTH_SOCK
+
+    if [[ "${HOME_SECURITY_PREV_SOCK_SET:-}" == "1" ]]; then
         export SSH_AUTH_SOCK="$HOME_SECURITY_PREV_SOCK"
     else
         unset SSH_AUTH_SOCK
     fi
-    if [[ -n "${HOME_SECURITY_PREV_PID_SET:-}" ]]; then
+
+    if [[ "${HOME_SECURITY_PREV_PID_SET:-}" == "1" ]]; then
         export SSH_AGENT_PID="$HOME_SECURITY_PREV_PID"
     else
         unset SSH_AGENT_PID
     fi
-    unset HOME_SECURITY_PREV_SOCK HOME_SECURITY_PREV_PID
-    unset HOME_SECURITY_PREV_SOCK_SET HOME_SECURITY_PREV_PID_SET
 
-    _terminal_msg success "Dedicated workspace SSH agent terminated and previous agent environment restored."
+    unset HOME_SECURITY_PREV_SOCK
+    unset HOME_SECURITY_PREV_PID
+    unset HOME_SECURITY_PREV_SOCK_SET
+    unset HOME_SECURITY_PREV_PID_SET
+
+    # 9. Final status
+    if pgrep -x ssh-agent >/dev/null 2>&1; then
+        _terminal_msg error "SSH agent cleanup incomplete."
+        return 1
+    fi
+
+    _terminal_msg success "All SSH agent processes terminated. Previous agent environment restored."
+
+    return 0
 }
+
 
 # restart agent
 workspacerestart() {
