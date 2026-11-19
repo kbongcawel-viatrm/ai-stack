@@ -3818,8 +3818,6 @@ cf_prep_r2_config() {
     fi
 
     _terminal_msg success "External R2 configuration is present and has secure ownership/permissions."
-<<<<<<< Updated upstream
-=======
 }
 
 # Pre-commit check, push, and reload of bash configuration
@@ -3898,7 +3896,6 @@ bashconfigci() {
     workspacekill || return 1
     _terminal_msg success "Done!"
     return 0
->>>>>>> Stashed changes
 }
 
 # Pre-commit check, push, and reload of bash configuration
