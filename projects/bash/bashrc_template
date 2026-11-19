@@ -3818,6 +3818,8 @@ cf_prep_r2_config() {
     fi
 
     _terminal_msg success "External R2 configuration is present and has secure ownership/permissions."
+<<<<<<< Updated upstream
+=======
 }
 
 # Pre-commit check, push, and reload of bash configuration
@@ -3896,7 +3898,304 @@ bashconfigci() {
     workspacekill || return 1
     _terminal_msg success "Done!"
     return 0
+>>>>>>> Stashed changes
 }
+
+# Pre-commit check, push, and reload of bash configuration
+
+bashconfigci() {
+    local repo="$HOME/workspace/ai-stack"
+    local target="projects/bash/bashrc_template"
+    local template="$repo/$target"
+    local branch
+    local confirm
+    local secret_pattern='(^|[^[:alnum:]_])(export[[:space:]]+)?R2_(OCI_)?(ACCESS_KEY_ID|SECRET_ACCESS_KEY)[[:space:]]*='
+
+    # ---------------------------------------------------------
+    # BASH CONFIGURATION CI
+    # ---------------------------------------------------------
+
+    _terminal_msg normal "BASH CONFIGURATION CI - Validation and Publishing"
+
+    # 1. Validate workspace
+    _terminal_msg normal "[1/7] Validating workspace and repository."
+
+    if [[ ! -f "$template" ]] ||
+       ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        _terminal_msg error "Workspace or configuration template not found."
+        return 1
+    fi
+
+    branch=$(git -C "$repo" branch --show-current)
+
+    if [[ "$branch" != "main" ]]; then
+        _terminal_msg error "Expected main branch. Current branch: $branch"
+        return 1
+    fi
+
+    # 2. Validate Bash syntax
+    _terminal_msg normal "[2/7] Validating Bash syntax."
+
+    if ! bash -n "$template"; then
+        _terminal_msg error "Bash syntax validation failed."
+        return 1
+    fi
+
+    _terminal_msg success "Bash syntax validation passed."
+
+    # 3. Run configuration checks
+    _terminal_msg normal "[3/7] Running configuration checks."
+
+    if ! declare -F bashconfigcheck >/dev/null 2>&1; then
+        _terminal_msg error "bashconfigcheck is unavailable. Source the template first."
+        return 1
+    fi
+
+    if ! bashconfigcheck; then
+        _terminal_msg error "Configuration validation failed."
+        return 1
+    fi
+
+    # 4. Inspect changes
+    _terminal_msg normal "[4/7] Inspecting configuration changes."
+
+    git -C "$repo" diff -- "$target" || return 1
+
+    # Check for pre-existing staged changes to prevent
+    # accidentally committing unrelated files.
+    if ! git -C "$repo" diff --cached --quiet; then
+        _terminal_msg error "Existing staged changes detected. Commit or unstage them first."
+        return 1
+    fi
+
+    # 5. Security inspection
+    _terminal_msg normal "[5/7] Performing R2 credential security checks."
+
+    # Scan tracked working-tree files
+    if git -C "$repo" grep -nIE "$secret_pattern" -- .; then
+        _terminal_msg error "R2 credential assignments detected in tracked files."
+        return 1
+    else
+        local scan_status=$?
+        if (( scan_status > 1 )); then
+            _terminal_msg error "Git security scan failed."
+            return 1
+        fi
+    fi
+
+    # Scan untracked, non-ignored files
+    while IFS= read -r -d '' file; do
+        if grep -nIE "$secret_pattern" "$repo/$file"; then
+            _terminal_msg error "Potential R2 credentials detected in $file."
+            return 1
+        else
+            local scan_status=$?
+            if (( scan_status > 1 )); then
+                _terminal_msg error "Unable to inspect $file."
+                return 1
+            fi
+        fi
+    done < <(git -C "$repo" ls-files --others --exclude-standard -z)
+
+    _terminal_msg success "No R2 credential assignments detected."
+
+    # Confirmation before publishing
+    _terminal_msg warning "Review the changes before proceeding."
+
+    printf '\n'
+    read -r -p "Commit and push changes to GitHub? [y/N]: " confirm
+
+    case "${confirm,,}" in
+        y|yes)
+            _terminal_msg normal "Publishing approved."
+            ;;
+        *)
+            _terminal_msg warning "Publishing cancelled."
+            return 0
+            ;;
+    esac
+
+    # 6. Stage, verify and publish
+    _terminal_msg normal "[6/7] Staging and verifying configuration."
+
+    git -C "$repo" add -- "$target" || return 1
+
+    # Verify only the intended file is staged
+    if [[ "$(git -C "$repo" diff --cached --name-only)" != "$target" ]]; then
+        _terminal_msg error "Unexpected staged files detected. Aborting."
+        return 1
+    fi
+
+    # Scan staged content
+    if git -C "$repo" grep --cached -nIE "$secret_pattern" -- .; then
+        _terminal_msg error "R2 credentials detected in staged content."
+        return 1
+    else
+        local scan_status=$?
+        if (( scan_status > 1 )); then
+            _terminal_msg error "Staged security scan failed."
+            return 1
+        fi
+    fi
+
+    _terminal_msg normal "Reviewing staged changes."
+
+    git -C "$repo" diff --cached -- "$target" || return 1
+
+    git -C "$repo" commit \
+        -m "Improve Bash configuration" || return 1
+
+    git -C "$repo" push origin main || return 1
+
+    _terminal_msg success "Configuration successfully published to GitHub."
+
+    # 7. Workspace synchronization and cleanup
+    _terminal_msg normal "[7/7] CI publishing completed."
+
+    _terminal_msg normal "Run getupdates separately when workspace synchronization is required."
+
+    _terminal_msg success "Bash configuration CI completed successfully."
+
+    return 0
+}
+
+
+# get bashconfig flow guide
+bashconfighelp(){
+    cat <<'MANPAGE'
+BASHCONFIGHELP(1)              User Commands              BASHCONFIGHELP(1)
+
+NAME
+    bashconfighelp - Display the Bash configuration management guide
+
+SYNOPSIS
+    bashconfighelp
+
+DESCRIPTION
+    Provides the recommended workflow for validating, loading, deploying,
+    and publishing the Bash configuration maintained in the AI Stack
+    Git repository.
+
+    The configuration template is the source of truth. The live ~/.bashrc
+    should only be updated after successful syntax and configuration checks.
+
+CONFIGURATION
+    Repository:
+        ~/workspace/ai-stack
+
+    Template:
+        ~/workspace/ai-stack/projects/bash/bashrc_template
+
+    Live configuration:
+        ~/.bashrc
+
+WORKFLOW
+    Follow these steps in order.
+
+    1. CONNECT TO WORKSPACE
+       Ensure the workspace environment is initialized.
+
+           workspaceconnect
+
+       If the short-lived session is unavailable, run workspaceconnect
+       again before continuing.
+
+    2. VALIDATE BASH SYNTAX
+       Check the template for Bash syntax errors.
+
+           bash -n ~/workspace/ai-stack/projects/bash/bashrc_template
+
+       Do not proceed if syntax validation fails.
+
+    3. LOAD CONFIGURATION
+       Source the template into the current interactive shell.
+
+           source ~/workspace/ai-stack/projects/bash/bashrc_template
+
+       This makes newly defined functions and variables available in
+       the current session.
+
+    4. RUN CONFIGURATION CHECKS
+       Execute the configuration validation routine.
+
+           bashconfigcheck
+
+       Resolve any reported issues before deployment.
+
+    5. DEPLOY CONFIGURATION
+       Back up the existing configuration and install the validated
+       template.
+
+           cp -p ~/.bashrc ~/.bashrc.bak
+           cp -f ~/workspace/ai-stack/projects/bash/bashrc_template ~/.bashrc
+
+       Open a new terminal or reload the configuration to test it.
+
+           source ~/.bashrc
+
+    6. COMMIT AND PUBLISH
+       Run the repository CI workflow.
+
+           bashconfigci
+
+       This performs the configured Git staging, commit, secrets
+       verification, and push operations.
+
+       Review the changes and approve the confirmation prompt before
+       publishing.
+
+    7. SYNCHRONIZE WORKSPACE
+       Run the workspace update routine when required.
+
+           getupdates
+
+EXAMPLES
+    Display this guide:
+
+        bashconfighelp
+
+    Validate template syntax:
+
+        bash -n ~/workspace/ai-stack/projects/bash/bashrc_template
+
+    Load the template:
+
+        source ~/workspace/ai-stack/projects/bash/bashrc_template
+
+    Validate configuration:
+
+        bashconfigcheck
+
+    Publish changes:
+
+        bashconfigci
+
+NOTES
+    - Always maintain the repository template as the source of truth.
+    - Never commit hardcoded credentials, API keys, or access tokens.
+    - Keep external secrets in permission-restricted configuration files.
+    - Review Git changes before committing or pushing.
+    - Retain the backup of ~/.bashrc until the new configuration is
+      verified.
+    - bashconfigci handles Git publishing; avoid manually duplicating
+      its commit and push operations.
+    - getupdates is a separate workspace routine and should only be
+      executed when its synchronization behavior is appropriate.
+
+EXIT STATUS
+    0    Help displayed successfully.
+    1    Invalid invocation or help display failure.
+
+AUTHOR
+    AI Stack - Bash Configuration Management
+
+SEE ALSO
+    bash(1), bashconfigcheck, bashconfigci, workspaceconnect, getupdates
+
+BASHCONFIGHELP(1)              User Commands              BASHCONFIGHELP(1)
+MANPAGE
+}
+
 
 # copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
