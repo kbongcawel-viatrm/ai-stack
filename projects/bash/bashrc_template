@@ -874,10 +874,29 @@ workspaceconnect() {
 # Kill all ssh-agent processes owned by the current user.
 workspacekill() {
     _terminal_msg normal "Terminating dedicated workspace SSH agent."
+
+    # 1. Terminate the tracked user-level dedicated SSH agent
     if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] && kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
         kill "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || return 1
         wait "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null || :
     fi
+
+    # 2. Remove the dedicated socket directory if it still exists
+    if [[ -n "${HOME_SECURITY_SSH_AUTH_SOCK:-}" ]] && [[ -S "$HOME_SECURITY_SSH_AUTH_SOCK" ]]; then
+        rm -rf "$(dirname "$HOME_SECURITY_SSH_AUTH_SOCK")" 2>/dev/null || true
+    fi
+
+    # 3. Terminate any ssh-agent processes spawned on root access
+    if pgrep -u root -x ssh-agent >/dev/null 2>&1; then
+        _terminal_msg warning "Root-owned ssh-agent process(es) detected. Terminating via run0..."
+        if [[ "$EUID" -eq 0 ]]; then
+            pkill -x ssh-agent 2>/dev/null || true
+        elif command -v run0 >/dev/null 2>&1; then
+            run0 pkill -x ssh-agent 2>/dev/null || true
+        fi
+    fi
+
+    # 4. Clean up tracking variables and restore the previous agent environment
     unset HOME_SECURITY_SSH_AGENT_PID HOME_SECURITY_SSH_AUTH_SOCK
     if [[ -n "${HOME_SECURITY_PREV_SOCK_SET:-}" ]]; then
         export SSH_AUTH_SOCK="$HOME_SECURITY_PREV_SOCK"
@@ -891,6 +910,7 @@ workspacekill() {
     fi
     unset HOME_SECURITY_PREV_SOCK HOME_SECURITY_PREV_PID
     unset HOME_SECURITY_PREV_SOCK_SET HOME_SECURITY_PREV_PID_SET
+
     _terminal_msg success "Dedicated workspace SSH agent terminated and previous agent environment restored."
 }
 
@@ -900,6 +920,7 @@ workspacerestart() {
     workspacekill || return $?
     workspaceconnect
 }
+
 
 # Generate SSH and GPG keys for Github
 workspacegenkeys(){
@@ -972,7 +993,7 @@ sleep 2
 
 _terminal_line normal
 
-_terminal_msg warning"  🔑 GPG public key: (Proceed to add in GH)"
+_terminal_msg warning "  🔑 GPG public key: (Proceed to add in GH)"
 gpg --armor --export "$gpg_key_id"
 sleep 2
 
@@ -3296,7 +3317,7 @@ prunecheckandexecute(){
 # softaskill
 loadsoftaskill(){
   _terminal_msg normal "Loadem up deps"
-  getnv
+  getnvm
   _terminal_msg normal "Loadem up"
   npx skills add softaworks/agent-toolkit
 }
@@ -3519,7 +3540,6 @@ killaitools(){
 }
 
 # setup firewall
-# setup firewall
 firewallsetup() {
     run0 bash -s << 'FW_EOF'
 set -euo pipefail
@@ -3536,7 +3556,6 @@ firewall-cmd --permanent --zone=trusted --add-interface=lo 2>/dev/null || true
 firewall-cmd --permanent --zone=FedoraWorkstation --set-target=DROP
 firewall-cmd --permanent --zone=FedoraWorkstation --remove-forward
 
-# Remove all default inbound services and ports
 for svc in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-services); do
     firewall-cmd --permanent --zone=FedoraWorkstation --remove-service="$svc"
 done
@@ -3545,7 +3564,6 @@ for prt in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-ports); do
 done
 firewall-cmd --permanent --zone=FedoraWorkstation --remove-protocol=icmp 2>/dev/null || true
 
-# Ensure ICMP block-inversion is off so PMTUD & IPv6 Neighbor Discovery work
 firewall-cmd --permanent --zone=FedoraWorkstation --remove-icmp-block-inversion 2>/dev/null || true
 for icmptype in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-icmp-blocks); do
     firewall-cmd --permanent --zone=FedoraWorkstation --remove-icmp-block="$icmptype"
@@ -3576,25 +3594,22 @@ firewall-cmd --permanent --policy=host-to-outbound --set-target=DROP
 firewall-cmd --permanent --policy=host-to-outbound --set-priority=-1
 firewall-cmd --permanent --policy=host-to-outbound --remove-forward 2>/dev/null || true
 
-# Bind HOST -> FedoraWorkstation
 firewall-cmd --permanent --policy=host-to-outbound --add-ingress-zone=HOST
 firewall-cmd --permanent --policy=host-to-outbound --add-egress-zone=FedoraWorkstation
 
-# Outbound Services: DNS (53), DoT (853), HTTP (80), HTTPS (443), NTP (123)
 for svc in dns dns-over-tls http https ntp; do
     firewall-cmd --permanent --policy=host-to-outbound --add-service="$svc" 2>/dev/null || true
 done
 
-# Outbound Ports: HTTP/3 QUIC (443/udp), DoT (853/tcp), Cloudflare Tunnel (7844/tcp & udp)
 for prt in 443/udp 853/tcp 7844/tcp 7844/udp; do
     firewall-cmd --permanent --policy=host-to-outbound --add-port="$prt" 2>/dev/null || true
 done
 
-# Preserved Rich Rule: Allow SSH outbound only to 10.1.29.4
+# Allow SSH outbound only to 10.1.29.4
 firewall-cmd --permanent --policy=host-to-outbound \
     --add-rich-rule='rule family="ipv4" destination address="10.1.29.4" service name="ssh" accept' 2>/dev/null || true
 
-# Rich Rules: Allow FTP (21 + passive data ports) strictly to 10.1.29.1 for dufs/rclone
+# Allow FTP (21 + passive data ports) strictly to 10.1.29.1 for dufs/rclone
 firewall-cmd --permanent --policy=host-to-outbound \
     --add-rich-rule='rule family="ipv4" destination address="10.1.29.1" service name="ftp" accept' 2>/dev/null || true
 firewall-cmd --permanent --policy=host-to-outbound \
@@ -3608,11 +3623,9 @@ while read -r line; do
     [[ -n "$line" ]] && firewall-cmd --permanent --direct --remove-rule $line 2>/dev/null || true
 done < <(firewall-cmd --permanent --direct --get-all-rules)
 
-# Custom outbound rule to 10.1.29.4:8022
 firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 \
     -p tcp -d 10.1.29.4 --dport 8022 -j ACCEPT
 
-# Preserved IPS/IDS NFQUEUE inspection hooks on enp1s0 (IPv4 & IPv6)
 firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 \
     -o enp1s0 -m mark '!' --mark 0x1/0x1 -j NFQUEUE --queue-num 0 --queue-bypass
 firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 0 \
@@ -3628,13 +3641,13 @@ firewall-cmd --permanent --direct --add-rule ipv6 filter OUTPUT 0 \
 echo "[*] Reloading firewalld..."
 firewall-cmd --reload
 
-echo -e "\n[+] Firewall recreation complete! Active summary:"
+echo -e "
+[+] Firewall recreation complete! Active summary:"
 firewall-cmd --zone=FedoraWorkstation --list-all
 firewall-cmd --policy=host-to-outbound --list-all
 firewall-cmd --direct --get-all-rules
 FW_EOF
 }
-
 
 # allow Github SSH
 workspacegithubsetup() {
@@ -3679,7 +3692,7 @@ export PATH
 # Default visual and editor
 export EDITOR=/usr/bin/vim
 export VISUAL=/usr/bin/vim
-export BUN_JSC_useJIT=1 cline=1 cline
+export BUN_JSC_useJIT=1
 export JavaScriptCoreUseJIT=1
 
 # Shell history behavior
