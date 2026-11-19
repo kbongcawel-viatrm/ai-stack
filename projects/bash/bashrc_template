@@ -1993,8 +1993,41 @@ gcloud_workspace_sync() {
 # export R2_SECRET_ACCESS_KEY
 
 
+# Load Cloudflare R2 credentials on demand from ~/.config/r2.env (requires chmod 600)
+_load_r2_env() {
+    local env_file="${R2_ENV_FILE:-$HOME/.config/r2.env}"
+    local profile="${1:-default}"
+
+    if [[ ! -f "$env_file" ]]; then
+        _terminal_msg error "R2 env file not found: $env_file"
+        return 1
+    fi
+
+    local perms
+    perms=$(stat -c '%a' "$env_file" 2>/dev/null || echo "")
+    if [[ "$perms" != "600" ]]; then
+        _terminal_msg error "Unsafe permissions ($perms) on $env_file. Run: chmod 600 $env_file"
+        return 1
+    fi
+
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+
+    if [[ "$profile" == "oci" && -n "${R2_OCI_ACCESS_KEY_ID:-}" && -n "${R2_OCI_SECRET_ACCESS_KEY:-}" ]]; then
+        R2_ACCESS_KEY_ID="$R2_OCI_ACCESS_KEY_ID"
+        R2_SECRET_ACCESS_KEY="$R2_OCI_SECRET_ACCESS_KEY"
+    fi
+
+    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
+        _terminal_msg error "R2 credentials missing in $env_file"
+        return 1
+    fi
+}
+
 cf_secureblue_upload(){
-    local R2_ENDPOINT="https://dc72437808379d99f940be2e42e36b9e.r2.cloudflarestorage.com"
+    local R2_ENDPOINT="https://cloudflarestorage.com"
     local BUCKET="s3://secureblue-oci/snapshots"
     local LOCAL_DIR="$HOME/workspace/secureblue-oci/snapshots"
     local REMOTE_DIR="$BUCKET"
@@ -2003,21 +2036,18 @@ cf_secureblue_upload(){
     local exit_code=0
     local r2_log
 
-    # Validate required commands.
-    for cmd in aws tput sleep mktemp; do
+    # Ensure secrets are scrubbed from memory when function exits
+    trap 'unset R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_OCI_ACCESS_KEY_ID R2_OCI_SECRET_ACCESS_KEY' RETURN
+
+    for cmd in aws tput sleep mktemp stat; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             _terminal_msg error "Required command not found: $cmd ⚠️ "
             return 1
         fi
     done
 
-    # Validate R2 credentials.
-    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
-        _terminal_msg error "R2 credentials missing. Export R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY first ⚠️ "
-        return 1
-    fi
+    _load_r2_env oci || return 1
 
-    # Resolve direction: argument first, then interactive prompt.
     case "$direction" in
         up|upload|push)   direction="up" ;;
         down|download|pull) direction="down" ;;
@@ -2062,7 +2092,6 @@ cf_secureblue_upload(){
         }
     fi
 
-    # Create temporary error log.
     r2_log=$(mktemp "${TMPDIR:-/tmp}/r2-sync.XXXXXX") || {
         _terminal_msg error "Could not create temporary log. ⚠️"
         return 1
@@ -2072,7 +2101,6 @@ cf_secureblue_upload(){
     _terminal_msg normal "Source: $SOURCE_DIR"
     _terminal_msg normal "Destination: $DESTINATION_DIR"
 
-    # Animate only the non-interactive sync phase.
     run_with_loader "Running" bash -c '
         AWS_ACCESS_KEY_ID="$1" \
         AWS_SECRET_ACCESS_KEY="$2" \
@@ -2084,30 +2112,23 @@ cf_secureblue_upload(){
         "$SOURCE_DIR" "$DESTINATION_DIR" "$R2_ENDPOINT" "$r2_log"
     exit_code=$?
 
-    # Display final result.
     if (( exit_code == 0 )); then
         rm -f -- "$r2_log"
         _terminal_msg success "Cloudflare R2 $([[ "$direction" == up ]] && echo 'upload' || echo 'download') completed! 🚀"
         return 0
     else
-        _terminal_msg error \
-            "Cloudflare R2 sync failed (exit code: $exit_code). ⚠️ "
-
+        _terminal_msg error "Cloudflare R2 sync failed (exit code: $exit_code). ⚠️ "
         _terminal_msg warning "R2 error details: ⚠️ "
         tcat "$r2_log"
-
         _terminal_msg normal "Error log: $r2_log ⚠️"
         return "$exit_code"
     fi
 }
-# Sync ~/workspace with Cloudflare R2 via the S3-compatible API.
-# Requires R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to be exported
-# (create an R2 API token in the Cloudflare dashboard).
 
 cf_workspace_sync() {
-    local R2_ENDPOINT="https://2b35063950967e6ee34d1708bcc5c221.r2.cloudflarestorage.com"
+    local R2_ENDPOINT="https://cloudflarestorage.com"
     local BUCKET="s3://backups/workspace"
-    local PUBLIC_URL="https://pub-33db5eb700004f5f8fe4b7430303bbf5.r2.dev/workspace"
+    local PUBLIC_URL="https://r2.dev"
     local LOCAL_DIR="$HOME/workspace"
     local REMOTE_DIR="$BUCKET"
     local direction="${1:-}"
@@ -2115,21 +2136,18 @@ cf_workspace_sync() {
     local exit_code=0
     local r2_log
 
-    # Validate required commands.
-    for cmd in aws tput sleep mktemp; do
+    # Ensure secrets are scrubbed from memory when function exits
+    trap 'unset R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_OCI_ACCESS_KEY_ID R2_OCI_SECRET_ACCESS_KEY' RETURN
+
+    for cmd in aws tput sleep mktemp stat; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             _terminal_msg error "Required command not found: $cmd ⚠️ "
             return 1
         fi
     done
 
-    # Validate R2 credentials.
-    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
-        _terminal_msg error "R2 credentials missing. Export R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY first ⚠️ "
-        return 1
-    fi
+    _load_r2_env default || return 1
 
-    # Resolve direction: argument first, then interactive prompt.
     case "$direction" in
         up|upload|push)   direction="up" ;;
         down|download|pull) direction="down" ;;
@@ -2170,7 +2188,6 @@ cf_workspace_sync() {
         DESTINATION_DIR="$LOCAL_DIR"
     fi
 
-    # Create temporary error log.
     r2_log=$(mktemp "${TMPDIR:-/tmp}/r2-sync.XXXXXX") || {
         _terminal_msg error "Could not create temporary log. ⚠️"
         return 1
@@ -2181,7 +2198,6 @@ cf_workspace_sync() {
     _terminal_msg normal "Destination: $DESTINATION_DIR"
     _terminal_msg normal "Public URL: $PUBLIC_URL"
 
-    # Animate only the non-interactive sync phase.
     run_with_loader "Running" bash -c '
         AWS_ACCESS_KEY_ID="$1" \
         AWS_SECRET_ACCESS_KEY="$2" \
@@ -2193,18 +2209,14 @@ cf_workspace_sync() {
         "$SOURCE_DIR" "$DESTINATION_DIR" "$R2_ENDPOINT" "$r2_log"
     exit_code=$?
 
-    # Display final result.
     if (( exit_code == 0 )); then
         rm -f -- "$r2_log"
         _terminal_msg success "Cloudflare R2 $([[ "$direction" == up ]] && echo 'upload' || echo 'download') completed! 🚀"
         return 0
     else
-        _terminal_msg error \
-            "Cloudflare R2 sync failed (exit code: $exit_code). ⚠️ "
-
+        _terminal_msg error "Cloudflare R2 sync failed (exit code: $exit_code). ⚠️ "
         _terminal_msg warning "R2 error details: ⚠️ "
         tcat "$r2_log"
-
         _terminal_msg normal "Error log: $r2_log ⚠️"
         return "$exit_code"
     fi
@@ -3677,6 +3689,21 @@ workspacegithubsetup() {
     fi
 }
 
+# Prepare R2 configs
+cf_prep_r2_config(){
+mkdir -p -m 700 ~/.config && cat << 'EOF' > ~/.config/r2.env
+# Cloudflare R2 Credentials (chmod 600)
+# Default / sre-devops-f44 keys
+R2_ACCESS_KEY_ID="72b63760a561da96261ad9672845ceda"
+R2_SECRET_ACCESS_KEY="b6bb0ba2591db2b216e1a8aa3fed81fb58d3679bfcf3f04b66334040e42336b8"
+
+# secureblue-oci specific keys
+R2_OCI_ACCESS_KEY_ID="de0697f2e7cb313cd723460c68741b97"
+R2_OCI_SECRET_ACCESS_KEY="30afb7d1fcd4ae0e94b79ca2ccaf03af9fc6b3ca8abaae3771b5808059e5a2a2"
+EOF
+chmod 600 ~/.config/r2.env
+}
+
 # copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
 # rootless socket can exist (podman.service exits 125). Containers run
@@ -3707,17 +3734,7 @@ if [[ "${TMOUT@a}" != *r* ]]; then
 fi
 
 
-if [[ -f /run/.toolboxenv ]] && grep -q 'name="sre-devops-f44"' /run/.containerenv 2>/dev/null; then
-    # Cloudflare R2 credentials are intentionally blank; supply them securely at runtime.
-		export R2_ACCESS_KEY_ID=72b63760a561da96261ad9672845ceda
-		export R2_SECRET_ACCESS_KEY=b6bb0ba2591db2b216e1a8aa3fed81fb58d3679bfcf3f04b66334040e42336b8
-fi
 
-if [[ -f /run/.toolboxenv ]] && grep -q 'name="secureblue-oci"' /run/.containerenv 2>/dev/null; then
-    # Cloudflare R2 credentials are intentionally blank; supply them securely at runtime.
-		export R2_ACCESS_KEY_ID=de0697f2e7cb313cd723460c68741b97
-		export R2_SECRET_ACCESS_KEY=30afb7d1fcd4ae0e94b79ca2ccaf03af9fc6b3ca8abaae3771b5808059e5a2a2
-fi
 
 # Aliases
 alias run0='run0 -i'
