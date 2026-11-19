@@ -3233,13 +3233,13 @@ loadsoftaskill(){
 # Backup firewall config
 backupfirewalld(){
 
-local backup_root="${1:-/var/backups/firewalld}"
+local backup_root="${1:-/var/home/kim/workspace/firewall/backups/}"
 
 run0 bash -s -- "$backup_root" <<'ROOT_SCRIPT'
 set -Eeuo pipefail
 umask 077
 
-BACKUP_ROOT="${1:-/var/home/kim/workspace/firewall/}"
+BACKUP_ROOT="${1:-/var/home/kim/workspace/firewall/backups/}"
 TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
 BACKUP_NAME="firewalld-${TIMESTAMP}"
 WORK_DIR=""
@@ -3269,7 +3269,7 @@ ARCHIVE="${BACKUP_ROOT%/}/${BACKUP_NAME}.tar.gz"
 CHECKSUM="${ARCHIVE}.sha256"
 
 [[ ! -e "$ARCHIVE" ]] || {
-    _terminal_msg error "ERROR: Backup archive already exists: $ARCHIVE"
+    echo "ERROR: Backup archive already exists: $ARCHIVE"
     exit 1
 }
 
@@ -3329,7 +3329,7 @@ tar -tzf "$ARCHIVE" >/dev/null
 )
 
 echo
-_terminal_msg success "Firewalld backup completed."
+echo "Firewalld backup completed."
 echo "Archive:  $ARCHIVE"
 echo "Checksum: $CHECKSUM"
 echo
