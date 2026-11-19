@@ -799,7 +799,7 @@ _workspace_select_ssh_key() {
 # Dedicated SSH agent for a selected workspace key.
 # Usage: workspaceconnect [path/to/private_key]
 workspaceconnect() {
-_terminal_msg normal "Creating temporary workspace access."
+    _terminal_msg normal "Creating temporary workspace access."
     local key agent_output
 
     if ! declare -F tcat >/dev/null ||
@@ -823,10 +823,21 @@ _terminal_msg normal "Creating temporary workspace access."
         return 1
     fi
 
+    # Reuse existing dedicated agent if still alive and socket exists
     if [[ -n "${HOME_SECURITY_SSH_AGENT_PID:-}" ]] &&
-       kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null; then
-        _terminal_msg success "Temporary workspace access is already active."
+       kill -0 "$HOME_SECURITY_SSH_AGENT_PID" 2>/dev/null &&
+       [[ -S "${HOME_SECURITY_SSH_AUTH_SOCK:-}" ]]; then
+        export SSH_AGENT_PID="$HOME_SECURITY_SSH_AGENT_PID"
+        export SSH_AUTH_SOCK="$HOME_SECURITY_SSH_AUTH_SOCK"
+        # Refresh the 5-minute key timer if needed
+        ssh-add -t 300 "$key" >/dev/null 2>&1
+        _terminal_msg success "Temporary workspace access is already active (timer refreshed to 5m)."
         return 0
+    fi
+
+    # Clean up any stale PID/socket before starting fresh
+    if declare -F workspacekill >/dev/null 2>&1; then
+        workspacekill >/dev/null 2>&1 || true
     fi
 
     # Preserve the current SSH agent environment.
@@ -853,11 +864,12 @@ _terminal_msg normal "Creating temporary workspace access."
         return 1
     fi
 
-    # Clean up this dedicated agent when the shell exits.
-    trap 'workspacekill' EXIT
+    # Clean up on normal exit OR terminal window close (HUP)
+    trap 'workspacekill' EXIT HUP
     _terminal_msg success "Workspace access initialized (PID $HOME_SECURITY_SSH_AGENT_PID; key lifetime 5 minutes)."
     _terminal_msg warning "Access is terminated when this terminal exits."
 }
+
 
 # Kill all ssh-agent processes owned by the current user.
 workspacekill() {
@@ -3505,16 +3517,17 @@ killaitools(){
 
     echo -e "${GREEN}[+] All Devin and Cline processes terminated.${NC}"
 }
+
 # setup firewall
 firewallsetup() {
-    run0 bash -s << 'EOF'
+    run0 bash -s << 'FW_EOF'
 set -euo pipefail
 
 echo "[*] Resetting firewalld to clean defaults..."
 firewall-cmd --complete-reload >/dev/null 2>&1 || true
 
 # ==============================================================================
-# 1. INBOUND ZONE: FedoraWorkstation (Strict DROP, No Forwarding, Ping + PMTUD)
+# 1. INBOUND ZONE: FedoraWorkstation (Strict DROP, No Forwarding, Clean ICMP)
 # ==============================================================================
 echo "[*] Configuring FedoraWorkstation (Inbound DROP)..."
 firewall-cmd --permanent --zone=FedoraWorkstation --add-interface=enp1s0 2>/dev/null || true
@@ -3530,18 +3543,11 @@ for prt in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-ports); do
 done
 firewall-cmd --permanent --zone=FedoraWorkstation --remove-protocol=icmp 2>/dev/null || true
 
-# Configure ICMP using block-inversion:
-# ONLY listed ICMP types are permitted; all other ICMP types are dropped.
-firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block-inversion
+# Ensure ICMP block-inversion is off so PMTUD & IPv6 Neighbor Discovery work
+firewall-cmd --permanent --zone=FedoraWorkstation --remove-icmp-block-inversion 2>/dev/null || true
 for icmptype in $(firewall-cmd --permanent --zone=FedoraWorkstation --list-icmp-blocks); do
     firewall-cmd --permanent --zone=FedoraWorkstation --remove-icmp-block="$icmptype"
 done
-
-# Allow Ping + PMTUD essentials (prevents stalled HTTPS/TLS packets)
-firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=echo-request
-firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=echo-reply
-firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=destination-unreachable
-firewall-cmd --permanent --zone=FedoraWorkstation --add-icmp-block=packet-too-big
 
 # ==============================================================================
 # 2. CLEAN UP PUBLIC ZONE (Ensure 8123/tcp & fallback ports stay closed)
@@ -3587,16 +3593,16 @@ firewall-cmd --permanent --policy=host-to-outbound \
     --add-rich-rule='rule family="ipv4" destination address="10.1.29.4" service name="ssh" accept' 2>/dev/null || true
 
 # ==============================================================================
-# 4. DIRECT RULES (Preserved 8022/tcp rule & IPS/IDS NFQUEUE Hooks)
+# 4. DIRECT RULES (8022/tcp to 10.1.29.4 & IPS/IDS NFQUEUE Hooks)
 # ==============================================================================
 echo "[*] Applying direct filter rules and NFQUEUE hooks..."
 while read -r line; do
     [[ -n "$line" ]] && firewall-cmd --permanent --direct --remove-rule $line 2>/dev/null || true
 done < <(firewall-cmd --permanent --direct --get-all-rules)
 
-# Preserved custom outbound rule to 192.168.2.246:8022
+# Custom outbound rule to 10.1.29.4:8022
 firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 \
-    -p tcp -d 192.168.2.246 --dport 8022 -j ACCEPT
+    -p tcp -d 10.1.29.4 --dport 8022 -j ACCEPT
 
 # Preserved IPS/IDS NFQUEUE inspection hooks on enp1s0 (IPv4 & IPv6)
 firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 0 \
@@ -3618,33 +3624,35 @@ echo -e "\n[+] Firewall recreation complete! Active summary:"
 firewall-cmd --zone=FedoraWorkstation --list-all
 firewall-cmd --policy=host-to-outbound --list-all
 firewall-cmd --direct --get-all-rules
-EOF
+FW_EOF
 }
 
 # allow Github SSH
-workspacegithubsetup(){
-_terminal_msg normal "Preparing ssh/config for Github"
-if [ ! -d ~/.ssh ]; then
-    mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    echo "[+] Created ~/.ssh directory."
-else
-    terminal_msg normal "[*] ~/.ssh already exists, skipping directory creation."
-fi
+workspacegithubsetup() {
+    _log() {
+        if declare -f _terminal_msg >/dev/null 2>&1; then
+            _terminal_msg "$1" "$2"
+        else
+            echo "$2"
+        fi
+    }
 
-if ! grep -q "Host github.com" ~/.ssh/config 2>/dev/null; then
-    cat << 'EOF' >> ~/.ssh/config
+    _log normal "Preparing ssh/config for Github"
 
-Host github.com
-    Hostname ://github.com
-    Port 443
-    User git
-EOF
-    chmod 600 ~/.ssh/config
-    _terminal_msg success "[+] Added GitHub port 443 SSH config."
-else
-    _terminal_msg normal "[*] Host github.com already exists in ~/.ssh/config, skipping."
-fi
+    if [ ! -d ~/.ssh ]; then
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        _log success "[+] Created ~/.ssh directory."
+    else
+        _log normal "[*] ~/.ssh already exists, skipping directory creation."
+    fi
 
+    if ! grep -Eq "^[[:space:]]*Host[[:space:]]+github\.com([[:space:]]|$)" ~/.ssh/config 2>/dev/null; then
+        printf '\nHost github.com\n    Hostname ssh.github.com\n    Port 443\n    User git\n' >> ~/.ssh/config
+        chmod 600 ~/.ssh/config
+        _log success "[+] Added GitHub port 443 SSH config."
+    else
+        _log normal "[*] Host github.com already exists in ~/.ssh/config, skipping."
+    fi
 }
 
 # copy from container
