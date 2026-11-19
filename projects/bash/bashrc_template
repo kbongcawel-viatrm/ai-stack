@@ -2102,6 +2102,39 @@ _load_r2_env() {
     fi
 }
 
+# Load Cloudflare R2 credentials on demand from ~/.config/r2.env (requires chmod 600)
+_load_r2_env() {
+    local env_file="${R2_ENV_FILE:-$HOME/.config/r2.env}"
+    local profile="${1:-default}"
+
+    if [[ ! -f "$env_file" ]]; then
+        _terminal_msg error "R2 env file not found: $env_file"
+        return 1
+    fi
+
+    local perms
+    perms=$(stat -c '%a' "$env_file" 2>/dev/null || echo "")
+    if [[ "$perms" != "600" ]]; then
+        _terminal_msg error "Unsafe permissions ($perms) on $env_file. Run: chmod 600 $env_file"
+        return 1
+    fi
+
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+
+    if [[ "$profile" == "oci" && -n "${R2_OCI_ACCESS_KEY_ID:-}" && -n "${R2_OCI_SECRET_ACCESS_KEY:-}" ]]; then
+        R2_ACCESS_KEY_ID="$R2_OCI_ACCESS_KEY_ID"
+        R2_SECRET_ACCESS_KEY="$R2_OCI_SECRET_ACCESS_KEY"
+    fi
+
+    if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
+        _terminal_msg error "R2 credentials missing in $env_file"
+        return 1
+    fi
+}
+
 cf_secureblue_upload(){
     local R2_ENDPOINT="https://cloudflarestorage.com"
     local BUCKET="s3://secureblue-oci/snapshots"
@@ -3765,19 +3798,104 @@ workspacegithubsetup() {
     fi
 }
 
-# Prepare R2 configs
-cf_prep_r2_config(){
-mkdir -p -m 700 ~/.config && cat << 'EOF' > ~/.config/r2.env
-# Cloudflare R2 Credentials (chmod 600)
-# Default / sre-devops-f44 keys
-R2_ACCESS_KEY_ID="72b63760a561da96261ad9672845ceda"
-R2_SECRET_ACCESS_KEY="b6bb0ba2591db2b216e1a8aa3fed81fb58d3679bfcf3f04b66334040e42336b8"
+# Prepare R2 config validation (credentials must be provisioned separately).
+cf_prep_r2_config() {
+    local env_file="${R2_ENV_FILE:-$HOME/.config/r2.env}"
+    local perms owner
 
-# secureblue-oci specific keys
-R2_OCI_ACCESS_KEY_ID="de0697f2e7cb313cd723460c68741b97"
-R2_OCI_SECRET_ACCESS_KEY="30afb7d1fcd4ae0e94b79ca2ccaf03af9fc6b3ca8abaae3771b5808059e5a2a2"
-EOF
-chmod 600 ~/.config/r2.env
+    if [[ ! -f "$env_file" ]]; then
+        _terminal_msg error "R2 configuration not found: $env_file"
+        _terminal_msg normal "Create it outside the repository and populate it securely."
+        return 1
+    fi
+
+    owner=$(stat -c '%u' -- "$env_file" 2>/dev/null) || return 1
+    perms=$(stat -c '%a' -- "$env_file" 2>/dev/null) || return 1
+
+    if [[ "$owner" != "$(id -u)" || "$perms" != "600" ]]; then
+        _terminal_msg error "R2 config must be owned by the current user and have mode 600."
+        return 1
+    fi
+
+    _terminal_msg success "External R2 configuration is present and has secure ownership/permissions."
+}
+
+# Pre-commit check, push, and reload of bash configuration
+
+bashconfigci() {
+    local repo="$HOME/workspace/ai-stack"
+    local target="projects/bash/bashrc_template"
+    # Detect literal-looking R2 key assignments, not variable-to-variable references.
+    local secret_pattern='^[[:space:]]*(export[[:space:]]+)?R2_(OCI_)?(ACCESS_KEY_ID|SECRET_ACCESS_KEY)[[:space:]]*=[[:space:]]*"[A-Za-z0-9+/=_-]{12,}"'
+    local confirm file
+
+    if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        _terminal_msg error "Invalid Git repository: $repo"
+        return 1
+    fi
+
+    if [[ ! -f "$repo/$target" ]]; then
+        _terminal_msg error "Target file not found: $repo/$target"
+        return 1
+    fi
+
+    _terminal_msg normal "Inspecting target diff."
+    git -C "$repo" diff -- "$target" || return 1
+
+    _terminal_msg normal "Scanning tracked files for hardcoded R2 credentials."
+    if git -C "$repo" grep -nIE "$secret_pattern" -- .; then
+        _terminal_msg error "Potential hardcoded R2 credentials found in tracked files. Aborting."
+        return 1
+    fi
+
+    _terminal_msg normal "Scanning untracked files for hardcoded R2 credentials."
+    while IFS= read -r -d '' file; do
+        if grep -nIE "$secret_pattern" "$repo/$file"; then
+            _terminal_msg error "Potential hardcoded R2 credentials found in $file. Aborting."
+            return 1
+        fi
+    done < <(git -C "$repo" ls-files --others --exclude-standard -z)
+
+    _terminal_msg success "No hardcoded R2 credential assignments detected."
+    _terminal_msg warning "Review the diff carefully. Continue with commit and push?"
+    read -r -p "Continue? [y/N]: " confirm
+
+    case "${confirm,,}" in
+        y|yes) ;;
+        *)
+            _terminal_msg warning "Operation cancelled. No commit or push performed."
+            workspacekill || return 1
+            return 0
+            ;;
+    esac
+
+    _terminal_msg normal "Getting updates before merging."
+    getupdates || return 1
+
+    _terminal_msg normal "Staging target file."
+    git -C "$repo" add -- "$target" || return 1
+
+    _terminal_msg normal "Checking staged target file for hardcoded R2 credentials."
+    if git -C "$repo" grep --cached -nIE "$secret_pattern" -- "$target"; then
+        _terminal_msg error "Hardcoded R2 credentials detected in staged target. Aborting commit."
+        git -C "$repo" reset -q -- "$target"
+        return 1
+    fi
+
+    _terminal_msg normal "Reviewing staged diff."
+    git -C "$repo" diff --cached -- "$target" || return 1
+
+    _terminal_msg normal "Committing changes."
+    git -C "$repo" commit -m "Improve bash configuration" || return 1
+
+    _terminal_msg normal "Pushing changes to GitHub."
+    git -C "$repo" push origin main || return 1
+
+    _terminal_msg success "Changes successfully pushed to GitHub."
+    _terminal_msg normal "Cleaning up session."
+    workspacekill || return 1
+    _terminal_msg success "Done!"
+    return 0
 }
 
 # copy from container
