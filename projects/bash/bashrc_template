@@ -3900,160 +3900,144 @@ bashconfigci() {
 
 # Pre-commit check, push, and reload of bash configuration
 
-bashconfigci() {
-    local repo="$HOME/workspace/ai-stack"
-    local target="projects/bash/bashrc_template"
-    local template="$repo/$target"
-    local branch
-    local confirm
-    local secret_pattern='(^|[^[:alnum:]_])(export[[:space:]]+)?R2_(OCI_)?(ACCESS_KEY_ID|SECRET_ACCESS_KEY)[[:space:]]*='
+bashconfigupdate() {
+    local REPO="$HOME/workspace/ai-stack"
+    local TARGET="projects/bash/bashrc_template"
+    local LIVE="$HOME/.bashrc"
+    local BACKUP="$HOME/.bashrc.bak"
+    local STASH_CREATED=0
 
-    # ---------------------------------------------------------
-    # BASH CONFIGURATION CI
-    # ---------------------------------------------------------
+    _terminal_msg normal "Starting Bash configuration update."
 
-    _terminal_msg normal "BASH CONFIGURATION CI - Validation and Publishing"
-
-    # 1. Validate workspace
-    _terminal_msg normal "[1/7] Validating workspace and repository."
-
-    if [[ ! -f "$template" ]] ||
-       ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        _terminal_msg error "Workspace or configuration template not found."
+    # 1. Validate repository and target
+    if [[ ! -f "$REPO/$TARGET" ]] ||
+       ! git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        _terminal_msg error "Repository or Bash configuration template not found."
         return 1
     fi
 
-    branch=$(git -C "$repo" branch --show-current)
+    # 2. Validate and load template into current terminal
+    _terminal_msg normal "Validating Bash configuration template."
 
-    if [[ "$branch" != "main" ]]; then
-        _terminal_msg error "Expected main branch. Current branch: $branch"
+    if ! bash -n "$REPO/$TARGET"; then
+        _terminal_msg error "Template syntax validation failed."
         return 1
     fi
 
-    # 2. Validate Bash syntax
-    _terminal_msg normal "[2/7] Validating Bash syntax."
+    _terminal_msg success "Template syntax valid."
 
-    if ! bash -n "$template"; then
-        _terminal_msg error "Bash syntax validation failed."
+    _terminal_msg normal "Loading new Bash functions into current terminal."
+
+    if ! source "$REPO/$TARGET"; then
+        _terminal_msg error "Failed to load Bash configuration template."
         return 1
     fi
 
-    _terminal_msg success "Bash syntax validation passed."
+    _terminal_msg success "New Bash functions loaded into current terminal."
 
-    # 3. Run configuration checks
-    _terminal_msg normal "[3/7] Running configuration checks."
+    # 3. Check for local template changes
+    if ! git -C "$REPO" diff --quiet HEAD -- "$TARGET"; then
+        _terminal_msg normal "Local configuration changes detected."
 
-    if ! declare -F bashconfigcheck >/dev/null 2>&1; then
-        _terminal_msg error "bashconfigcheck is unavailable. Source the template first."
-        return 1
-    fi
+        # Connect workspace
+        if ! workspaceconnect; then
+            _terminal_msg error "Workspace connection failed."
+            return 1
+        fi
 
-    if ! bashconfigcheck; then
-        _terminal_msg error "Configuration validation failed."
-        return 1
-    fi
+        # Preserve local changes before synchronization
+        if ! git -C "$REPO" stash push -m "bashconfigupdate temporary stash" -- "$TARGET"; then
+            _terminal_msg error "Failed to preserve local changes."
+            return 1
+        fi
 
-    # 4. Inspect changes
-    _terminal_msg normal "[4/7] Inspecting configuration changes."
+        STASH_CREATED=1
 
-    git -C "$repo" diff -- "$target" || return 1
+        # Pull latest changes using fast-forward only
+        _terminal_msg normal "Synchronizing with remote repository."
 
-    # Check for pre-existing staged changes to prevent
-    # accidentally committing unrelated files.
-    if ! git -C "$repo" diff --cached --quiet; then
-        _terminal_msg error "Existing staged changes detected. Commit or unstage them first."
-        return 1
-    fi
+        if ! git -C "$REPO" pull --ff-only origin main; then
+            _terminal_msg error "Git synchronization failed. Local changes remain stashed."
+            return 1
+        fi
 
-    # 5. Security inspection
-    _terminal_msg normal "[5/7] Performing R2 credential security checks."
+        # Restore local modifications
+        _terminal_msg normal "Restoring local configuration changes."
 
-    # Scan tracked working-tree files
-    if git -C "$repo" grep -nIE "$secret_pattern" -- .; then
-        _terminal_msg error "R2 credential assignments detected in tracked files."
-        return 1
+        if ! git -C "$REPO" stash pop; then
+            _terminal_msg error "Stash restoration failed. Resolve conflicts manually."
+            return 1
+        fi
+
+        STASH_CREATED=0
     else
-        local scan_status=$?
-        if (( scan_status > 1 )); then
-            _terminal_msg error "Git security scan failed."
-            return 1
-        fi
+        _terminal_msg normal "No local template modifications detected."
     fi
 
-    # Scan untracked, non-ignored files
-    while IFS= read -r -d '' file; do
-        if grep -nIE "$secret_pattern" "$repo/$file"; then
-            _terminal_msg error "Potential R2 credentials detected in $file."
-            return 1
-        else
-            local scan_status=$?
-            if (( scan_status > 1 )); then
-                _terminal_msg error "Unable to inspect $file."
-                return 1
-            fi
-        fi
-    done < <(git -C "$repo" ls-files --others --exclude-standard -z)
+    # 4. Validate Bash syntax
+    _terminal_msg normal "Validate syntax."
 
-    _terminal_msg success "No R2 credential assignments detected."
-
-    # Confirmation before publishing
-    _terminal_msg warning "Review the changes before proceeding."
-
-    printf '\n'
-    read -r -p "Commit and push changes to GitHub? [y/N]: " confirm
-
-    case "${confirm,,}" in
-        y|yes)
-            _terminal_msg normal "Publishing approved."
-            ;;
-        *)
-            _terminal_msg warning "Publishing cancelled."
-            return 0
-            ;;
-    esac
-
-    # 6. Stage, verify and publish
-    _terminal_msg normal "[6/7] Staging and verifying configuration."
-
-    git -C "$repo" add -- "$target" || return 1
-
-    # Verify only the intended file is staged
-    if [[ "$(git -C "$repo" diff --cached --name-only)" != "$target" ]]; then
-        _terminal_msg error "Unexpected staged files detected. Aborting."
+    if ! bash -n "$REPO/$TARGET"; then
+        _terminal_msg error "Syntax failed."
         return 1
     fi
 
-    # Scan staged content
-    if git -C "$repo" grep --cached -nIE "$secret_pattern" -- .; then
-        _terminal_msg error "R2 credentials detected in staged content."
+    _terminal_msg success "Syntax valid."
+
+    # 5. Stage configuration changes
+    _terminal_msg normal "Stage Bash configuration changes."
+
+    if ! git -C "$REPO" add -- "$TARGET"; then
+        _terminal_msg error "Failed to stage configuration."
         return 1
+    fi
+
+    # 6. Commit and push
+    if ! git -C "$REPO" diff --cached --quiet -- "$TARGET"; then
+        _terminal_msg normal "Push changes."
+
+        if ! git -C "$REPO" commit -m "Changes to bash configuration"; then
+            _terminal_msg error "Git commit failed."
+            return 1
+        fi
+
+        if ! git -C "$REPO" push origin main; then
+            _terminal_msg error "Failed to push. Please investigate."
+            return 1
+        fi
+
+        _terminal_msg success "Successfully pushed the changes."
     else
-        local scan_status=$?
-        if (( scan_status > 1 )); then
-            _terminal_msg error "Staged security scan failed."
+        _terminal_msg normal "No new changes to commit."
+    fi
+
+    # 7. Back up existing configuration
+    _terminal_msg normal "Backing up existing Bash configuration."
+
+    if [[ -f "$LIVE" ]]; then
+        if ! cp -p "$LIVE" "$BACKUP"; then
+            _terminal_msg error "Failed to back up existing configuration."
             return 1
         fi
     fi
 
-    _terminal_msg normal "Reviewing staged changes."
+    # 8. Deploy configuration
+    _terminal_msg normal "Loading Bash configuration."
 
-    git -C "$repo" diff --cached -- "$target" || return 1
+    if ! cp -f "$REPO/$TARGET" "$LIVE"; then
+        _terminal_msg error "Failed to deploy Bash configuration."
+        return 1
+    fi
 
-    git -C "$repo" commit \
-        -m "Improve Bash configuration" || return 1
+    if ! source "$LIVE"; then
+        _terminal_msg error "Failed to load configuration. Backup: $BACKUP"
+        return 1
+    fi
 
-    git -C "$repo" push origin main || return 1
+    _terminal_msg success "Bash configuration loaded, restarting terminal."
 
-    _terminal_msg success "Configuration successfully published to GitHub."
-
-    # 7. Workspace synchronization and cleanup
-    _terminal_msg normal "[7/7] CI publishing completed."
-
-    _terminal_msg normal "Run getupdates separately when workspace synchronization is required."
-
-    _terminal_msg success "Bash configuration CI completed successfully."
-
-    return 0
+    # 9. Restart interactive Bash
+    exec bash
 }
 
 
