@@ -4020,7 +4020,8 @@ bashconfigupdate() {
             return 1
         fi
     fi
-
+    
+    
     # 8. Deploy configuration
     _terminal_msg normal "Loading Bash configuration."
 
@@ -4033,10 +4034,14 @@ bashconfigupdate() {
         _terminal_msg error "Failed to load configuration. Backup: $BACKUP"
         return 1
     fi
+    _terminal_msg success "Bash configuration loaded."
 
-    _terminal_msg success "Bash configuration loaded, restarting terminal."
-
-    # 9. Restart interactive Bash
+    # 9. Cleaning up session
+    _terminal_msg normal "Cleaning up sessions"
+    workspacekill
+    _terminal_msg success "Session closed. Restarting terminal."
+   
+    # 10. Restart interactive Bash
     exec bash
 }
 
