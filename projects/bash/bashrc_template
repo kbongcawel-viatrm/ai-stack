@@ -3468,6 +3468,44 @@ workspaceadbkill() {
     echo -e "${GREEN}[+] All ADB connections and processes terminated.${NC}"
 }
 
+# kill all ai
+killaitools(){
+    local CYAN='\033[0;36m'
+    local YELLOW='\033[1;33m'
+    local GREEN='\033[0;32m'
+    local NC='\033[0m' # No Color
+
+    # List of process patterns to terminate
+    local TARGETS=("devin" "cline" "cline-app" "cline-cli")
+
+    echo -e "${CYAN}[*] Stopping Devin and Cline processes gracefully...${NC}"
+    for proc in "${TARGETS[@]}"; do
+        # Build bracketed regex (e.g., [d]evin) so pgrep/pkill doesn't match itself
+        local pattern="[${proc:0:1}]${proc:1}"
+        pkill -x "$proc" >/dev/null 2>&1
+        pkill -f "$pattern" >/dev/null 2>&1
+    done
+
+    # Give processes a moment to flush state and exit cleanly
+    sleep 1
+
+    # Force-kill any stuck or lingering processes
+    local FORCE_KILLED=0
+    for proc in "${TARGETS[@]}"; do
+        local pattern="[${proc:0:1}]${proc:1}"
+        if pgrep -x "$proc" >/dev/null 2>&1 || pgrep -f "$pattern" >/dev/null 2>&1; then
+            if [ "$FORCE_KILLED" -eq 0 ]; then
+                echo -e "${YELLOW}[!] Lingering processes found. Force killing...${NC}"
+                FORCE_KILLED=1
+            fi
+            pkill -9 -x "$proc" >/dev/null 2>&1
+            pkill -9 -f "$pattern" >/dev/null 2>&1
+        fi
+    done
+
+    echo -e "${GREEN}[+] All Devin and Cline processes terminated.${NC}"
+}
+
 # copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
 # rootless socket can exist (podman.service exits 125). Containers run
