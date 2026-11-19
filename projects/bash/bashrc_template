@@ -746,16 +746,76 @@ mistralfix() {
     fi
 }
 
-# Dedicated SSH agent for the home-security key
+# List usable SSH private keys in ~/.ssh (skips public keys, known_hosts, dotfiles).
+_workspace_ssh_key_list() {
+    local f first
+    for f in "$HOME/.ssh"/*; do
+        [[ -f "$f" ]] || continue
+        first=$(head -n 1 "$f" 2>/dev/null) || continue
+        case "$first" in
+            "-----BEGIN OPENSSH PRIVATE KEY-----"|\
+            "-----BEGIN RSA PRIVATE KEY-----"|\
+            "-----BEGIN DSA PRIVATE KEY-----"|\
+            "-----BEGIN EC PRIVATE KEY-----"|\
+            "-----BEGIN ENCRYPTED PRIVATE KEY-----") printf '%s\n' "$f" ;;
+        esac
+    done
+}
+
+# Prompt the user to choose an SSH private key; stores it in WORKSPACE_SSH_KEY.
+# $1 optionally preselects a previously chosen key.
+_workspace_select_ssh_key() {
+    local -a keys=()
+    local key i choice default="" prompt
+    while IFS= read -r key; do
+        keys+=("$key")
+    done < <(_workspace_ssh_key_list)
+
+    if ((${#keys[@]} == 0)); then
+        _terminal_msg error "No SSH private keys found in $HOME/.ssh."
+        return 1
+    fi
+
+    _terminal_msg normal "Available SSH private keys:"
+    for ((i = 0; i < ${#keys[@]}; i++)); do
+        printf '    %d) %s\n' "$((i + 1))" "${keys[$i]#"$HOME"/}"
+        [[ "${keys[$i]}" == "${1:-}" ]] && default=$((i + 1))
+    done
+
+    while :; do
+        prompt="Select key"
+        [[ -n "$default" ]] && prompt+=" [$default]"
+        read -rp "$prompt: " choice || return 1
+        [[ -z "$choice" && -n "$default" ]] && choice="$default"
+        if [[ "$choice" =~ ^[0-9]+$ ]] &&
+           ((choice >= 1 && choice <= ${#keys[@]})); then
+            WORKSPACE_SSH_KEY="${keys[$((choice - 1))]}"
+            return 0
+        fi
+        _terminal_msg warning "Invalid selection."
+    done
+}
+
+# Dedicated SSH agent for a selected workspace key.
+# Usage: workspaceconnect [path/to/private_key]
 workspaceconnect() {
 _terminal_msg normal "Creating temporary workspace access."
-    local key="$HOME/.ssh/home-security"
-    local agent_output
+    local key agent_output
 
     if ! declare -F tcat >/dev/null ||
        ! command -v ssh-agent >/dev/null 2>&1 ||
        ! command -v ssh-add >/dev/null 2>&1; then
         return 1
+    fi
+
+    if [[ -n "${1:-}" ]]; then
+        key="${1/#\~/$HOME}"
+    else
+        if ! _workspace_select_ssh_key "${HOME_SECURITY_SSH_KEY:-}"; then
+            return 1
+        fi
+        key="$WORKSPACE_SSH_KEY"
+        HOME_SECURITY_SSH_KEY="$key"
     fi
 
     if [[ ! -f "$key" || ! -r "$key" ]]; then
@@ -3338,6 +3398,24 @@ echo "tar -tzf '$ARCHIVE'"
 ROOT_SCRIPT
 }
 
+# validate compose.yaml
+podvalidatecompose(){
+python3 - <<'PY'
+import yaml
+
+with open("compose.yaml") as f:
+    config = yaml.safe_load(f)
+
+for name, service in config["services"].items():
+    build = service.get("build")
+
+    if build is None and "build" in service:
+        raise SystemExit(f"ERROR: {name}: build is null")
+
+    if isinstance(build, dict):
+        print(f"OK: {name}: {build}")
+PY
+}
 
 # copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
