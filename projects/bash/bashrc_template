@@ -2739,7 +2739,7 @@ echo " 🏁 🚩 🎌 🏴 🏳️ 🏳️🌈 🏳️ ⚧️  ☠️  "
 givemespace
 }
 
-# Check Bash syntax and show diagnostics before replacing ~/.bashrc.
+# [DEPRECATED use bashconfigupdate] Check Bash syntax and show diagnostics before replacing ~/.bashrc.
 # Usage: bashconfigcheck
 bashconfigcheck() {
     local config="$HOME/workspace/ai-stack/projects/bash/bashrc_template"
@@ -4041,7 +4041,7 @@ bashconfigupdate() {
 }
 
 
-# get bashconfig flow guide
+# Guide on how to update bash config using bashconfigupdate()
 bashconfighelp(){
     cat <<'MANPAGE'
 BASHCONFIGHELP(1)              User Commands              BASHCONFIGHELP(1)
@@ -4068,88 +4068,19 @@ CONFIGURATION
         ~/workspace/ai-stack/projects/bash/bashrc_template
 
     Live configuration:
-        ~/.bashrc
+        ~/.bashrc:q;
 
-WORKFLOW
-    Follow these steps in order.
 
-    1. CONNECT TO WORKSPACE
-       Ensure the workspace environment is initialized.
+GUIDE
 
-           workspaceconnect
-
-       If the short-lived session is unavailable, run workspaceconnect
-       again before continuing.
-
-    2. VALIDATE BASH SYNTAX
-       Check the template for Bash syntax errors.
-
-           bash -n ~/workspace/ai-stack/projects/bash/bashrc_template
-
-       Do not proceed if syntax validation fails.
-
-    3. LOAD CONFIGURATION
-       Source the template into the current interactive shell.
-
-           source ~/workspace/ai-stack/projects/bash/bashrc_template
-
-       This makes newly defined functions and variables available in
-       the current session.
-
-    4. RUN CONFIGURATION CHECKS
-       Execute the configuration validation routine.
-
-           bashconfigcheck
-
-       Resolve any reported issues before deployment.
-
-    5. DEPLOY CONFIGURATION
-       Back up the existing configuration and install the validated
-       template.
-
-           cp -p ~/.bashrc ~/.bashrc.bak
-           cp -f ~/workspace/ai-stack/projects/bash/bashrc_template ~/.bashrc
-
-       Open a new terminal or reload the configuration to test it.
-
-           source ~/.bashrc
-
-    6. COMMIT AND PUBLISH
-       Run the repository CI workflow.
-
-           bashconfigci
-
-       This performs the configured Git staging, commit, secrets
-       verification, and push operations.
-
-       Review the changes and approve the confirmation prompt before
-       publishing.
-
-    7. SYNCHRONIZE WORKSPACE
-       Run the workspace update routine when required.
-
-           getupdates
-
-EXAMPLES
-    Display this guide:
-
-        bashconfighelp
-
-    Validate template syntax:
-
-        bash -n ~/workspace/ai-stack/projects/bash/bashrc_template
-
-    Load the template:
+        bash -n ~/workspace/ai-stack/projects/bash/bashrc_template || return 1
 
         source ~/workspace/ai-stack/projects/bash/bashrc_template
 
-    Validate configuration:
+        declare -F bashconfigupdate
 
-        bashconfigcheck
+        bashconfigupdate
 
-    Publish changes:
-
-        bashconfigci
 
 NOTES
     - Always maintain the repository template as the source of truth.
@@ -4167,16 +4098,9 @@ EXIT STATUS
     0    Help displayed successfully.
     1    Invalid invocation or help display failure.
 
-AUTHOR
-    AI Stack - Bash Configuration Management
-
-SEE ALSO
-    bash(1), bashconfigcheck, bashconfigci, workspaceconnect, getupdates
-
 BASHCONFIGHELP(1)              User Commands              BASHCONFIGHELP(1)
 MANPAGE
 }
-
 
 # copy from container
 # Secureblue ships the podman *remote* client as /usr/bin/podman; no local
