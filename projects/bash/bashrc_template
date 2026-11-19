@@ -3519,6 +3519,7 @@ killaitools(){
 }
 
 # setup firewall
+# setup firewall
 firewallsetup() {
     run0 bash -s << 'FW_EOF'
 set -euo pipefail
@@ -3531,6 +3532,7 @@ firewall-cmd --complete-reload >/dev/null 2>&1 || true
 # ==============================================================================
 echo "[*] Configuring FedoraWorkstation (Inbound DROP)..."
 firewall-cmd --permanent --zone=FedoraWorkstation --add-interface=enp1s0 2>/dev/null || true
+firewall-cmd --permanent --zone=trusted --add-interface=lo 2>/dev/null || true
 firewall-cmd --permanent --zone=FedoraWorkstation --set-target=DROP
 firewall-cmd --permanent --zone=FedoraWorkstation --remove-forward
 
@@ -3563,7 +3565,7 @@ for prt in $(firewall-cmd --permanent --zone=public --list-ports); do
 done
 
 # ==============================================================================
-# 3. OUTBOUND POLICY: host-to-outbound (Strict Allowlist, 5555 Blocked)
+# 3. OUTBOUND POLICY: host-to-outbound (DNS, Cloudflare, HTTP, HTTPS, FTP)
 # ==============================================================================
 echo "[*] Configuring host-to-outbound policy..."
 if ! firewall-cmd --permanent --get-policies | grep -qw "host-to-outbound"; then
@@ -3591,6 +3593,12 @@ done
 # Preserved Rich Rule: Allow SSH outbound only to 10.1.29.4
 firewall-cmd --permanent --policy=host-to-outbound \
     --add-rich-rule='rule family="ipv4" destination address="10.1.29.4" service name="ssh" accept' 2>/dev/null || true
+
+# Rich Rules: Allow FTP (21 + passive data ports) strictly to 10.1.29.1 for dufs/rclone
+firewall-cmd --permanent --policy=host-to-outbound \
+    --add-rich-rule='rule family="ipv4" destination address="10.1.29.1" service name="ftp" accept' 2>/dev/null || true
+firewall-cmd --permanent --policy=host-to-outbound \
+    --add-rich-rule='rule family="ipv4" destination address="10.1.29.1" port port="1024-65535" protocol="tcp" accept' 2>/dev/null || true
 
 # ==============================================================================
 # 4. DIRECT RULES (8022/tcp to 10.1.29.4 & IPS/IDS NFQUEUE Hooks)
@@ -3626,6 +3634,7 @@ firewall-cmd --policy=host-to-outbound --list-all
 firewall-cmd --direct --get-all-rules
 FW_EOF
 }
+
 
 # allow Github SSH
 workspacegithubsetup() {
