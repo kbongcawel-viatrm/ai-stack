@@ -3003,8 +3003,8 @@ kimctl() {
 }
 
 # sretoolbox
-securebluebox() {
-    local name="secureblue-oci"
+sretoolbox() {
+    local name="sredev"
     local image="${SRE_TOOLBOX_IMAGE:-registry.fedoraproject.org/fedora-toolbox:44}"
     local enter_after=0 name_set=0
     local cache_dir setup_script log_file rc cmd
