@@ -272,11 +272,17 @@ workspaceconfigcheck() {
     givemespace
 }
 
-# Workspace navigator
+# Source .bashrc
+bashconfigsource(){
+_terminal_msg normal "Loading bash configuration"
+source /var/home/kim/.bashrc
+_terminal_msg success "Done"
+exec bash
+}
 
 # Workspace navigator
 workspace() {
-    local target_dir="$HOME/workspace"
+    local target_dir="/var/home/kim/workspace"
     local item choice keyword selected_folder choice_num i
     local -a folders=() matches=()
 
