@@ -845,7 +845,7 @@ workspaceconnect() {
 
     # Clean up any stale PID/socket before starting fresh
     if declare -F workspacekill >/dev/null 2>&1; then
-        workspacekill >/dev/null 2>&1 || true
+        run0 workspacekill >/dev/null 2>&1 || true
     fi
 
     # Preserve the current SSH agent environment.
@@ -867,7 +867,7 @@ workspaceconnect() {
 
     # Load the key for 5 minutes; suppress routine ssh-add confirmation output.
     if ! ssh-add -t 300 "$key" >/dev/null; then
-        workspacekill
+        run0 workspacekill
         _terminal_msg error "Could not load the SSH key."
         return 1
     fi
@@ -1001,7 +1001,7 @@ workspacekill() {
 # restart agent
 workspacerestart() {
     _terminal_msg normal "Restarting workspace access."
-    workspacekill || return $?
+    run0 workspacekill || return $?
     workspaceconnect
 }
 
@@ -3872,7 +3872,7 @@ bashconfigci() {
         y|yes) ;;
         *)
             _terminal_msg warning "Operation cancelled. No commit or push performed."
-            workspacekill || return 1
+            run0 workspacekill || return 1
             return 0
             ;;
     esac
@@ -3901,7 +3901,7 @@ bashconfigci() {
 
     _terminal_msg success "Changes successfully pushed to GitHub."
     _terminal_msg normal "Cleaning up session."
-    workspacekill || return 1
+    run0 workspacekill || return 1
     _terminal_msg success "Done!"
     return 0
 }
@@ -4046,7 +4046,7 @@ bashconfigupdate() {
 
     # 9. Cleaning up session
     _terminal_msg normal "Cleaning up sessions"
-    workspacekill
+    run0 workspacekill
     _terminal_msg success "Session closed. Restarting terminal."
    
     # 10. Restart interactive Bash
