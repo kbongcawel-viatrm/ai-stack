@@ -516,6 +516,14 @@ getaitools(){
         _terminal_msg success " Mistral CLI is already installed."
     fi
 
+    if ! command -v herdr-app >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/herdr-app" ]]; then
+        _terminal_msg normal "Installing Herdr CLI..."
+        run_with_loader "Running" bash -c 'curl -fsSL https://releases.herdr.dev/app/install.sh | sh' || return $?
+    else
+        _terminal_msg success " Herdr app is already installed."
+    fi
+
+
 
     _terminal_msg success " Workspace AI setup complete. 🧠"
 }
