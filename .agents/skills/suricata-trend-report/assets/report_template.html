@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suricata Traffic Assessment — __WINDOW__</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3; --dim:#8b949e;
+          --accent:#58a6ff; --red:#f85149; --orange:#d29922; --green:#3fb950; --purple:#bc8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:20px 28px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:12px; align-items:baseline; }
+  h1 { font-size:20px; margin:0; }
+  .meta { color:var(--dim); font-size:12px; }
+  main { padding:20px 28px; display:grid; gap:18px; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+  .kpi { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .kpi .v { font-size:24px; font-weight:700; }
+  .kpi .l { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .card h2 { font-size:14px; margin:0 0 12px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
+  .card.full { grid-column:1/-1; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { padding:6px 8px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+  th { color:var(--dim); font-weight:600; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .scroll { max-height:420px; overflow:auto; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .b-scanner { background:#3d1d1d; color:#ff9b9b; }
+  .b-exfil { background:#3d2f10; color:#f0c060; }
+  .b-beacon { background:#2d1f3d; color:#c9a0ff; }
+  .b-normal { background:#1d2d1d; color:#8fd18f; }
+  .b-heavy { background:#12303a; color:#6fd3e0; }
+  .verdict { border-left:4px solid var(--accent); }
+  .verdict h2 { color:var(--accent); }
+  .verdict-action { border-left-color:var(--red); }
+  .verdict-action h2 { color:var(--red); }
+  .err { color:var(--orange); font-size:12px; }
+  code { background:#21262d; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Suricata Network Traffic Assessment</h1>
+  <span class="meta">Window: __WINDOW__ &nbsp;•&nbsp; Generated: __GENERATED__ &nbsp;•&nbsp; Streams: __STREAMS__</span>
+</header>
+<main>
+  <section class="kpis" id="kpis"></section>
+
+  <section class="grid">
+    <div class="card"><h2>Events per hour</h2><canvas id="chEvents" height="220"></canvas></div>
+    <div class="card"><h2>Alerts per hour</h2><canvas id="chAlerts" height="220"></canvas></div>
+    <div class="card"><h2>Event type mix</h2><canvas id="chTypes" height="220"></canvas></div>
+    <div class="card"><h2>Application protocols (flows)</h2><canvas id="chProto" height="220"></canvas></div>
+    <div class="card full"><h2>Top source IPs by flow count</h2><canvas id="chSrc" height="260"></canvas></div>
+    <div class="card full"><h2>Top destination IPs by flow count</h2><canvas id="chDst" height="260"></canvas></div>
+  </section>
+
+  <section class="grid">
+    <div class="card full"><h2>Per-IP behaviour analysis (top talkers)</h2>
+      <div class="scroll"><table id="tblSrc"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card"><h2>Top alert signatures</h2>
+      <div class="scroll"><table id="tblSig"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card"><h2>Alerts by source IP</h2>
+      <div class="scroll"><table id="tblAlertIp"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card"><h2>Alert categories</h2>
+      <div class="scroll"><table id="tblCat"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card"><h2>Top DNS queries</h2>
+      <div class="scroll"><table id="tblDns"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>Automated response — Cloudflare blocks</h2>
+      <div id="cfBox"></div>
+    </div>
+    <div class="card"><h2>ARP watch — suspicious ARP activity</h2>
+      <div id="arpBox"></div>
+    </div>
+  </section>
+
+  <section class="card verdict" id="verdictCard">
+    <h2>Security assessment &amp; recommendation</h2>
+    <div id="verdict">__VERDICT_HTML__</div>
+  </section>
+
+  <section class="card" id="errCard" style="display:none">
+    <h2>Collection warnings</h2><div class="err" id="errList"></div>
+  </section>
+</main>
+
+<script>
+const STATS = __STATS_JSON__;
+const fmt = n => n==null ? '–' : Number(n).toLocaleString();
+const bytes = n => { if(n==null) return '–'; const u=['B','KiB','MiB','GiB','TiB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(i?1:0)+' '+u[i]; };
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+Chart.defaults.color='#8b949e'; Chart.defaults.borderColor='#30363d';
+const PALETTE=['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#6fd3e0','#f0883e','#8b949e'];
+
+function table(id, head, rows){
+  const t=document.getElementById(id); if(!t) return;
+  t.querySelector('thead').innerHTML='<tr>'+head.map(h=>`<th class="${h.num?'num':''}">${esc(h.t)}</th>`).join('')+'</tr>';
+  t.querySelector('tbody').innerHTML=rows.map(r=>'<tr>'+r.map(c=>`<td class="${typeof c==='number'?'num':''}">${c&&c.html?c.html:esc(c)}</td>`).join('')+'</tr>').join('');
+}
+function badges(s){ return String(s||'normal').split(',').map(x=>`<span class="badge b-${x.trim()}">${esc(x.trim())}</span>`).join(' '); }
+
+// KPIs
+(function(){
+  const total=Object.values(STATS.totals||{}).reduce((a,b)=>a+b,0);
+  const alerts=Object.values(STATS.event_types||{}).flat().filter(e=>e.event_type==='alert').reduce((a,e)=>a+e.count,0);
+  const srcs=new Set((STATS.top_src_ips||[]).map(x=>x.ip));
+  const dsts=new Set((STATS.top_dst_ips||[]).map(x=>x.ip));
+  const flagged=(STATS.top_src_ips||[]).filter(x=>x.classification&&x.classification!=='normal').length;
+  const cf=STATS.enrichment?.cloudflare||{};
+  const k=[['Total events',fmt(total)],['Alerts',fmt(alerts)],['Top source IPs',srcs.size],
+           ['Top dest IPs',dsts.size],['Flagged IPs',flagged],
+           ['CF-blocked IPs',cf.submitted_count??'–'],['Pending CF action',(cf.pending_action_ips||[]).length]];
+  document.getElementById('kpis').innerHTML=k.map(([l,v])=>`<div class="kpi"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join('');
+})();
+
+// Timeseries
+function tsChart(id,key){
+  const el=document.getElementById(id); if(!el||!STATS.timeseries?.[key]) return;
+  const rows=STATS.timeseries[key];
+  new Chart(el,{type:'line',data:{labels:rows.map(r=>r.bucket),datasets:[{data:rows.map(r=>r.c),borderColor:'#58a6ff',backgroundColor:'#58a6ff22',fill:true,tension:.3}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{beginAtZero:true}}}});
+}
+tsChart('chEvents','ips'); tsChart('chAlerts','ips_alerts');
+// merge ids into events chart if present
+if(STATS.timeseries?.ids){
+  const a=STATS.timeseries.ips||[], b=STATS.timeseries.ids||[];
+  const map={}; a.forEach(r=>map[r.bucket]=(map[r.bucket]||0)+r.c); b.forEach(r=>map[r.bucket]=(map[r.bucket]||0)+r.c);
+  const labels=Object.keys(map).sort();
+  new Chart(document.getElementById('chEvents'),{type:'line',data:{labels,datasets:[{label:'ips+ids',data:labels.map(l=>map[l]),borderColor:'#58a6ff',backgroundColor:'#58a6ff22',fill:true,tension:.3}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{beginAtZero:true}}}});
+}
+if(STATS.timeseries?.ids_alerts){
+  const a=STATS.timeseries.ips_alerts||[], b=STATS.timeseries.ids_alerts||[];
+  const map={}; a.forEach(r=>map[r.bucket]=(map[r.bucket]||0)+r.c); b.forEach(r=>map[r.bucket]=(map[r.bucket]||0)+r.c);
+  const labels=Object.keys(map).sort();
+  new Chart(document.getElementById('chAlerts'),{type:'line',data:{labels,datasets:[{label:'alerts',data:labels.map(l=>map[l]),borderColor:'#f85149',backgroundColor:'#f8514922',fill:true,tension:.3}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:12}},y:{beginAtZero:true}}}});
+}
+
+// event types pie
+(function(){
+  const agg={}; Object.values(STATS.event_types||{}).flat().forEach(e=>agg[e.event_type]=(agg[e.event_type]||0)+e.count);
+  const el=document.getElementById('chTypes'); if(!el) return;
+  new Chart(el,{type:'doughnut',data:{labels:Object.keys(agg),datasets:[{data:Object.values(agg),backgroundColor:PALETTE}]},options:{plugins:{legend:{position:'right'}}}});
+})();
+// protocols pie
+(function(){
+  const agg={}; Object.values(STATS.protocols||{}).flat().forEach(e=>{const k=e.app_proto||'unknown';agg[k]=(agg[k]||0)+e.flows;});
+  const el=document.getElementById('chProto'); if(!el) return;
+  const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  new Chart(el,{type:'doughnut',data:{labels:top.map(x=>x[0]),datasets:[{data:top.map(x=>x[1]),backgroundColor:PALETTE}]},options:{plugins:{legend:{position:'right'}}}});
+})();
+// top IPs bars
+function ipChart(id,key,valFn){
+  const el=document.getElementById(id); if(!el) return;
+  const rows=(STATS[key]||[]).slice(0,15);
+  new Chart(el,{type:'bar',data:{labels:rows.map(r=>r.ip),datasets:[{data:rows.map(valFn),backgroundColor:'#58a6ff'}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+}
+ipChart('chSrc','top_src_ips',r=>r.flows);
+ipChart('chDst','top_dst_ips',r=>r.flows);
+
+// tables
+table('tblSrc',[{t:'IP'},{t:'Sensor'},{t:'Flows',num:1},{t:'Up',num:1},{t:'Down',num:1},{t:'Dests',num:1},{t:'Ports',num:1},{t:'Avg B/flow',num:1},{t:'Classification'}],
+  (STATS.top_src_ips||[]).map(r=>[r.ip,r.sensor,fmt(r.flows),bytes(r.bytes_up),bytes(r.bytes_down),fmt(r.unique_dests),fmt(r.unique_ports),fmt(r.avg_flow_bytes),{html:badges(r.classification)}]));
+table('tblSig',[{t:'Signature'},{t:'Count',num:1},{t:'Sensor'}],
+  (STATS.alerts?.by_signature||[]).map(r=>[r.signature,fmt(r.c),r.sensor]));
+table('tblAlertIp',[{t:'Source IP'},{t:'Alerts',num:1},{t:'Sensor'}],
+  (STATS.alerts?.by_src_ip||[]).map(r=>[r.src_ip,fmt(r.c),r.sensor]));
+table('tblCat',[{t:'Category'},{t:'Count',num:1},{t:'Sensor'}],
+  (STATS.alerts?.by_category||[]).map(r=>[r.category,fmt(r.c),r.sensor]));
+table('tblDns',[{t:'Query'},{t:'Count',num:1},{t:'Sensor'}],
+  (STATS.dns_top||[]).map(r=>[r.q,fmt(r.c),r.sensor]));
+
+// CF enrichment
+(function(){
+  const cf=STATS.enrichment?.cloudflare; const el=document.getElementById('cfBox'); if(!el) return;
+  if(!cf||!cf.submitted_count&&!cf.pending_action_ips){el.innerHTML='<span class="meta">No Cloudflare block state found.</span>';return;}
+  const pend=(cf.pending_action_ips||[]);
+  el.innerHTML=`<p>Auto-block pipeline (<code>suricata-cf-block</code>) has submitted <b>${cf.submitted_count}</b> IPs to the Cloudflare list.</p>
+  <p><b>${pend.length}</b> flagged/malicious IPs are <b>pending Cloudflare action</b>:</p>
+  <div class="scroll" style="max-height:200px">${pend.length?'<table><thead><tr><th>IP</th></tr></thead><tbody>'+pend.map(ip=>`<tr><td>${esc(ip)}</td></tr>`).join('')+'</tbody></table>':'<span class="meta">none — all flagged IPs already submitted</span>'}</div>`;
+})();
+// arpwatch
+(function(){
+  const a=STATS.enrichment?.arpwatch; const el=document.getElementById('arpBox'); if(!el) return;
+  const d24=a?.last_24h; const d24txt=d24?` <span class="meta">(${fmt(d24.suspicious_lines)} suspicious events in the last 24h)</span>`:'';
+  if(!a||(a.suspicious_lines|0)===0){el.innerHTML=`<span class="meta">No suspicious ARP activity in the analysis window.${d24txt} (arpwatch is running; events are sporadic.)</span>`;return;}
+  el.innerHTML=`<p>${a.suspicious_lines} suspicious ARP lines observed in this window.${d24txt}</p><table><thead><tr><th>IP</th><th>Events</th></tr></thead><tbody>${(a.top_ips||[]).map(r=>`<tr><td>${esc(r.ip)}</td><td class="num">${fmt(r.events)}</td></tr>`).join('')}</tbody></table>`;
+})();
+// errors
+if(STATS.errors?.length){document.getElementById('errCard').style.display='block';document.getElementById('errList').innerHTML=STATS.errors.map(esc).join('<br>');}
+</script>
+</body>
+</html>
