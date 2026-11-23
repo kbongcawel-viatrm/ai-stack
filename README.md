@@ -1,14 +1,13 @@
 # ai-stack
-A repository full of my own AI skills. 
+[![Warning](https://demolab.com⚠️+WARNING%3A;Made+for+mad+science+and+breaking+stuff.)](https://git.io)
 
-Warning:<br>
-    Made for mad science and breaking stuffs.
-
+## A repository full of my own AI skills. 
 <img src="https://github-readme-insight-terminal-asci.vercel.app/svg/repo?repo=kbongcawel-viatrm/ai-stack&amp;theme=mac" alt="GitHub repo">
 
+## Stack
 ![Skills](https://github-readme-insight-terminal-asci.vercel.app/svg/skills?i=terraform,ansible,bash,GitHubActions,Cline&theme=mac)
 
-# Repository layout
+## Repository layout
 
 ```bash
 ai-stack$ tree -L1 --dirsfirst
@@ -25,6 +24,7 @@ ai-stack$ tree -L1 --dirsfirst
 └── skills-lock.json
 ```
 
+## Instructions
 `.agents/` is the portable, tool-neutral home for shared context. `.clinerules/` and `.cline/` are Cline-specific entry points. Link to canonical instructions rather than duplicating them.
 
 Terraform deployment conventions and the BU-scoped GitHub Actions workflow are documented in [`terraform/README.md`](../terraform/README.md). The BU registry is intentionally empty until cloud identities and remote-state backends are provisioned.
