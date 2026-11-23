@@ -4121,15 +4121,80 @@ BASHCONFIGHELP(1)              User Commands              BASHCONFIGHELP(1)
 MANPAGE
 }
 
-# copy from container
-# Secureblue ships the podman *remote* client as /usr/bin/podman; no local
-# rootless socket can exist (podman.service exits 125). Containers run
-# rootless in the podman machine instead.
-# -----------------------------------------------------------------------------
-# GLOBAL ENVIRONMENT AND ALIASES
-# Kept after function definitions so aliases cannot rewrite commands inside them.
-# -----------------------------------------------------------------------------
+# Setup promiscous device for Suricata monitoring
+promiscousdevice(){
+set -euo pipefail
 
+_terminal_msg normal "Configuring enp0s20f0u10 as promiscuous mode."
+if run0 nmcli connection modify "enp0s20f0u10" ipv4.method disabled ipv6.method disabled 802-3-ethernet.accept-all-mac-addresses yes; then
+	_terminal_msg success "Done configuring"
+else
+	_terminal_msg error "Failed to configure enp0s20f0u10."
+	exit 1
+fi
+
+_terminal_msg normal "Connecting the device..."
+if run0 nmcli connection up "enp0s20f0u10"; then
+	_terminal_msg success "Device is connected"
+else
+	_terminal_msg error "Failed to connect"
+	exit 1
+fi
+
+_terminal_msg success "Current device connections"
+nmcli connection show
+
+sleep 4
+_terminal_msg normal "Ending configuration"
+exit 0
+}
+
+# Github setup
+gitconfigbasics() {
+    _terminal_msg normal "Setting up Github Globals"
+
+    local configs=(
+        "user.name"              "Kevin Agustin Bongcawel"
+        "user.email"             "dummykevin08@gmail.com"
+        "init.defaultBranch"     "main"
+        "pull.ff"                "only"
+        "rebase.autoStash"       "true"
+        "core.editor"            "vim"
+        "push.autoSetupRemote"   "true"
+        "fetch.prune"            "true"
+        "rerere.enabled"         "true"
+        "core.autocrlf"          "input"
+    )
+
+    for ((i = 0; i < ${#configs[@]}; i += 2)); do
+        if ! git config --global "${configs[i]}" "${configs[i+1]}"; then
+            _terminal_msg error "Failed to set ${configs[i]}"
+            return 1
+        fi
+    done
+
+    _terminal_msg success "Done. Checking loaded config..."
+    echo
+    git config --list --show-origin
+    return 0
+}
+
+
+# Github commit shortcut
+gitsupershort() {
+    _terminal_msg normal " ⚡️ Superfast commit ⚡️ "
+
+    git add . || { _terminal_msg error "Failed to stage files"; return 1; }
+    git commit -m "${1:-Added changes (im in a hurry)}" || { _terminal_msg error "Nothing to commit or commit failed"; return 1; }
+    git pull --ff-only || { _terminal_msg error "Pull failed (branch diverged?)"; return 1; }
+    git push || { _terminal_msg error "Push failed"; return 1; }
+
+    _terminal_msg success "Done lazy!"
+    return 0
+}
+
+#  EXPORTS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+#
 # Export PATH after the early PATH bootstrap and bashrc.d loading.
 export PATH
 
@@ -4138,6 +4203,7 @@ export EDITOR=/usr/bin/vim
 export VISUAL=/usr/bin/vim
 export BUN_JSC_useJIT=1
 export JavaScriptCoreUseJIT=1
+export BASHRC_TEMPLATE=projects/bash/bashrc_template
 
 # Shell history behavior
 export HISTCONTROL=ignoreboth
@@ -4151,7 +4217,7 @@ if [[ "${TMOUT@a}" != *r* ]]; then
 fi
 
 
-
+#  ALIAS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 
 # Aliases
 alias run0='run0 -i'
@@ -4162,6 +4228,7 @@ alias tlbxen='toolbox enter'
 alias tlbxli='toolbox list'
 alias tlbxcr='toolbox create'
 alias ls='ls -alt'
+alias tree='tree -L'
 alias run0ctl='run0 systemctl'
 alias run0ctlrestart='run0 systemctl restart'
 alias run0ctlstart='run0 systemctl start'
