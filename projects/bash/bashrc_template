@@ -892,7 +892,9 @@ workspacekill() {
     local remaining=0
     local attempts=0
     local initial_count=0
-
+    _terminal_msg normal "Running instances"
+    run0 ps -aux | grep 'ssh-agent'
+    echo
     _terminal_msg normal "Terminating all SSH agent sessions."
 
     # 1. Terminate the dedicated workspace SSH agent
@@ -999,7 +1001,8 @@ workspacekill() {
     fi
 
     _terminal_msg success "All SSH agent processes terminated. Previous agent environment restored."
-
+    _terminal_msg normal "Validating running sessions"
+    run0 ps -aux | grep 'ssh-agent'
     return 0
 }
 
