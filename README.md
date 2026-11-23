@@ -1,31 +1,10 @@
 # ai-stack
-<svg fill="none" viewBox="0 0 600 80" width="600" height="80" xmlns="http://w3.org">
-  <foreignObject width="100%" height="100%">
-    <div xmlns="http://w3.org">
-      <style>
-        @keyframes pulse {
-          0%, 100% { opacity: 1; text-shadow: 0 0 8px #ff0000; }
-          50% { opacity: 0.4; text-shadow: none; }
-        }
-        .warn {
-          font-family: monospace;
-          color: #ff2a2a;
-          font-size: 16px;
-          font-weight: bold;
-          animation: pulse 1.5s infinite;
-        }
-        .sub {
-          font-family: monospace;
-          color: #ff6b6b;
-          font-size: 14px;
-          margin-left: 20px;
-        }
-      </style>
-      <div class="warn">⚠️ Warning:</div>
-      <div class="sub">Made for mad science and breaking stuff.</div>
-    </div>
-  </foreignObject>
-</svg>
+[![Terraform](https://img.shields.io/terraform/module/:interval/:namespace/Terraform/AWS)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-ffb36b?style=flat-square&labelColor=db9561)](https://workers.cloudflare.com/)
+
+> [!CAUTION]
+> **Warning:**  
+> Made for mad science and breaking stuff.
 
 ## A repository full of my own AI skills. 
 <img src="https://github-readme-insight-terminal-asci.vercel.app/svg/repo?repo=kbongcawel-viatrm/ai-stack&amp;theme=mac" alt="GitHub repo">
