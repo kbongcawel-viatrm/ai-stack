@@ -4181,7 +4181,7 @@ gitconfigbasics() {
 
 
 # Github commit shortcut
-gitsupershort() {
+fastpush() {
     _terminal_msg normal " ⚡️ Superfast commit ⚡️ "
 
     git add . || { _terminal_msg error "Failed to stage files"; return 1; }
@@ -4192,6 +4192,37 @@ gitsupershort() {
     _terminal_msg success "Done lazy!"
     return 0
 }
+
+# Fast validate
+fastreload() {
+    local template="${BASHRC_TEMPLATE:-$HOME/workspace/ai-stack/projects/bash/bashrc_template}"
+    local target="${BASHRC:-$HOME/.bashrc}"
+
+    _terminal_msg normal " ⚡️ Superfast validation: $template ⚡️"
+
+    if [[ ! -f "$template" ]]; then
+        _terminal_msg error "Template not found: $template"
+        return 1
+    fi
+
+    # 1. Validate the NEW template BEFORE overwriting ~/.bashrc
+    if ! bash -n "$template"; then
+        _terminal_msg error "Syntax error detected in template! Copy aborted."
+        return 1
+    fi
+
+    # 2. Copy validated template over ~/.bashrc
+    if ! cp -f "$template" "$target"; then
+        _terminal_msg error "Failed to copy $template to $target"
+        return 1
+    fi
+
+    # 3. Reload the updated ~/.bashrc
+    _terminal_msg success "DONE! Reloading shell..."
+    exec bash
+}
+
+
 
 #  EXPORTS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 #
