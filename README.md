@@ -1,5 +1,5 @@
 # ai-stack
-[![Terraform](https://img.shields.io/terraform/module/:interval/:namespace/Terraform/AWS)
+[![Terraform](https://img.shields.io/badge/terraform-8A2BE2)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-ffb36b?style=flat-square&labelColor=db9561)](https://workers.cloudflare.com/)
 
 > [!CAUTION]
