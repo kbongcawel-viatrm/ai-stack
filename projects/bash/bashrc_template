@@ -893,7 +893,9 @@ workspacekill() {
     local attempts=0
     local initial_count=0
     _terminal_msg normal "Running instances"
-    run0 ps -aux | grep 'ssh-agent'
+    _terminal_line normal
+    _terminal_msg normal "Running agent: $(pgrep -l ssh-agent)"
+    _terminal_line normal
     echo
     _terminal_msg normal "Terminating all SSH agent sessions."
 
@@ -921,10 +923,10 @@ workspacekill() {
     # 3. Terminate all SSH agents, including root-owned processes
     if (( initial_count > 0 )); then
         if [[ "$EUID" -eq 0 ]]; then
-            run0 pkill -TERM -x ssh-agent 2>/dev/null || true
+            pkill -TERM -x ssh-agent 2>/dev/null || true
 
         elif command -v run0 >/dev/null 2>&1; then
-            run0 pkill -TERM -x ssh-agent 2>/dev/null || true
+            pkill -TERM -x ssh-agent 2>/dev/null || true
 
         else
             _terminal_msg error "Cannot terminate system-wide SSH agents: run0 is unavailable."
@@ -946,9 +948,9 @@ workspacekill() {
             _terminal_msg warning "Some SSH agents remain. Escalating to SIGKILL."
 
             if [[ "$EUID" -eq 0 ]]; then
-                run0 pkill -KILL -x ssh-agent 2>/dev/null || true
+                pkill -KILL -x ssh-agent 2>/dev/null || true
             else
-                run0 pkill -KILL -x ssh-agent 2>/dev/null || true
+                pkill -KILL -x ssh-agent 2>/dev/null || true
             fi
         fi
     fi
@@ -999,10 +1001,10 @@ workspacekill() {
         _terminal_msg error "SSH agent cleanup incomplete."
         return 1
     fi
-
+    
     _terminal_msg success "All SSH agent processes terminated. Previous agent environment restored."
     _terminal_msg normal "Validating running sessions"
-    run0 ps -aux | grep 'ssh-agent'
+    echo "$SSH_AUTH_SOCK" 
     return 0
 }
 
