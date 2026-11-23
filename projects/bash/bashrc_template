@@ -902,7 +902,7 @@ workspacekill() {
     if [[ "$agent_pid" =~ ^[0-9]+$ ]] && kill -0 "$agent_pid" 2>/dev/null; then
         _terminal_msg normal "Terminating dedicated workspace SSH agent (PID: $agent_pid)."
 
-        kill -TERM "$agent_pid" 2>/dev/null || true
+        run0 kill -TERM "$agent_pid" 2>/dev/null || true
         wait "$agent_pid" 2>/dev/null || true
     fi
 
@@ -919,7 +919,7 @@ workspacekill() {
     # 3. Terminate all SSH agents, including root-owned processes
     if (( initial_count > 0 )); then
         if [[ "$EUID" -eq 0 ]]; then
-            pkill -TERM -x ssh-agent 2>/dev/null || true
+            run0 pkill -TERM -x ssh-agent 2>/dev/null || true
 
         elif command -v run0 >/dev/null 2>&1; then
             run0 pkill -TERM -x ssh-agent 2>/dev/null || true
@@ -944,7 +944,7 @@ workspacekill() {
             _terminal_msg warning "Some SSH agents remain. Escalating to SIGKILL."
 
             if [[ "$EUID" -eq 0 ]]; then
-                pkill -KILL -x ssh-agent 2>/dev/null || true
+                run0 pkill -KILL -x ssh-agent 2>/dev/null || true
             else
                 run0 pkill -KILL -x ssh-agent 2>/dev/null || true
             fi
