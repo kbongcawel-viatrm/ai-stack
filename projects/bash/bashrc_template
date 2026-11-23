@@ -4239,7 +4239,14 @@ fastreload() {
     exec bash
 }
 
-
+# SS connections
+watchss(){
+ss -tnlap | awk 'NR>1 && !/TIME-WAIT|:443\>/ {
+      split($4, src, ":");
+      split($5, dst, ":");
+      printf "%-12s %-10s -> %s\n", $1, src[length(src)],   dst[length(dst)]
+  }'
+}
 
 #  EXPORTS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 #
