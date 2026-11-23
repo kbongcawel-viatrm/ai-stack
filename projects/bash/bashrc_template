@@ -819,11 +819,22 @@ workspaceconnect() {
     if ! declare -F tcat >/dev/null ||
        ! command -v ssh-agent >/dev/null 2>&1 ||
        ! command -v ssh-add >/dev/null 2>&1; then
+        _terminal_msg error "Missing required tools (tcat, ssh-agent, or ssh-add)."
         return 1
     fi
 
     if [[ -n "${1:-}" ]]; then
-        key="${1/#\~/$HOME}"
+        local input="${1/#\~/$HOME}"
+        # Resolve key: check exact/relative path first, then fallback to ~/.ssh/
+        if [[ -f "$input" ]]; then
+            key="$input"
+        elif [[ -f "$HOME/.ssh/$input" ]]; then
+            key="$HOME/.ssh/$input"
+        else
+            _terminal_msg error "SSH key not found: '$1' (checked current path and ~/.ssh/)"
+            return 1
+        fi
+        HOME_SECURITY_SSH_KEY="$key"
     else
         if ! _workspace_select_ssh_key "${HOME_SECURITY_SSH_KEY:-}"; then
             return 1
@@ -832,8 +843,8 @@ workspaceconnect() {
         HOME_SECURITY_SSH_KEY="$key"
     fi
 
-    if [[ ! -f "$key" || ! -r "$key" ]]; then
-        _terminal_msg error "SSH key is missing or unreadable: $key"
+    if [[ ! -r "$key" ]]; then
+        _terminal_msg error "SSH key is unreadable (check permissions): $key"
         return 1
     fi
 
@@ -843,24 +854,25 @@ workspaceconnect() {
        [[ -S "${HOME_SECURITY_SSH_AUTH_SOCK:-}" ]]; then
         export SSH_AGENT_PID="$HOME_SECURITY_SSH_AGENT_PID"
         export SSH_AUTH_SOCK="$HOME_SECURITY_SSH_AUTH_SOCK"
-        # Refresh the 5-minute key timer if needed
-        ssh-add -t 300 "$key" >/dev/null 2>&1
-        _terminal_msg success "Temporary workspace access is already active (timer refreshed to 5m)."
-        return 0
+        # Refresh the 5-minute key timer
+        if ssh-add -t 300 "$key" >/dev/null 2>&1; then
+            _terminal_msg success "Temporary workspace access is already active (timer refreshed to 5m)."
+            return 0
+        fi
     fi
 
-    # Clean up any stale PID/socket before starting fresh
+    # Clean up any stale PID/socket before starting fresh (no run0 needed for shell functions)
     if declare -F workspacekill >/dev/null 2>&1; then
-        run0 workspacekill >/dev/null 2>&1 || true
+        workspacekill >/dev/null 2>&1 || true
     fi
 
-    # Preserve the current SSH agent environment.
+    # Preserve the current SSH agent environment (e.g., gcr-ssh-agent)
     HOME_SECURITY_PREV_SOCK="${SSH_AUTH_SOCK-}"
     HOME_SECURITY_PREV_PID="${SSH_AGENT_PID-}"
     HOME_SECURITY_PREV_SOCK_SET=${SSH_AUTH_SOCK+x}
     HOME_SECURITY_PREV_PID_SET=${SSH_AGENT_PID+x}
 
-    # Start a dedicated agent without printing its environment.
+    # Start a dedicated agent without printing its environment
     if ! agent_output=$(umask 077; ssh-agent -s 2>/dev/null); then
         _terminal_msg error "Could not start the dedicated SSH agent."
         return 1
@@ -871,16 +883,16 @@ workspaceconnect() {
     HOME_SECURITY_SSH_AGENT_PID="$SSH_AGENT_PID"
     HOME_SECURITY_SSH_AUTH_SOCK="$SSH_AUTH_SOCK"
 
-    # Load the key for 5 minutes; suppress routine ssh-add confirmation output.
+    # Load the key for 5 minutes
     if ! ssh-add -t 300 "$key" >/dev/null; then
-        run0 workspacekill
-        _terminal_msg error "Could not load the SSH key."
+        declare -F workspacekill >/dev/null 2>&1 && workspacekill >/dev/null 2>&1
+        _terminal_msg error "Could not load the SSH key: $key"
         return 1
     fi
 
     # Clean up on normal exit OR terminal window close (HUP)
     trap 'workspacekill' EXIT HUP
-    _terminal_msg success "Workspace access initialized (PID $HOME_SECURITY_SSH_AGENT_PID; key lifetime 5 minutes)."
+    _terminal_msg success "Workspace access initialized using $(basename "$key") (PID $HOME_SECURITY_SSH_AGENT_PID; 5m lifetime)."
     _terminal_msg warning "Access is terminated when this terminal exits."
 }
 
