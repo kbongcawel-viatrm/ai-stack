@@ -3971,7 +3971,7 @@ bashconfigupdate() {
         _terminal_msg normal "Local configuration changes detected."
 
         # Connect workspace
-        if ! workspaceconnect; then
+        if ! workspaceconnect home-security; then
             _terminal_msg error "Workspace connection failed."
             return 1
         fi
