@@ -4,8 +4,7 @@ A repository full of my own AI skills.
 Warning:<br>
     Made for mad science and breaking stuffs.
 
-
-![GitHub repo](https://github-readme-insight-terminal-asci.vercel.app/svg/repo?repo=kbongcawel-viatrm/ai-stack&theme=mac)
+<img src="https://github-readme-insight-terminal-asci.vercel.app/svg/repo?repo=kbongcawel-viatrm/ai-stack&amp;theme=mac" alt="GitHub repo">
 
 ![Skills](https://github-readme-insight-terminal-asci.vercel.app/svg/skills?i=terraform,ansible,bash,GitHubActions,Cline&theme=mac)
 
