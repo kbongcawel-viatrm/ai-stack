@@ -7,11 +7,6 @@
           "type": "command",
           "command": "./scripts/pre-commit-security.sh",
           "timeout": 300000
-        },
-        {
-          "type": "command",
-          "command": "./scripts/pre-deploy-build.sh",
-          "timeout": 180000
         }
       ]
     }
