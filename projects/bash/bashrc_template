@@ -4248,6 +4248,10 @@ watchss() {
   }'\'''
 }
 
+# enter toolbox
+boxmode(){
+toolbox enter sredev > /dev/null
+}
 
 #  EXPORTS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 #
