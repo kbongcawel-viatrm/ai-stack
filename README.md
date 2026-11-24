@@ -1,5 +1,5 @@
 # ai-stack
-[terraform](https://img.shields.io/badge/terraform-#8A2BE2)
+![terraform](https://img.shields.io/badge/just%20the%20message-8A2BE2)
 [ansible](https://img.shields.io/badge/ansible-EE0000)
 [gnu-bash](https://img.shields.io/badge/gnu-bash-4EAA25)
 
