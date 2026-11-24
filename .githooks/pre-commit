@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Git pre-commit hook: dependency/security scans before allowing a commit.
+# Mirrors .devin/hooks.v1.json -> scripts/pre-commit-security.sh
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+SCAN_DIRS=()
+for d in projects scripts; do [[ -e "$d" ]] && SCAN_DIRS+=("$d"); done
+((${#SCAN_DIRS[@]})) || exit 0
+
+fail=0
+
+if command -v safety >/dev/null 2>&1; then
+  if ! safety scan "${SCAN_DIRS[@]}" >/tmp/safety-out.txt 2>&1; then
+    echo "pre-commit: Safety scan failed. See /tmp/safety-out.txt" >&2
+    fail=1
+  fi
+else
+  echo "pre-commit: safety not installed, skipping" >&2
+fi
+
+if command -v snyk >/dev/null 2>&1; then
+  if ! snyk test --all-projects --org=99aa9ed1-3e50-435f-9876-9b07cb97400b "${SCAN_DIRS[@]}" >/tmp/snyk-out.txt 2>&1; then
+    echo "pre-commit: Snyk scan failed. See /tmp/snyk-out.txt" >&2
+    fail=1
+  fi
+else
+  echo "pre-commit: snyk not installed, skipping" >&2
+fi
+
+if (( fail )); then
+  exit 1
+fi
+echo "pre-commit: all checks passed" >&2
+exit 0
