@@ -1,7 +1,7 @@
 # ai-stack
 ![terraform](https://img.shields.io/badge/terraform-8A2BE2)
 ![ansible](https://img.shields.io/badge/ansible-EE0000)
-[gnu-bash](https://img.shields.io/badge/gnu-bash-4EAA25)
+![gnu-bash](https://img.shields.io/badge/gnu-bash-4EAA25)
 
 > [!CAUTION]
 > **Warning:**  
