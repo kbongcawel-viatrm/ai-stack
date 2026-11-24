@@ -4297,3 +4297,6 @@ alias run0ctlenable='run0 systemctl enable --now'
 alias run0ctlstop='run0 systemctl stop'
 alias run0journal='run0 journalctl -u'
 alias vibe='vibe --continue --yolo'
+
+#  source ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+source ~/.safety/.safety_profile
