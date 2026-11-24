@@ -4250,7 +4250,7 @@ watchss() {
 
 # enter toolbox
 boxmode(){
-toolbox enter sredev > /dev/null
+ toolbox enter sredev
 }
 
 #  EXPORTS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
