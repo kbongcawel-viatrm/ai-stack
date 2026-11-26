@@ -528,6 +528,13 @@ getaitools(){
     else
         _terminal_msg success " Herdr app is already installed."
     fi
+    
+    if ! command -v codex >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/codex" ]]; then
+        _terminal_msg normal "Installing Codex CLI..."
+        run_with_loader "Running" bash -c 'curl -fsSL https://chatgpt.com/codex/install.sh | sh' || return $?
+    else
+        _terminal_msg success " Codex CLI is already installed."
+    fi
 
 
 
@@ -4294,6 +4301,7 @@ watchss() {
 boxmode(){
  toolbox enter sredev
 }
+
 
 #  EXPORTS  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 #
