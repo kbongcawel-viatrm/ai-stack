@@ -4399,3 +4399,17 @@ alias vibe='vibe --continue --yolo'
 
 #  source ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 source ~/.safety/.safety_profile
+
+
+#  FUNCTIONS ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+
+# run security-assessor MCP server on 127.0.0.1:8080/mcp
+security-assessor-enable(){
+  cd ~/workspace/cloudflare-workspace/projects/security-assessor || return 1
+  if ss -tln | grep -q '127.0.0.1:8080'; then
+    echo "security-assessor already listening on 127.0.0.1:8080"
+    return 0
+  fi
+  nohup .venv/bin/python server.py > /tmp/security-assessor.log 2>&1 &
+  echo "security-assessor starting on 127.0.0.1:8080/mcp (pid $!; log: /tmp/security-assessor.log)"
+}
