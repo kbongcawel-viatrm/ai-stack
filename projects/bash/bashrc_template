@@ -4138,47 +4138,75 @@ BASHCONFIGHELP(1)              User Commands              BASHCONFIGHELP(1)
 MANPAGE
 }
 
-# Setup promiscous device for Suricata monitoring
-networkdevicesetup(){
+# LAN
+setupenp1s0device(){
 set -euo pipefail
 
-_terminal_msg normal "Configuring enp0s20f0u10 as promiscuous mode."
-if run0 nmcli connection modify "enp0s20f0u10" ipv4.method disabled ipv6.method disabled 802-3-ethernet.accept-all-mac-addresses yes; then
-	_terminal_msg success "Done configuring"
-else
-	_terminal_msg error "Failed to configure enp0s20f0u10."
-	exit 1
-fi
-
-_terminal_msg normal "Connecting the device..."
-if run0 nmcli connection up "enp0s20f0u10"; then
-	_terminal_msg success "Device is connected"
-else
-	_terminal_msg error "Failed to connect"
-	exit 1
-fi
-
-_terminal_msg normal "Connecting the device..."
-if run0 nmcli device up "enp1s0"; then
-        _terminal_msg success "Device is connected"
-else
-        _terminal_msg error "Failed to connect"
-        exit 1
-fi      
-
-_terminal_msg normal "Connecting the device..."
+_terminal_msg normal "Connecting the enp1s0 device..."
 if run0 nmcli connection up "enp1s0"; then
         _terminal_msg success "Device is connected"
+        return 0
 else
         _terminal_msg error "Failed to connect"
-        exit 1
+        return 1
 fi      
+}
 
-_terminal_msg success "Current device connections"
-nmcli connection show
+# Promisc
+setupenp0device(){
+set -euo pipefail
 
-sleep 4
-_terminal_msg normal "Ending configuration"
+IFACE="enp0s20f0u10"
+CONN_NAME="monitor-${IFACE}"
+DISPATCHER_SCRIPT="/etc/NetworkManager/dispatcher.d/99-promisc-${IFACE}"
+
+if [[ $EUID -ne 0 ]]; then
+   _terminal_msg error "Error: Please run this script with sudo or as root."
+   exit 1
+fi
+
+_terminal_msg normal "[1/4] Configuring NetworkManager profile for ${IFACE} without IP..."
+# Remove existing auto-generated connection if present
+EXISTING_CONN=$(nmcli -t -f NAME,DEVICE connection show | grep ":${IFACE}$" | cut -d: -f1 || true)
+if [[ -n "$EXISTING_CONN" ]]; then
+    nmcli connection delete "$EXISTING_CONN" >/dev/null
+fi
+
+# Create a dedicated L2-only connection profile (no IPv4, no IPv6)
+nmcli connection add type ethernet \
+    ifname "$IFACE" \
+    con-name "$CONN_NAME" \
+    ipv4.method disabled \
+    ipv6.method ignore \
+    connection.autoconnect yes >/dev/null
+
+_terminal_msg normal "[2/4] Creating NetworkManager dispatcher script at ${DISPATCHER_SCRIPT}..."
+cat << EOF > "$DISPATCHER_SCRIPT"
+#!/bin/bash
+INTERFACE="\$1"
+STATUS="\$2"
+
+if [[ "\$INTERFACE" == "${IFACE}" && "\$STATUS" == "up" ]]; then
+    /usr/sbin/ip addr flush dev "\$INTERFACE"
+    /usr/sbin/ip link set dev "\$INTERFACE" promisc on
+fi
+EOF
+
+_terminal_msg normal "[3/4] Setting permissions and SELinux context..."
+chown root:root "$DISPATCHER_SCRIPT"
+chmod 755 "$DISPATCHER_SCRIPT"
+if command -v restorecon >/dev/null 2>&1; then
+    restorecon -v "$DISPATCHER_SCRIPT" >/dev/null
+fi
+
+_terminal_msg normal "[4/4] Bringing up ${IFACE} and verifying state..."
+nmcli connection up "$CONN_NAME" >/dev/null
+ip addr flush dev "$IFACE"
+ip link set dev "$IFACE" promisc on
+
+_terminal_lin normal
+ip addr show "$IFACE"
+_terminal_msg success "Done"
 }
 
 # Github setup
