@@ -4413,3 +4413,9 @@ security-assessor-enable(){
   nohup .venv/bin/python server.py > /tmp/security-assessor.log 2>&1 &
   echo "security-assessor starting on 127.0.0.1:8080/mcp (pid $!; log: /tmp/security-assessor.log)"
 }
+
+# fast-reload running shell with the current bashrc_template
+fastreload(){
+  source ~/workspace/ai-stack/projects/bash/bashrc_template 2>/dev/null || source ~/.bashrc
+  echo "fastreload: shell config reloaded"
+}
