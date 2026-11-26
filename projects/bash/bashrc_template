@@ -4139,7 +4139,7 @@ MANPAGE
 }
 
 # Setup promiscous device for Suricata monitoring
-promiscousdevice(){
+networkdevicesetup(){
 set -euo pipefail
 
 _terminal_msg normal "Configuring enp0s20f0u10 as promiscuous mode."
@@ -4157,6 +4157,22 @@ else
 	_terminal_msg error "Failed to connect"
 	exit 1
 fi
+
+_terminal_msg normal "Connecting the device..."
+if run0 nmcli device up "enp1s0"; then
+        _terminal_msg success "Device is connected"
+else
+        _terminal_msg error "Failed to connect"
+        exit 1
+fi      
+
+_terminal_msg normal "Connecting the device..."
+if run0 nmcli connection up "enp1s0"; then
+        _terminal_msg success "Device is connected"
+else
+        _terminal_msg error "Failed to connect"
+        exit 1
+fi      
 
 _terminal_msg success "Current device connections"
 nmcli connection show
