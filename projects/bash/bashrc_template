@@ -4154,7 +4154,6 @@ fi
 
 # Promisc
 setupenp0device(){
-set -euo pipefail
 
 IFACE="enp0s20f0u10"
 CONN_NAME="monitor-${IFACE}"
