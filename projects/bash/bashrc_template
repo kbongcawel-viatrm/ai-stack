@@ -4179,7 +4179,6 @@ nmcli connection show
 
 sleep 4
 _terminal_msg normal "Ending configuration"
-exit 0
 }
 
 # Github setup
